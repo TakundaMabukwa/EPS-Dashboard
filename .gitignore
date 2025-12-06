@@ -1,0 +1,10 @@
+*.sql
+*.csv
+database/
+migrations/
+sql/
+.next/
+.vercel/
+node_modules/
+.env.local
+.env
