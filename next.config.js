@@ -10,15 +10,11 @@ const nextConfig = {
     workerThreads: false,
     cpus: 1
   },
-  webpack: (config, { isServer }) => {
-    if (!isServer) {
-      config.optimization.splitChunks = {
-        chunks: 'all',
-        maxSize: 200000,
-      }
-    }
-    config.infrastructureLogging = {
-      level: 'error'
+  compress: true,
+  webpack: (config) => {
+    config.optimization.splitChunks = {
+      chunks: 'all',
+      maxSize: 200000
     }
     return config
   }
