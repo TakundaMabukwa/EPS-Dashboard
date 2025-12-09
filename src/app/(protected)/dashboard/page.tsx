@@ -91,43 +91,106 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
   }, [trip.unauthorized_stops_count])
 
   useEffect(() => {
-    const assignments = trip.vehicleassignments || trip.vehicle_assignments || []
-    if (!assignments.length) {
+    async function fetchAssignmentInfo() {
+      const assignments = trip.vehicleassignments || trip.vehicle_assignments || []
+      if (!assignments.length) {
+        setLoading(false)
+        return
+      }
+
+      setLoading(true)
+      try {
+        const supabase = createClient()
+        const assignment = assignments[0]
+        setAssignment(assignment)
+        
+        // Switch to second driver if status is handover and second driver exists
+        let driverToFetch = assignment.drivers?.[0]
+        if (trip.status?.toLowerCase() === 'handover' && assignment.drivers?.[1]) {
+          driverToFetch = assignment.drivers[1]
+        }
+        
+        // Fetch driver info by ID from database
+        if (driverToFetch?.id) {
+          const { data: driver } = await supabase
+            .from('drivers')
+            .select('*')
+            .eq('id', driverToFetch.id)
+            .single()
+          
+          if (driver) {
+            setDriverInfo(driver)
+            
+            // Try to find vehicle location using multiple strategies
+            await findVehicleLocation(driver, assignment)
+          } else {
+            // Fallback to assignment data if driver not found in DB
+            const driverInfo = {
+              id: driverToFetch.id,
+              first_name: driverToFetch.first_name || driverToFetch.name?.split(' ')[0] || '',
+              surname: driverToFetch.surname || driverToFetch.name || 'Unknown',
+              phone_number: driverToFetch.phone_number || '',
+              available: true
+            }
+            setDriverInfo(driverInfo)
+            await findVehicleLocation(driverInfo, assignment)
+          }
+        }
+        
+        // Set vehicle info from assignment
+        if (assignment.vehicle?.name) {
+          const vehicleInfo = {
+            id: assignment.vehicle.id,
+            registration_number: assignment.vehicle.name
+          }
+          setVehicleInfo(vehicleInfo)
+        }
+      } catch (err) {
+        console.error('Error fetching assignment info:', err)
+      }
       setLoading(false)
-      return
     }
 
-    const assignment = assignments[0]
-    setAssignment(assignment)
-    
-    // Auto-select driver from vehicleassignments
-    let selectedDriver = assignment.drivers?.[0]
-    if (trip.status?.toLowerCase() === 'handover' && assignment.drivers?.[1]?.id) {
-      selectedDriver = assignment.drivers[1]
-    }
-    
-    if (selectedDriver?.id) {
-      // Use driver info directly from assignment with fallback to name
-      const driverInfo = {
-        id: selectedDriver.id,
-        first_name: selectedDriver.first_name || selectedDriver.name?.split(' ')[0] || '',
-        surname: selectedDriver.surname || selectedDriver.name || 'Unknown',
-        phone_number: selectedDriver.phone_number || '',
-        available: true
+    async function findVehicleLocation(driver: any, assignment: any) {
+      const vehiclePlate = assignment?.vehicle?.name
+      if (!vehiclePlate) return
+      
+      console.log('Looking for vehicle plate:', vehiclePlate)
+      
+      // Try both APIs simultaneously
+      const [epsResult, ctrackResult] = await Promise.allSettled([
+        fetch(`${process.env.NEXT_PUBLIC_VEHICLE_API_ENDPOINT}`),
+        fetch(`${process.env.NEXT_PUBLIC_CRTACK_VEHICLE_API_ENDPOINT}`)
+      ])
+      
+      // Check EPS API
+      if (epsResult.status === 'fulfilled') {
+        try {
+          const epsData = await epsResult.value.json()
+          const epsVehicles = epsData.data || []
+          const found = epsVehicles.find((v: any) => v.plate?.toLowerCase() === vehiclePlate.toLowerCase())
+          if (found && found.latitude && found.longitude) {
+            setVehicleLocation(found)
+            return
+          }
+        } catch (e) {}
       }
-      setDriverInfo(driverInfo)
-    }
-    
-    // Auto-select vehicle from vehicleassignments
-    if (assignment.vehicle?.name) {
-      const vehicleInfo = {
-        id: assignment.vehicle.id,
-        registration_number: assignment.vehicle.name
+      
+      // Check CTrack API
+      if (ctrackResult.status === 'fulfilled') {
+        try {
+          const ctrackData = await ctrackResult.value.json()
+          const ctrackVehicles = ctrackData.vehicles || []
+          const found = ctrackVehicles.find((v: any) => v.plate?.toLowerCase() === vehiclePlate.toLowerCase())
+          if (found) {
+            setVehicleLocation(found)
+            return
+          }
+        } catch (e) {}
       }
-      setVehicleInfo(vehicleInfo)
     }
-    
-    setLoading(false)
+
+    fetchAssignmentInfo()
   }, [trip.id, JSON.stringify(trip.vehicleassignments || trip.vehicle_assignments)])
 
   const driverName = driverInfo ? `${driverInfo.first_name || ''} ${driverInfo.surname || ''}`.trim() || 'Unassigned' : 'Unassigned'
@@ -271,6 +334,50 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
             const supabase = createClient();
             let routeCoords = null;
             let stopPoints = [];
+            let vehicleLocationData = vehicleLocation; // Use already fetched vehicle location
+
+            // If no vehicle location was found during initialization, try one more time
+            if (!vehicleLocationData && (vehicleInfo?.registration_number || driverName !== 'Unassigned')) {
+              try {
+                let vehicleData = null;
+                
+                // First try with vehicle plate
+                if (vehicleInfo?.registration_number) {
+                  console.log('Track button: Fetching vehicle location by plate:', vehicleInfo.registration_number);
+                  const plateResponse = await fetch(`/api/eps-vehicles?endpoint=by-plate&plate=${encodeURIComponent(vehicleInfo.registration_number)}`);
+                  if (plateResponse.ok) {
+                    vehicleData = await plateResponse.json();
+                  }
+                }
+                
+                // Fallback: try with driver name if plate fails
+                if (!vehicleData && driverName && driverName !== 'Unassigned') {
+                  console.log('Track button: Plate lookup failed, trying driver name:', driverName);
+                  const driverResponse = await fetch(`/api/eps-vehicles?endpoint=by-driver&driver=${encodeURIComponent(driverName)}`);
+                  if (driverResponse.ok) {
+                    vehicleData = await driverResponse.json();
+                  }
+                }
+                
+                // Process vehicle data if found
+                if (vehicleData && vehicleData.latitude && vehicleData.longitude) {
+                  vehicleLocationData = {
+                    latitude: parseFloat(vehicleData.latitude),
+                    longitude: parseFloat(vehicleData.longitude),
+                    plate: vehicleData.plate || vehicleInfo?.registration_number || 'Unknown',
+                    speed: vehicleData.speed || 0,
+                    address: vehicleData.address || 'GPS location available',
+                    loc_time: vehicleData.loc_time || new Date().toISOString(),
+                    mileage: vehicleData.mileage || 0,
+                    geozone: vehicleData.geozone,
+                    company: vehicleData.company || 'EPS'
+                  };
+                  console.log('Track button: Found external vehicle GPS data:', vehicleLocationData);
+                }
+              } catch (error) {
+                console.log('Track button: External GPS lookup failed:', error.message);
+              }
+            }
 
             // Use pickup and dropoff locations for optimal routing
             const pickupLocs = trip.pickup_locations || trip.pickuplocations || [];
@@ -372,18 +479,17 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
               console.error('Error fetching high risk zones:', error);
             }
 
-            console.log('High risk zones:', highRiskZones);
+            console.log('Final vehicle location data for map:', vehicleLocationData);
             console.log('Route coordinates for map:', routeCoords ? routeCoords.length : 'none');
             console.log('Stop points for map:', stopPoints.length);
-            // Try fuzzy matching for vehicle location if not found
-            let matchedVehicleLocation = vehicleLocation;
-            if (!matchedVehicleLocation && vehicleInfo?.registration_number) {
-              console.log('Attempting to find vehicle location for plate:', vehicleInfo.registration_number);
-              // Skip external API calls that cause CORS issues
-              // Vehicle location will be handled by the map component if needed
-            }
             
-            handleViewMap(driverName, { ...trip, vehicleLocation: matchedVehicleLocation, routeCoords, stopPoints, highRiskZones });
+            handleViewMap(driverName, { 
+              ...trip, 
+              vehicleLocation: vehicleLocationData, 
+              routeCoords, 
+              stopPoints, 
+              highRiskZones 
+            });
           }}
         >
           <MapPin className="w-3 h-3" /> Track
@@ -1516,8 +1622,24 @@ export default function Dashboard() {
       };
       setMapData(routeOnlyData);
       setMapOpen(true);
+    } else if (trip?.origin || trip?.destination) {
+      const basicMapData = {
+        showBasicRoute: true,
+        origin: trip.origin,
+        destination: trip.destination,
+        highRiskZones,
+        driverDetails: {
+          fullName: driverName,
+          plate: trip.vehicleInfo?.registration_number || 'Unknown vehicle',
+          speed: 0,
+          address: 'No GPS data - showing trip route'
+        }
+      };
+      console.log('Opening map with basic route:', basicMapData);
+      setMapData(basicMapData);
+      setMapOpen(true);
     } else {
-      alert(`No location or route data available for driver: ${driverName}`);
+      alert(`No location, route, or trip data available for ${driverName}. Please ensure the trip has origin/destination or GPS tracking is enabled.`);
     }
   };
 
@@ -2151,15 +2273,17 @@ export default function Dashboard() {
                           const map = new window.mapboxgl.Map({
                             container: el,
                             style: 'mapbox://styles/mapbox/streets-v12',
-                            center: [parseFloat(mapData.longitude), parseFloat(mapData.latitude)],
-                            zoom: 15
+                            center: mapData.longitude && mapData.latitude ? 
+                              [parseFloat(mapData.longitude), parseFloat(mapData.latitude)] : 
+                              [28.0473, -26.2041], // Default to Johannesburg
+                            zoom: mapData.showBasicRoute ? 10 : 15
                           })
                           
                           map.on('load', () => {
                             let vehicleMarker = null
                             
                             // Only add vehicle marker if coordinates are available
-                            if (!mapData.showRouteOnly && mapData.longitude && mapData.latitude) {
+                            if (!mapData.showRouteOnly && !mapData.showBasicRoute && mapData.longitude && mapData.latitude) {
                               const vehicleEl = document.createElement('div')
                               vehicleEl.innerHTML = '🚛'
                               vehicleEl.style.cssText = `
@@ -2368,6 +2492,73 @@ export default function Dashboard() {
                                 </div>
                               `
                               map.getContainer().appendChild(routeInfo)
+                            } else if (mapData.showBasicRoute && (mapData.origin || mapData.destination)) {
+                              // Handle basic route from origin to destination
+                              const routeInfo = document.createElement('div')
+                              routeInfo.className = 'mapboxgl-ctrl mapboxgl-ctrl-group'
+                              routeInfo.style.cssText = 'position: absolute; top: 10px; left: 10px; background: white; padding: 10px; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'
+                              routeInfo.innerHTML = `
+                                <div class="text-sm">
+                                  <div class="font-bold text-blue-900 mb-1">${mapData.driverDetails.fullName}</div>
+                                  <div class="text-gray-600">Trip Route</div>
+                                  <div class="text-xs text-gray-500 mt-1">No GPS tracking available</div>
+                                </div>
+                              `
+                              map.getContainer().appendChild(routeInfo)
+                              
+                              // Generate route between origin and destination
+                              if (mapData.origin && mapData.destination) {
+                                fetch(`https://api.mapbox.com/directions/v5/mapbox/driving/${encodeURIComponent(mapData.origin)};${encodeURIComponent(mapData.destination)}?access_token=${process.env.NEXT_PUBLIC_MAPBOX_TOKEN}&geometries=geojson&overview=full`)
+                                  .then(response => response.json())
+                                  .then(data => {
+                                    if (data.routes && data.routes[0]) {
+                                      const routeCoords = data.routes[0].geometry.coordinates
+                                      
+                                      map.addSource('basic-route', {
+                                        type: 'geojson',
+                                        data: {
+                                          type: 'Feature',
+                                          properties: {},
+                                          geometry: {
+                                            type: 'LineString',
+                                            coordinates: routeCoords
+                                          }
+                                        }
+                                      })
+                                      
+                                      map.addLayer({
+                                        id: 'basic-route',
+                                        type: 'line',
+                                        source: 'basic-route',
+                                        layout: {
+                                          'line-join': 'round',
+                                          'line-cap': 'round'
+                                        },
+                                        paint: {
+                                          'line-color': '#3b82f6',
+                                          'line-width': 4
+                                        }
+                                      })
+                                      
+                                      // Add markers for origin and destination
+                                      new window.mapboxgl.Marker({ color: 'green' })
+                                        .setLngLat(routeCoords[0])
+                                        .setPopup(new window.mapboxgl.Popup().setHTML(`<div class="p-2"><strong>Origin</strong><br/>${mapData.origin}</div>`))
+                                        .addTo(map)
+                                        
+                                      new window.mapboxgl.Marker({ color: 'red' })
+                                        .setLngLat(routeCoords[routeCoords.length - 1])
+                                        .setPopup(new window.mapboxgl.Popup().setHTML(`<div class="p-2"><strong>Destination</strong><br/>${mapData.destination}</div>`))
+                                        .addTo(map)
+                                      
+                                      // Fit map to route
+                                      const bounds = new window.mapboxgl.LngLatBounds()
+                                      routeCoords.forEach(coord => bounds.extend(coord))
+                                      map.fitBounds(bounds, { padding: 50 })
+                                    }
+                                  })
+                                  .catch(error => console.error('Error generating basic route:', error))
+                              }
                             }
                           })
                         }

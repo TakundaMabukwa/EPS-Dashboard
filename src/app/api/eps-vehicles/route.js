@@ -11,6 +11,11 @@ export async function GET(request) {
     
     if (endpoint === 'by-plate' && plate) {
       url += `/by-plate?plate=${encodeURIComponent(plate)}`
+    } else if (endpoint === 'by-driver') {
+      const driver = searchParams.get('driver')
+      if (driver) {
+        url += `/by-driver?driver=${encodeURIComponent(driver)}`
+      }
     } else if (endpoint === 'count') {
       url += '/count'
     } else if (endpoint === 'active') {
