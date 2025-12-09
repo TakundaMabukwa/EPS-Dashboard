@@ -159,13 +159,93 @@ export default function AuditPage() {
 
   const fetchAuditRecords = async () => {
     try {
-      const { data, error } = await supabase
+      // Fetch audit records with planned data from trips table
+      const { data: auditData, error: auditError } = await supabase
         .from('audit')
         .select('*')
         .order('updated_at', { ascending: false })
 
-      if (error) throw error
-      setAuditRecords(data || [])
+      if (auditError) throw auditError
+
+      // Fetch corresponding trips data for planned values
+      const tripIds = (auditData || []).map(record => record.trip_id).filter(Boolean)
+      
+      let tripsData = []
+      if (tripIds.length > 0) {
+        const { data: trips, error: tripsError } = await supabase
+          .from('trips')
+          .select('trip_id, approximate_fuel_cost, approximated_vehicle_cost, approximated_driver_cost, total_vehicle_cost, estimated_distance, pickuplocations, dropofflocations, fuel_price_per_liter, rate, actual_start_time, actual_end_time')
+          .in('trip_id', tripIds)
+        
+        if (!tripsError) {
+          tripsData = trips || []
+        }
+      }
+
+      // Merge audit data with planned data from trips
+      const enrichedData = (auditData || []).map(auditRecord => {
+        const tripData = tripsData.find(trip => trip.trip_id === auditRecord.trip_id)
+        
+        if (tripData) {
+          // Extract planned times from pickup/dropoff locations
+          let pickupLocs = []
+          let dropoffLocs = []
+          
+          try {
+            pickupLocs = typeof tripData.pickuplocations === 'string' 
+              ? JSON.parse(tripData.pickuplocations) 
+              : tripData.pickuplocations || []
+            dropoffLocs = typeof tripData.dropofflocations === 'string' 
+              ? JSON.parse(tripData.dropofflocations) 
+              : tripData.dropofflocations || []
+          } catch (e) {
+            console.warn('Error parsing pickup/dropoff locations:', e)
+          }
+          
+          const plannedStartTime = pickupLocs[0]?.scheduled_time || null
+          const plannedFinishTime = dropoffLocs[0]?.scheduled_time || null
+          
+          // Calculate planned duration if both times exist
+          let plannedDurationMinutes = null
+          if (plannedStartTime && plannedFinishTime) {
+            const start = new Date(plannedStartTime)
+            const finish = new Date(plannedFinishTime)
+            plannedDurationMinutes = Math.round((finish.getTime() - start.getTime()) / (1000 * 60))
+          }
+          
+          // Calculate actual fuel cost: Distance × Fuel Price per KM
+          const actualDistance = parseFloat(auditRecord.actual_distance || auditRecord.distance || 0)
+          const fuelPricePerKm = parseFloat(auditRecord.fuel_price_used || tripData.fuel_price_per_liter || 0)
+          
+          const calculatedFuelCost = actualDistance > 0 && fuelPricePerKm > 0 
+            ? Math.round(actualDistance * fuelPricePerKm * 100) / 100
+            : parseFloat(auditRecord.actual_fuel_cost || 0)
+          
+          return {
+            ...auditRecord,
+            planned_fuel_cost: tripData.approximate_fuel_cost,
+            planned_vehicle_cost: tripData.approximated_vehicle_cost,
+            planned_driver_cost: tripData.approximated_driver_cost,
+            planned_total_cost: tripData.total_vehicle_cost,
+            planned_distance: tripData.estimated_distance,
+            planned_start_time: plannedStartTime,
+            planned_finish_time: plannedFinishTime,
+            planned_duration_minutes: plannedDurationMinutes,
+            planned_fuel_price: tripData.fuel_price_per_liter,
+            // Use calculated fuel cost instead of stored value
+            actual_fuel_cost: calculatedFuelCost,
+            // Recalculate total cost with new fuel cost
+            actual_total_cost: Math.round((calculatedFuelCost + parseFloat(auditRecord.actual_vehicle_cost || 0) + parseFloat(auditRecord.actual_driver_cost || 0)) * 100) / 100,
+            // Use actual times from trips table if available
+            actual_start_time: tripData.actual_start_time || auditRecord.actual_start_time,
+            actual_finish_time: tripData.actual_end_time || auditRecord.actual_finish_time
+          }
+        }
+        
+        return auditRecord
+      })
+
+      setAuditRecords(enrichedData)
     } catch (error) {
       console.error('Error fetching audit records:', error)
     } finally {
@@ -399,7 +479,23 @@ export default function AuditPage() {
                       {record.trip_id}
                     </td>
                     <td className="px-3 py-2 text-sm text-slate-700">
-                      {record.selectedclient || record.selected_client || 'N/A'}
+                      {(() => {
+                        if (record.selectedclient || record.selected_client) {
+                          return record.selectedclient || record.selected_client
+                        }
+                        if (record.clientdetails || record.client_details) {
+                          try {
+                            const clientData = typeof record.clientdetails === 'string' 
+                              ? JSON.parse(record.clientdetails) 
+                              : record.clientdetails || record.client_details
+                            return clientData?.name || 'N/A'
+                          } catch {
+                            return 'N/A'
+                          }
+                        }
+                        return 'N/A'
+                      })()
+                      }
                     </td>
                     <td className="px-3 py-2 text-sm text-slate-700">
                       {record.cargo || 'N/A'}
