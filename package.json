@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "set NODE_OPTIONS=--max-old-space-size=1536 && next dev",
-    "build": "set NODE_OPTIONS=--max-old-space-size=1536 && next build",
+    "build": "set NODE_OPTIONS=--max-old-space-size=2048 --experimental-worker && next build",
     "start": "set NODE_OPTIONS=--max-old-space-size=1536 && next start",
     "lint": "next lint",
     "postbuild": "next-sitemap",
