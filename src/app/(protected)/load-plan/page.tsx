@@ -97,7 +97,7 @@ export default function LoadPlanPage() {
   
   // Cost calculation state
   const [selectedVehicle, setSelectedVehicle] = useState('')
-  const [fuelPricePerLiter, setFuelPricePerLiter] = useState('21.55')
+  const [fuelPricePerLiter, setFuelPricePerLiter] = useState('9.67')
   const [estimatedDistance, setEstimatedDistance] = useState(0)
   const [approximateFuelCost, setApproximateFuelCost] = useState(0)
   const [approximatedCPK, setApproximatedCPK] = useState(0)
@@ -113,92 +113,108 @@ export default function LoadPlanPage() {
   const [tripDays, setTripDays] = useState(1)
   const [isManuallyOrdered, setIsManuallyOrdered] = useState(false)
 
-  // Rate Card System - Variable Costs
+  // Rate Card System - Complete Costing Model from Excel
   const RATE_CARD_SYSTEM = {
     'TAUTLINER': {
-      fuel_rate: 4070,      // R4,070 fuel component
-      base_rate: 7280,      // R7,280 base rate
-      ppk: 3.00,           // R3.00 per km
-      profit_margin: 0.111, // 11.1%
-      extra_stop: 0,       // No extra stop cost
+      // FIXED COSTS - TRUCK
+      hp_depr: 22000, tracking: 1800, licence: 1295.87, insurance: 12265,
+      // FIXED COSTS - TRAILER
+      trailer_hp_depr: 12000, trailer_licence: 1695, trailer_insurance: 1270,
+      // FIXED COSTS - OVERHEADS
+      admin: 28000, driver_basic: 22320.17,
+      // VARIABLE COSTS
+      rm_per_km: 1.65, breakdowns_per_km: 0.06, diesel_per_litre: 9.67, tolls_per_km: 1.15,
+      overtime_allow: 1.70,
+      // RATE CARD
+      ppk: 3.00, profit_margin: 0.111,
     },
     'TAUT X-BRDER - BOTSWANA': {
-      fuel_rate: 3500,
-      base_rate: 6500,
-      ppk: 2.80,
-      profit_margin: 0.10,
-      extra_stop: 500,
+      hp_depr: 10000, tracking: 1800, licence: 1575.44, insurance: 12265,
+      trailer_hp_depr: 12000, trailer_licence: 1695, trailer_insurance: 1270,
+      admin: 28000, driver_basic: 22320.17, xbrdr: 650,
+      rm_per_km: 1.65, breakdowns_per_km: 0.06, diesel_per_litre: 9.67, tolls_per_km: 0.75,
+      overtime_allow: 1.70,
+      ppk: 5.00, profit_margin: 0.162,
     },
     'TAUT X-BRDER - NAMIBIA': {
-      fuel_rate: 3800,
-      base_rate: 7000,
-      ppk: 2.90,
-      profit_margin: 0.10,
-      extra_stop: 500,
+      hp_depr: 10000, tracking: 1800, licence: 1575.44, insurance: 12265,
+      trailer_hp_depr: 12000, trailer_licence: 1695, trailer_insurance: 1270,
+      admin: 28000, driver_basic: 22320.17, xbrdr: 1500,
+      rm_per_km: 1.65, breakdowns_per_km: 0.06, diesel_per_litre: 9.67, tolls_per_km: 1.48,
+      overtime_allow: 1.70,
+      ppk: 5.00, profit_margin: 0.184,
     },
     'CITRUS LOAD (+1 DAY STANDING FPT)': {
-      fuel_rate: 4070,
-      base_rate: 7280,
-      ppk: 3.00,
-      profit_margin: 0.111,
-      extra_stop: 0,
-      standing_day_cost: 2000, // Extra standing day cost
+      hp_depr: 22000, tracking: 1800, licence: 1295.87, insurance: 12265,
+      trailer_hp_depr: 12000, trailer_licence: 1695, trailer_insurance: 1270,
+      admin: 28000, driver_basic: 22320.17,
+      rm_per_km: 1.65, breakdowns_per_km: 0.06, diesel_per_litre: 9.67, tolls_per_km: 1.52,
+      overtime_allow: 1.70,
+      ppk: 5.00, profit_margin: 0.062,
     },
     '14M/15M COMBO (NEW)': {
-      fuel_rate: 3200,
-      base_rate: 6800,
-      ppk: 2.50,
-      profit_margin: 0.12,
-      extra_stop: 300,
+      hp_depr: 22000, tracking: 1800, licence: 1295.87, insurance: 12265,
+      trailer_hp_depr: 8000, trailer_licence: 1406, trailer_insurance: 650,
+      admin: 22000, driver_basic: 22320.17,
+      rm_per_km: 0.90, breakdowns_per_km: 0.06, diesel_per_litre: 8.41, tolls_per_km: 0.82,
+      overtime_allow: 1.30,
+      ppk: 5.00, profit_margin: 0.144,
     },
     '14M/15M REEFER': {
-      fuel_rate: 3500,
-      base_rate: 7500,
-      ppk: 2.80,
-      profit_margin: 0.12,
-      extra_stop: 400,
+      hp_depr: 22000, tracking: 1800, licence: 1295.87, insurance: 12265,
+      trailer_hp_depr: 27000, trailer_licence: 1406, trailer_insurance: 1533,
+      admin: 22000, driver_basic: 22320.17,
+      rm_per_km: 0.90, breakdowns_per_km: 0.06, diesel_per_litre: 9.21, tolls_per_km: 0.82,
+      overtime_allow: 1.30,
+      ppk: 5.00, profit_margin: 0.126,
     },
     '9 METER (NEW)': {
-      fuel_rate: 2800,
-      base_rate: 5500,
-      ppk: 2.20,
-      profit_margin: 0.11,
-      extra_stop: 250,
+      hp_depr: 26000, tracking: 1800, licence: 1025, insurance: 8985,
+      trailer_hp_depr: 8000, trailer_licence: 600, trailer_insurance: 950,
+      admin: 15954, driver_basic: 22320.17,
+      rm_per_km: 1.00, breakdowns_per_km: 0.06, diesel_per_litre: 5.53, tolls_per_km: 0.23,
+      overtime_allow: 2.21,
+      ppk: 5.00, profit_margin: 0.177,
     },
     '8T JHB (NEW - EPS)': {
-      fuel_rate: 2200,
-      base_rate: 4800,
-      ppk: 1.80,
-      profit_margin: 0.10,
-      extra_stop: 200,
+      hp_depr: 22162, tracking: 1358, licence: 873.22, insurance: 8198,
+      trailer_hp_depr: 0, trailer_licence: 0, trailer_insurance: 0,
+      admin: 13620, driver_basic: 22320.17,
+      rm_per_km: 1.00, breakdowns_per_km: 0.06, diesel_per_litre: 4.84, tolls_per_km: 0.15,
+      overtime_allow: 1.71,
+      ppk: 3.00, profit_margin: 0.170,
     },
     '8T JHB (NEW) - X-BRDER - MOZ': {
-      fuel_rate: 2400,
-      base_rate: 5200,
-      ppk: 1.90,
-      profit_margin: 0.10,
-      extra_stop: 300,
+      hp_depr: 22162, tracking: 1358, licence: 873.22, insurance: 8198,
+      trailer_hp_depr: 0, trailer_licence: 0, trailer_insurance: 0,
+      admin: 13620, driver_basic: 22320.17, xbrdr: 1500,
+      rm_per_km: 1.00, breakdowns_per_km: 0.06, diesel_per_litre: 4.84, tolls_per_km: 1.37,
+      overtime_allow: 1.71,
+      ppk: 5.29, profit_margin: 0.253,
     },
     '8T JHB (OLD)': {
-      fuel_rate: 2000,
-      base_rate: 4200,
-      ppk: 1.60,
-      profit_margin: 0.09,
-      extra_stop: 150,
+      hp_depr: 10000, tracking: 1358, licence: 873.22, insurance: 3686,
+      trailer_hp_depr: 0, trailer_licence: 0, trailer_insurance: 0,
+      admin: 13620, driver_basic: 22320.17,
+      rm_per_km: 1.00, breakdowns_per_km: 0.06, diesel_per_litre: 4.84, tolls_per_km: 0.15,
+      overtime_allow: 1.71,
+      ppk: 4.00, profit_margin: 0.214,
     },
     '14 TON CURTAIN': {
-      fuel_rate: 3400,
-      base_rate: 6200,
-      ppk: 2.60,
-      profit_margin: 0.11,
-      extra_stop: 350,
+      hp_depr: 36500, tracking: 1150, licence: 1234.16, insurance: 10941,
+      trailer_hp_depr: 0, trailer_licence: 0, trailer_insurance: 0,
+      admin: 18288, driver_basic: 22320.17,
+      rm_per_km: 0.70, breakdowns_per_km: 0.06, diesel_per_litre: 5.53, tolls_per_km: 0.60,
+      overtime_allow: 1.50,
+      ppk: 5.00, profit_margin: 0.176,
     },
     '1TON BAKKIE': {
-      fuel_rate: 1200,
-      base_rate: 2800,
-      ppk: 1.20,
-      profit_margin: 0.08,
-      extra_stop: 100,
+      hp_depr: 2500, tracking: 1358, licence: 873.22, insurance: 3686,
+      trailer_hp_depr: 0, trailer_licence: 0, trailer_insurance: 0,
+      admin: 10000, driver_basic: 22320.17,
+      rm_per_km: 1.00, breakdowns_per_km: 0.06, diesel_per_litre: 1.93, tolls_per_km: 0.15,
+      overtime_allow: 1.71,
+      ppk: 1.50, profit_margin: 0.169,
     },
   }
 
@@ -318,18 +334,20 @@ export default function LoadPlanPage() {
   // Vehicle type options
   const vehicleTypeOptions = [
     'TAUTLINER',
-    'TAUT X-BRDER - BOTSWANA',
-    'TAUT X-BRDER - NAMIBIA', 
-    'CITRUS LOAD (+1 DAY STANDING FPT)',
-    '14M/15M COMBO (NEW)',
-    '14M/15M REEFER',
-    '9 METER (NEW)',
-    '8T JHB (NEW - EPS)',
-    '8T JHB (NEW) - X-BRDER - MOZ',
-    '8T JHB (OLD)',
-    '14 TON CURTAIN',
-    '1TON BAKKIE'
+    'Float/Volumax',
+    '14M',
+    '15M',
+    '8 Tonner'
   ]
+  
+  // Map display names to rate card keys
+  const vehicleTypeMapping = {
+    'TAUTLINER': 'TAUTLINER',
+    'Float/Volumax': '14M/15M REEFER',
+    '14M': '14M/15M COMBO (NEW)',
+    '15M': '14M/15M COMBO (NEW)',
+    '8 Tonner': '8T JHB (NEW - EPS)'
+  }
 
   // Filter vehicles based on selected type
   const filteredVehicles = useMemo(() => {
@@ -679,48 +697,57 @@ export default function LoadPlanPage() {
     calculateRouteDistance()
   }, [loadingLocation, dropOffPoint])
 
-  // Rate Card Calculation Function
+  // Rate Card Calculation Function - Matches Excel COSTING Sheet
   const calculateRateCardCost = useCallback((vehicleType, kms, days) => {
-    if (!vehicleType || !RATE_CARD_SYSTEM[vehicleType]) {
+    if (!vehicleType) {
       return {
-        fuel_cost: 0,
-        base_cost: 0,
-        transport_cost: 0,
-        extra_stop_cost: 0,
-        standing_day_cost: 0,
-        profit_amount: 0,
-        total_transport: 0,
-        ppk_cost: 0
+        fuel_cost: 0, base_cost: 0, transport_cost: 0, profit_amount: 0, total_transport: 0,
+        total_fixed: 0, total_variable: 0
       }
     }
 
-    const rateCard = RATE_CARD_SYSTEM[vehicleType]
+    const rateCardKey = vehicleTypeMapping[vehicleType] || vehicleType
+    const rc = RATE_CARD_SYSTEM[rateCardKey]
     
-    // Rate Card Components
-    const fuel_cost = rateCard.fuel_rate // Fixed fuel component
-    const base_cost = rateCard.base_rate // Fixed base rate
-    const ppk_cost = kms * rateCard.ppk  // Per kilometer cost
-    const extra_stop_cost = rateCard.extra_stop || 0
-    const standing_day_cost = (rateCard.standing_day_cost || 0) * (days > 1 ? days - 1 : 0)
+    if (!rc) {
+      return {
+        fuel_cost: 0, base_cost: 0, transport_cost: 0, profit_amount: 0, total_transport: 0,
+        total_fixed: 0, total_variable: 0
+      }
+    }
     
-    // Transport Cost = Fuel + Base + PPK + Standing Days
-    const transport_cost = fuel_cost + base_cost + ppk_cost + standing_day_cost
+    // FIXED COSTS (prorated by days)
+    const fixed_truck = (rc.hp_depr + rc.tracking + rc.licence + rc.insurance) / 30 * days
+    const fixed_trailer = (rc.trailer_hp_depr + rc.trailer_licence + rc.trailer_insurance) / 30 * days
+    const fixed_overheads = (rc.admin + rc.driver_basic) / 30 * days
+    const fixed_xbrdr = (rc.xbrdr || 0)
+    const total_fixed = fixed_truck + fixed_trailer + fixed_overheads + fixed_xbrdr
     
-    // Profit Calculation
-    const profit_amount = transport_cost * rateCard.profit_margin
+    // VARIABLE COSTS (distance-based)
+    const rm_cost = kms * rc.rm_per_km
+    const breakdowns_cost = kms * rc.breakdowns_per_km
+    const diesel_cost = kms * rc.diesel_per_litre
+    const tolls_cost = kms * rc.tolls_per_km
+    const overtime_cost = kms * rc.overtime_allow
+    const total_variable = rm_cost + breakdowns_cost + diesel_cost + tolls_cost + overtime_cost
     
-    // Total Transport = Transport + Profit + Extra Stops
-    const total_transport = transport_cost + profit_amount + extra_stop_cost
+    // TOTAL COST
+    const total_cost = total_fixed + total_variable
+    
+    // PROFIT
+    const profit_amount = total_cost * rc.profit_margin
+    
+    // REVENUE
+    const total_transport = total_cost + profit_amount
 
     return {
-      fuel_cost,
-      base_cost,
-      transport_cost,
-      extra_stop_cost,
-      standing_day_cost,
+      fuel_cost: diesel_cost,
+      base_cost: total_fixed,
+      transport_cost: total_cost,
       profit_amount,
       total_transport,
-      ppk_cost
+      total_fixed,
+      total_variable
     }
   }, [RATE_CARD_SYSTEM])
 
@@ -729,10 +756,14 @@ export default function LoadPlanPage() {
     if (selectedVehicleType && estimatedDistance > 0) {
       const costBreakdown = calculateRateCardCost(selectedVehicleType, estimatedDistance, tripDays)
       
+      // Display breakdown components
       setApproximateFuelCost(costBreakdown.fuel_cost)
-      setApproximatedVehicleCost(costBreakdown.base_cost + costBreakdown.ppk_cost)
-      setApproximatedDriverCost(costBreakdown.standing_day_cost + costBreakdown.extra_stop_cost)
-      setTotalVehicleCost(costBreakdown.total_transport)
+      setApproximatedVehicleCost(costBreakdown.total_fixed)
+      setApproximatedDriverCost(costBreakdown.total_variable - costBreakdown.fuel_cost)
+      
+      // Total = Rate Card Total + Goods in Transit Premium
+      const total = costBreakdown.total_transport + (parseFloat(goodsInTransitPremium) || 0)
+      setTotalVehicleCost(total)
       
       // CPK = total cost per kilometer
       const cpk = estimatedDistance > 0 ? costBreakdown.total_transport / estimatedDistance : 0
@@ -745,22 +776,12 @@ export default function LoadPlanPage() {
       setTotalVehicleCost(0)
       setApproximatedCPK(0)
     }
-  }, [selectedVehicleType, estimatedDistance, tripDays, calculateRateCardCost])
+  }, [selectedVehicleType, estimatedDistance, tripDays, goodsInTransitPremium, fuelPricePerLiter, calculateRateCardCost])
 
   // Note: Vehicle and driver costs are now handled by the rate card system
   // Legacy cost calculations removed to prevent conflicts with rate card system
 
-  // Calculate total cost using rate card system
-  useEffect(() => {
-    if (selectedVehicleType && estimatedDistance > 0) {
-      const costBreakdown = calculateRateCardCost(selectedVehicleType, estimatedDistance, tripDays)
-      const total = costBreakdown.total_transport + (parseFloat(goodsInTransitPremium) || 0)
-      setTotalVehicleCost(total)
-    } else {
-      const total = approximateFuelCost + approximatedVehicleCost + approximatedDriverCost + (parseFloat(goodsInTransitPremium) || 0)
-      setTotalVehicleCost(total)
-    }
-  }, [selectedVehicleType, estimatedDistance, tripDays, approximateFuelCost, approximatedVehicleCost, approximatedDriverCost, goodsInTransitPremium, calculateRateCardCost])
+
 
   // Calculate distance from point to route line
   const distanceToRoute = useCallback((pointLat, pointLng, routeCoords) => {

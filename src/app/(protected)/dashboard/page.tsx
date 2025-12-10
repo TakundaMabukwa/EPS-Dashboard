@@ -212,7 +212,7 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
 
   return (
     <div className={cn(
-      "w-[30%] rounded-xl p-4 bg-white/30 backdrop-blur-md border border-white/10 shadow-lg transition-transform duration-200 hover:scale-[1.02] hover:shadow-2xl",
+      "w-[30%] rounded-xl p-3 bg-white/30 backdrop-blur-md border border-white/10 shadow-lg transition-transform duration-200 hover:scale-[1.02] hover:shadow-2xl",
       trip.unauthorized_stops_count > 0 && trip.status?.toLowerCase() !== 'delivered'
         ? isFlashing
           ? "ring-2 ring-red-400 animate-pulse"
@@ -222,9 +222,9 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
       {/* Top accent */}
       <div className="h-1 w-full rounded-full bg-gradient-to-r from-blue-400 via-blue-400  to-indigo-500 mb-3 opacity-90" />
 
-      <div className="flex items-center gap-3 mb-3">
+      <div className="flex items-center gap-2 mb-2">
         <div
-          className="w-10 h-10 rounded-lg flex items-center justify-center text-sm font-semibold text-white"
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-semibold text-white"
           style={{
             background: "linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%)",
             boxShadow: "0 6px 18px rgba(59,130,246,0.18)"
@@ -233,18 +233,31 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
           {initials}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold text-slate-900 truncate">{typeof driverInfo?.surname === 'string' ? driverInfo.surname : String(driverInfo?.surname || 'Unassigned')}</div>
+          <div className="text-xs font-semibold text-slate-900 truncate">{typeof driverInfo?.surname === 'string' ? driverInfo.surname : String(driverInfo?.surname || 'Unassigned')}</div>
           <div className="text-xs text-slate-600">{driverInfo ? driverInfo.phone_number : 'No driver assigned'}</div>
         </div>
         <div className="flex-shrink-0">
           <span className={cn(
-            "px-2 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide",
+            "px-1.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide",
             driverInfo?.available ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
           )}>
             {driverInfo?.available ? 'Available' : 'Unavailable'}
           </span>
         </div>
       </div>
+
+      {/* Rate Information */}
+      {trip.rate && (
+        <div className="mb-2 p-2 rounded-lg bg-white/20 border border-white/5">
+          <div className="flex items-center gap-1 mb-1">
+            <div className="w-1.5 h-1.5 bg-green-500 rounded-full" />
+            <span className="text-xs font-medium text-slate-700 uppercase">Rate</span>
+          </div>
+          <div className="text-xs font-medium text-green-600">
+            R{parseFloat(trip.rate).toLocaleString()}
+          </div>
+        </div>
+      )}
 
       {/* Unauthorized Stop Alert */}
       {trip.unauthorized_stops_count > 0 && trip.status?.toLowerCase() !== 'delivered' && (
@@ -271,27 +284,27 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
         </div>
       )}
 
-      <div className="mb-3 p-3 rounded-lg bg-white/20 border border-white/5">
-        <div className="flex items-center gap-2 mb-1">
+      <div className="mb-2 p-2 rounded-lg bg-white/20 border border-white/5">
+        <div className="flex items-center gap-1 mb-1">
           <div className="w-1.5 h-1.5 bg-slate-500 rounded-full" />
           <span className="text-xs font-medium text-slate-700 uppercase">Note</span>
         </div>
-        <div className="text-sm text-slate-900">{trip.status_notes || 'No notes added'}</div>
+        <div className="text-xs text-slate-900">{trip.status_notes || 'No notes added'}</div>
       </div>
 
-      <div className="mb-3 p-3 rounded-lg bg-white/20 border border-white/5">
-        <div className="flex items-center gap-2 mb-1">
+      <div className="mb-2 p-2 rounded-lg bg-white/20 border border-white/5">
+        <div className="flex items-center gap-1 mb-1">
           <div className="w-1.5 h-1.5 bg-slate-500 rounded-full" />
           <span className="text-xs font-medium text-slate-700 uppercase">Vehicle</span>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-slate-900 truncate">
+          <span className="text-xs font-medium text-slate-900 truncate">
             {vehicleLocation?.plate || vehicleInfo?.registration_number || assignment?.vehicle?.name || 'Not assigned'}
           </span>
-          <span className="text-xs text-slate-500">{vehicleLocation ? `Speed: ${vehicleLocation.speed} km/h` : ''}</span>
+          <span className="text-xs text-slate-500">{vehicleLocation ? `${vehicleLocation.speed} km/h` : ''}</span>
         </div>
         {vehicleLocation && (
-          <div className="mt-2 text-xs text-slate-600">
+          <div className="mt-1 text-xs text-slate-600 truncate">
             {vehicleLocation.address}
           </div>
         )}
@@ -347,6 +360,11 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
                   const plateResponse = await fetch(`/api/eps-vehicles?endpoint=by-plate&plate=${encodeURIComponent(vehicleInfo.registration_number)}`);
                   if (plateResponse.ok) {
                     vehicleData = await plateResponse.json();
+                    // Check if we got timeout/error response
+                    if (vehicleData.error === 'Connection timeout') {
+                      console.log('GPS service timeout - will show route only');
+                      vehicleData = null;
+                    }
                   }
                 }
                 
@@ -355,7 +373,10 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
                   console.log('Track button: Plate lookup failed, trying driver name:', driverName);
                   const driverResponse = await fetch(`/api/eps-vehicles?endpoint=by-driver&driver=${encodeURIComponent(driverName)}`);
                   if (driverResponse.ok) {
-                    vehicleData = await driverResponse.json();
+                    const driverData = await driverResponse.json();
+                    if (driverData.error !== 'Connection timeout') {
+                      vehicleData = driverData;
+                    }
                   }
                 }
                 
@@ -379,7 +400,7 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
               }
             }
 
-            // Use pickup and dropoff locations for optimal routing
+            // Always generate preplanned route
             const pickupLocs = trip.pickup_locations || trip.pickuplocations || [];
             const dropoffLocs = trip.dropoff_locations || trip.dropofflocations || [];
             
@@ -389,14 +410,37 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
             if (pickup && dropoff) {
               try {
                 const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-                const response = await fetch(`https://api.mapbox.com/directions/v5/mapbox/driving/${encodeURIComponent(pickup)};${encodeURIComponent(dropoff)}?access_token=${mapboxToken}&geometries=geojson&overview=full&exclude=ferry&alternatives=true&steps=true`);
+                let waypoints = `${encodeURIComponent(pickup)};${encodeURIComponent(dropoff)}`;
+                
+                // Add stop points if available
+                const selectedStopPoints = trip.selected_stop_points || trip.selectedstoppoints || [];
+                if (selectedStopPoints.length > 0) {
+                  const stopPointIds = selectedStopPoints.map(stop => typeof stop === 'object' ? stop.id : stop);
+                  const { data: stopPointsData } = await supabase
+                    .from('stop_points')
+                    .select('coordinates')
+                    .in('id', stopPointIds);
+                  
+                  const stopWaypoints = (stopPointsData || []).map(point => {
+                    if (point.coordinates) {
+                      const coords = point.coordinates.split(' ')[0].split(',');
+                      return `${coords[1]},${coords[0]}`; // lat,lng for geocoding
+                    }
+                  }).filter(Boolean);
+                  
+                  if (stopWaypoints.length > 0) {
+                    waypoints = `${encodeURIComponent(pickup)};${stopWaypoints.join(';')};${encodeURIComponent(dropoff)}`;
+                  }
+                }
+                
+                const response = await fetch(`https://api.mapbox.com/directions/v5/mapbox/driving/${waypoints}?access_token=${mapboxToken}&geometries=geojson&overview=full&exclude=ferry`);
                 const routeData = await response.json();
                 if (routeData.routes && routeData.routes[0]) {
                   routeCoords = routeData.routes[0].geometry.coordinates;
-                  console.log('Generated optimal route:', routeCoords.length, 'points');
+                  console.log('Generated preplanned route with', routeCoords.length, 'points');
                 }
               } catch (error) {
-                console.error('Error generating route:', error);
+                console.error('Error generating preplanned route:', error);
               }
             }
             
@@ -414,6 +458,26 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
                 } else if (route?.route_data?.geometry?.coordinates) {
                   routeCoords = route.route_data.geometry.coordinates;
                 }
+              }
+            }
+            
+            // Generate best route if no route available
+            if (!routeCoords && (pickup || dropoff || trip.origin || trip.destination)) {
+              try {
+                const origin = pickup || trip.origin;
+                const destination = dropoff || trip.destination;
+                
+                if (origin && destination) {
+                  const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+                  const response = await fetch(`https://api.mapbox.com/directions/v5/mapbox/driving/${encodeURIComponent(origin)};${encodeURIComponent(destination)}?access_token=${mapboxToken}&geometries=geojson&overview=full&alternatives=true`);
+                  const routeData = await response.json();
+                  if (routeData.routes && routeData.routes[0]) {
+                    routeCoords = routeData.routes[0].geometry.coordinates;
+                    console.log('Generated fallback route:', routeCoords.length, 'points');
+                  }
+                }
+              } catch (error) {
+                console.error('Error generating fallback route:', error);
               }
             }
 
@@ -745,7 +809,7 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
             />
             {/* Trip Card - 70% */}
             <div className={cn(
-              "w-[70%] rounded-xl p-4 bg-white shadow-sm border border-slate-200 transition-transform duration-200 hover:scale-[1.01] text-black",
+              "w-[70%] rounded-xl p-3 bg-white shadow-sm border border-slate-200 transition-transform duration-200 hover:scale-[1.01] text-black",
               trip.unauthorized_stops_count > 0 && trip.status?.toLowerCase() !== 'delivered'
               ? "ring-2 ring-red-400"
               : "ring-0"
@@ -782,10 +846,10 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
                         (trip.alert_message && ((Array.isArray(trip.alert_message) && trip.alert_message.length > 0) || 
                          (typeof trip.alert_message === 'string' && trip.alert_message.trim() !== ''))));
               })() && (
-              <div className="rounded-md p-3 mb-3 text-sm bg-red-50 border border-red-200">
-                <div className="flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
-                  <div className="flex-1">
+              <div className="rounded-md p-2 mb-2 text-xs bg-red-50 border border-red-200">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-3 h-3 text-red-600 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
                     {(() => {
                       if (trip.alert_message) {
                         let latestAlert = null;
@@ -796,37 +860,18 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
                         }
                         
                         if (latestAlert) {
+                          const message = typeof latestAlert === 'object' ? latestAlert.message : latestAlert;
+                          const shortMessage = message.length > 60 ? message.substring(0, 60) + '...' : message;
                           return (
-                            <div>
-                              <div className="text-sm font-medium text-red-700 mb-1">
-                                {typeof latestAlert === 'object' ? 
-                                  (latestAlert.type?.replace('_', ' ').toUpperCase() || 'ALERT') : 
-                                  'LATEST ALERT'
-                                }
-                              </div>
-                              <div className="text-sm text-red-600">
-                                {typeof latestAlert === 'object' ? latestAlert.message : latestAlert}
-                              </div>
-                              {typeof latestAlert === 'object' && latestAlert.timestamp && (
-                                <div className="text-xs text-red-500 mt-1">
-                                  {new Date(latestAlert.timestamp).toLocaleString()}
-                                </div>
-                              )}
+                            <div className="text-red-700 font-medium truncate">
+                              {shortMessage}
                             </div>
                           );
                         }
                       }
                       
-                      if (trip.alert_type) {
-                        return (
-                          <div className="text-sm font-medium text-red-700">
-                            {trip.alert_type.replace('_', ' ').toUpperCase()}
-                          </div>
-                        );
-                      }
-                      
                       return (
-                        <div className="text-sm font-medium text-red-700">
+                        <div className="text-red-700 font-medium">
                           Unauthorized Stop — {trip.unauthorized_stops_count} detected
                         </div>
                       );
@@ -837,7 +882,7 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-6 text-xs border-red-300 text-red-700 hover:bg-red-100"
+                      className="h-5 px-2 text-xs border-red-300 text-red-700 hover:bg-red-100"
                       onClick={() => {
                         let alerts = [];
                         if (Array.isArray(trip.alert_message)) {
@@ -851,30 +896,30 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
                         }
                       }}
                     >
-                      View All
+                      View
                     </Button>
                   )}
                 </div>
               </div>
               )}
 
-              <div className="p-3">
+              <div className="p-2">
               {/* Header Section */}
-              <div className="flex items-start justify-between mb-3">
+              <div className="flex items-start justify-between mb-2">
               <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-3 mb-1">
-              <div className="w-9 h-9 bg-indigo-100 rounded-lg flex items-center justify-center border border-indigo-200">
-              <Truck className="w-4 h-4 text-indigo-700" />
+              <div className="flex items-center gap-2 mb-1">
+              <div className="w-7 h-7 bg-indigo-100 rounded-lg flex items-center justify-center border border-indigo-200">
+              <Truck className="w-3 h-3 text-indigo-700" />
               </div>
               <div className="min-w-0">
-              <h3 className="font-semibold text-black text-sm truncate">{title}</h3>
+              <h3 className="font-semibold text-black text-xs truncate">{title}</h3>
               <p className="text-xs text-gray-700">Trip #{trip.trip_id || trip.id}</p>
               </div>
               </div>
               </div>
               <div className="flex flex-col items-end">
               <span className={cn(
-              "px-2 py-1 rounded-full text-xs font-semibold uppercase tracking-wide",
+              "px-2 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide",
               trip.status?.toLowerCase() === 'delivered' ? 'bg-emerald-100 text-emerald-800' :
               trip.status?.toLowerCase() === 'on-trip' ? 'bg-sky-100 text-sky-800' :
               ['pending', 'accepted'].includes(trip.status?.toLowerCase()) ? 'bg-amber-100 text-amber-800' :
@@ -888,16 +933,16 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
               </div>
 
               {/* Route Information */}
-              <div className="grid grid-cols-2 gap-2 mb-3">
-              <div className="bg-white rounded-lg p-2 border border-slate-100">
-              <div className="flex items-center gap-1 mb-1">
+              <div className="grid grid-cols-2 gap-1 mb-2">
+              <div className="bg-white rounded-lg p-1.5 border border-slate-100">
+              <div className="flex items-center gap-1 mb-0.5">
               <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></div>
               <span className="text-xs font-medium text-gray-700 uppercase">Pickup</span>
               </div>
               <p className="text-xs font-medium text-black truncate">{trip.origin || 'Not specified'}</p>
               </div>
-              <div className="bg-white rounded-lg p-2 border border-slate-100">
-              <div className="flex items-center gap-1 mb-1">
+              <div className="bg-white rounded-lg p-1.5 border border-slate-100">
+              <div className="flex items-center gap-1 mb-0.5">
               <div className="w-1.5 h-1.5 bg-red-500 rounded-full"></div>
               <span className="text-xs font-medium text-gray-700 uppercase">Drop-off</span>
               </div>
@@ -970,6 +1015,8 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
               </p>
               </div>
               )}
+
+
 
               {/* Time Information */}
               {(() => {
@@ -2933,73 +2980,142 @@ export default function Dashboard() {
 
       {/* Alerts Modal */}
       {alertsModalOpen && currentTripAlerts && (
-        <div className="fixed inset-0 bg-gray-900/80 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
-            <div className="bg-gray-50 border-b px-6 py-4">
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border-2 border-gray-200 w-full max-w-3xl max-h-[85vh] overflow-hidden">
+            {/* Header */}
+            <div className="px-4 py-3 border-b border-gray-100">
               <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-xl font-semibold text-gray-900">Trip Alerts</h2>
-                  <p className="text-sm text-gray-600">Trip #{currentTripAlerts.tripId}</p>
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center">
+                    <AlertTriangle className="w-4 h-4 text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-semibold text-gray-900">Alerts</h2>
+                    <p className="text-xs text-gray-500">Trip #{currentTripAlerts.tripId}</p>
+                  </div>
                 </div>
-                <Button variant="ghost" size="sm" onClick={() => {
-                  setAlertsModalOpen(false);
-                  setCurrentTripAlerts(null);
-                }}>
-                  <X className="h-4 w-4" />
-                </Button>
+                <button 
+                  onClick={() => {
+                    setAlertsModalOpen(false);
+                    setCurrentTripAlerts(null);
+                  }}
+                  className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
+                >
+                  <X className="w-4 h-4 text-gray-600" />
+                </button>
               </div>
             </div>
             
-            <div className="overflow-y-auto max-h-[calc(90vh-80px)] p-6">
+            {/* Alerts List */}
+            <div className="overflow-y-auto max-h-[calc(85vh-80px)]">
               {currentTripAlerts.alerts && currentTripAlerts.alerts.length > 0 ? (
-                <div className="space-y-4">
-                  {currentTripAlerts.alerts.map((alert, index) => (
-                    <div key={index} className="border border-red-200 rounded-lg p-4 bg-red-50">
-                      <div className="flex items-start gap-3">
-                        <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
-                        <div className="flex-1">
-                          {typeof alert === 'object' ? (
-                            <>
-                              {alert.type && (
-                                <div className="text-sm font-semibold text-red-800 uppercase mb-1">
-                                  {alert.type.replace('_', ' ')}
-                                </div>
+                <div className="divide-y divide-gray-100">
+                  {currentTripAlerts.alerts.map((alert, index) => {
+                    const isLatest = index === currentTripAlerts.alerts.length - 1;
+                    const alertMessage = typeof alert === 'object' ? alert.message : alert;
+                    
+                    // Parse vehicle and location from message
+                    const vehicleMatch = alertMessage.match(/Vehicle ([A-Z0-9]+)/);
+                    const locationMatch = alertMessage.match(/at ([^:]+): ([^|]+)/);
+                    const geozoneMatch = alertMessage.match(/Geozone: ([^,]+)/);
+                    
+                    const vehicle = vehicleMatch ? vehicleMatch[1] : null;
+                    const location = locationMatch ? locationMatch[2].trim() : null;
+                    const geozone = geozoneMatch ? geozoneMatch[1].trim() : null;
+                    
+                    return (
+                      <div key={index} className={cn(
+                        "p-4 transition-colors hover:bg-gray-50",
+                        isLatest && "bg-red-50"
+                      )}>
+                        <div className="flex gap-3">
+                          {/* Avatar */}
+                          <div className={cn(
+                            "w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0",
+                            isLatest ? "bg-red-500" : "bg-gray-400"
+                          )}>
+                            <span className="text-white text-xs font-bold">
+                              {vehicle ? vehicle.slice(-2) : "!"}
+                            </span>
+                          </div>
+                          
+                          {/* Content */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              {vehicle && (
+                                <span className="text-sm font-semibold text-gray-900">
+                                  {vehicle}
+                                </span>
                               )}
-                              {alert.message && (
-                                <div className="text-sm text-red-700 mb-2">
-                                  {alert.message}
-                                </div>
+                              {isLatest && (
+                                <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-medium rounded-full">
+                                  New
+                                </span>
                               )}
-                              {alert.timestamp && (
-                                <div className="text-xs text-red-600">
-                                  {new Date(alert.timestamp).toLocaleString()}
-                                </div>
-                              )}
-                              {alert.location && (
-                                <div className="text-xs text-red-600 mt-1">
-                                  Location: {alert.location.lat?.toFixed(6)}, {alert.location.lng?.toFixed(6)}
-                                </div>
-                              )}
-                            </>
-                          ) : (
-                            <div className="text-sm text-red-700">
-                              {alert}
+                              <span className="text-xs text-gray-500 ml-auto">
+                                {typeof alert === 'object' && alert.timestamp ? 
+                                  new Date(alert.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) :
+                                  'now'
+                                }
+                              </span>
                             </div>
-                          )}
+                            
+                            <p className="text-sm text-gray-700 mb-2">
+                              {location || 'At toll gate'}
+                            </p>
+                            
+                            {geozone && (
+                              <div className="flex items-center gap-1 text-xs text-gray-500">
+                                <MapPin className="w-3 h-3" />
+                                <span className="truncate">{geozone}</span>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
-                <div className="text-center py-16">
-                  <div className="text-gray-400 mb-4">
-                    <AlertTriangle className="w-12 h-12 mx-auto" />
+                <div className="text-center py-12 px-4">
+                  <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <AlertTriangle className="w-6 h-6 text-gray-400" />
                   </div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No Alerts</h3>
-                  <p className="text-gray-500">No alerts found for this trip.</p>
+                  <h3 className="text-sm font-medium text-gray-900 mb-1">No alerts</h3>
+                  <p className="text-xs text-gray-500">All clear for this trip</p>
                 </div>
               )}
+            </div>
+            
+            {/* Action Bar */}
+            <div className="border-t border-gray-100 p-4 bg-gray-50">
+              <div className="flex items-center gap-3">
+                <input
+                  type="text"
+                  placeholder="Add reason for delay..."
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && e.target.value.trim()) {
+                      const reason = e.target.value.trim();
+                      console.log('Delay reason:', reason);
+                      e.target.value = '';
+                    }
+                  }}
+                />
+                <button
+                  onClick={(e) => {
+                    const input = e.target.parentElement.querySelector('input');
+                    if (input.value.trim()) {
+                      const reason = input.value.trim();
+                      console.log('Delay reason:', reason);
+                      input.value = '';
+                    }
+                  }}
+                  className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 transition-colors"
+                >
+                  Add Reason
+                </button>
+              </div>
             </div>
           </div>
         </div>
