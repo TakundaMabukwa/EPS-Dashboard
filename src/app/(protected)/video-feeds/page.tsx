@@ -59,28 +59,28 @@ export default function VideoFeedsPage() {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 overflow-hidden">
+    <div className="h-screen flex flex-col bg-gradient-to-br from-gray-50 via-slate-50 to-gray-100 overflow-hidden">
       {/* Fixed Header - Above Everything */}
-      <div className="flex-none z-50 px-4 py-3 border-b border-slate-700/50 bg-slate-900/95 backdrop-blur-lg shadow-xl">
+      <div className="flex-none z-50 px-4 py-3 border-b border-gray-300 bg-gray-100/95 backdrop-blur-lg shadow-md">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
               size="sm"
               onClick={() => router.back()}
-              className="gap-2 text-slate-300 hover:text-white hover:bg-slate-800"
+              className="gap-2 text-gray-700 hover:text-gray-900 hover:bg-gray-200"
             >
               <ArrowLeft className="w-4 h-4" />
               Back
             </Button>
-            <div className="h-6 w-px bg-slate-700" />
+            <div className="h-6 w-px bg-gray-400" />
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg">
+              <div className="w-9 h-9 rounded-lg bg-gray-800 flex items-center justify-center shadow-md">
                 <Video className="w-5 h-5 text-white" />
               </div>
               <div>
-                <h1 className="text-lg font-bold text-white">Live Camera Feeds</h1>
-                <div className="flex items-center gap-2 text-xs text-slate-400">
+                <h1 className="text-lg font-bold text-gray-900">Live Camera Feeds</h1>
+                <div className="flex items-center gap-2 text-xs text-gray-700">
                   <span className="font-medium">{driverName}</span>
                   <span>•</span>
                   <span>{vehicleInfo}</span>
@@ -88,10 +88,6 @@ export default function VideoFeedsPage() {
               </div>
             </div>
           </div>
-          <Badge variant="outline" className="px-3 py-1.5 bg-green-500/20 border-green-500/50 text-green-400 shadow-lg">
-            <Circle className="w-2 h-2 mr-1.5 fill-green-400 text-green-400 animate-pulse" />
-            {cameras.filter((c) => c.status === "live").length} Live
-          </Badge>
           <Button
             variant="default"
             onClick={() => router.push("/video-alerts")}
@@ -105,7 +101,7 @@ export default function VideoFeedsPage() {
 
       {/* Scrollable Camera Grid Container */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden">
-        <div className="p-4 pb-24">
+        <div className="p-4">
           {/* 2x2 Grid with Larger Cards */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 max-w-[2000px] mx-auto">
             {cameras.map((camera, index) => (
@@ -114,10 +110,10 @@ export default function VideoFeedsPage() {
                 className={cn(
                   "relative overflow-hidden transition-all duration-200 border-2 flex flex-col group hover:scale-[1.01]",
                   selectedCamera === camera.id
-                    ? "border-blue-500 ring-4 ring-blue-500/30 shadow-2xl shadow-blue-500/20"
-                    : "border-slate-700 hover:border-slate-600",
+                    ? "border-gray-400 ring-4 ring-gray-300/50 shadow-xl"
+                    : "border-gray-300 hover:border-gray-400",
                   camera.status === "offline" && "opacity-60",
-                  "bg-slate-950"
+                  "bg-white"
                 )}
                 onClick={() => setSelectedCamera(camera.id)}
               >
@@ -137,42 +133,26 @@ export default function VideoFeedsPage() {
                       />
                     </div>
                   ) : (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-500">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
                       <WifiOff className="w-20 h-20 mb-4 opacity-50" />
                       <span className="text-lg font-medium">Camera Offline</span>
                     </div>
                   )}
 
                   {/* Camera Info Overlay - Bottom */}
-                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black via-black/80 to-transparent p-4 pt-12">
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-gray-900 via-gray-900/90 to-transparent p-4 pt-12">
                     <div className="flex items-center justify-between text-white">
                       <div className="flex items-center gap-3">
                         <Camera className="w-5 h-5" />
                         <span className="text-lg font-bold">{camera.name}</span>
-                        <span className="text-slate-400">•</span>
-                        <span className="text-base text-slate-300">{camera.location}</span>
+                        <span className="text-gray-300">•</span>
+                        <span className="text-base text-gray-200">{camera.location}</span>
                       </div>
                     </div>
                   </div>
                 </div>
               </Card>
             ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Fixed Footer - Bottom */}
-      <div className="flex-none z-50 px-4 py-3 border-t border-slate-700/50 bg-slate-900/95 backdrop-blur-lg shadow-2xl">
-        <div className="flex items-center justify-between text-sm">
-          <div className="flex items-center gap-3 text-slate-300">
-            <Circle className="w-2 h-2 text-green-400 fill-green-400 animate-pulse" />
-            <span className="font-medium">Live Streaming</span>
-            <span className="text-slate-600">•</span>
-            <span className="text-slate-400">{new Date().toLocaleTimeString()}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-slate-400">Powered by</span>
-            <span className="font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-500">EPS Tracking</span>
           </div>
         </div>
       </div>
