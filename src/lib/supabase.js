@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 
 let _supabase = null
 
-export const supabase = (() => {
+export function getSupabase() {
   if (!_supabase) {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -14,4 +14,6 @@ export const supabase = (() => {
     }
   }
   return _supabase
-})()
+}
+
+export const supabase = getSupabase()
