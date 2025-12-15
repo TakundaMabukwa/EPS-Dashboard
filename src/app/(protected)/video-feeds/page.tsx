@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -28,7 +28,7 @@ interface VehicleStream {
   cameras: number;
 }
 
-export default function VideoFeedsPage() {
+function VideoFeedsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [selectedCamera, setSelectedCamera] = useState<string | null>(null);
@@ -282,5 +282,20 @@ export default function VideoFeedsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function VideoFeedsPage() {
+  return (
+    <Suspense fallback={
+      <div className="h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 via-slate-50 to-gray-100">
+        <div className="text-center">
+          <Loader2 className="w-16 h-16 animate-spin text-blue-600 mx-auto mb-4" />
+          <p className="text-lg font-semibold text-gray-700">Loading...</p>
+        </div>
+      </div>
+    }>
+      <VideoFeedsContent />
+    </Suspense>
   );
 }
