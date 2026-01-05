@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server'
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
-
-const supabase = createRouteHandlerClient()
+import { createClient } from '@/lib/supabase/server'
 
 // *****************************
 // update trip
 // *****************************
 export async function PUT(request, { params }) {
+  const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const { id } = params
   const body = await request.json()
@@ -50,6 +49,7 @@ export async function PUT(request, { params }) {
 // delete trip
 // *****************************
 export async function DELETE(request, { params }) {
+  const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const { id } = params
 
