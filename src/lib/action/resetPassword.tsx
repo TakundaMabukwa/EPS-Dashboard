@@ -52,6 +52,7 @@ export async function resetUserPassword(userId: string, email: string) {
 
         return { 
             success: true, 
+            newPassword,
             emailSent: false,
             smsSent: smsResult.success
         };
@@ -79,6 +80,7 @@ export async function resetUserPassword(userId: string, email: string) {
 
         return { 
             success: true, 
+            newPassword,
             emailSent: emailResult.success,
             smsSent: emailResult.smsResult?.success || false
         };

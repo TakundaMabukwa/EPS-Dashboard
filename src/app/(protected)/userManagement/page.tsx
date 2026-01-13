@@ -418,10 +418,14 @@ export default function SettingsPage() {
                 if (user?.role === 'driver') {
                     const smsStatus = result.smsSent ? 'SMS sent to driver' : 'SMS failed';
                     toast.success(`Driver password updated to driver code. ${smsStatus}.`);
+                    console.log('New driver password:', result.newPassword);
+                    alert(`Password Reset Successful\n\nNew Password: ${result.newPassword}\n\n${smsStatus}`);
                 } else {
                     const emailStatus = result.emailSent ? 'Email sent' : 'Email failed';
                     const smsStatus = result.smsSent ? 'SMS sent' : 'SMS failed';
                     toast.success(`Password updated successfully. ${emailStatus}, ${smsStatus}.`);
+                    console.log('New password:', result.newPassword);
+                    alert(`Password Reset Successful\n\nNew Password: ${result.newPassword}\n\n${emailStatus}, ${smsStatus}`);
                 }
             } else {
                 toast.error('Failed to update password: ' + result.error);
