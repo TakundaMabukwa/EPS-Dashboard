@@ -25,8 +25,8 @@ export async function CreateUser(formData: FormData) {
         return { success: false, message: "Invalid role selected" };
     }
 
-    // Generate password - use EPS83782 for drivers, temp password for others
-    const tempPassword = role === 'driver' ? 'EPS83782' : generateTempPassword();
+    // Generate password - use driver code for drivers, temp password for others
+    const tempPassword = role === 'driver' ? `EPS${driverCode}` : generateTempPassword();
     console.log('Generated password for role', role, ':', tempPassword);
 
     // Create Supabase client with service role
@@ -108,6 +108,20 @@ export async function CreateUser(formData: FormData) {
     // Handle driver creation
     if (role === 'driver') {
         const fullDriverCode = `EPS${driverCode}`;
+        const firstName = formData.get("driverFirstName") as string || email;
+        const surname = formData.get("driverSurname") as string || "";
+        const idNumber = formData.get("driverIdNumber") as string || "";
+        const licenseNumber = formData.get("driverLicenseNumber") as string || "";
+        const licenseExpiry = formData.get("driverLicenseExpiry") as string || null;
+        const licenseCode = formData.get("driverLicenseCode") as string || "";
+        const salary = formData.get("driverSalary") as string || null;
+        const hourlyRate = formData.get("driverHourlyRate") as string || null;
+        const saIssued = formData.get("driverSaIssued") === 'true';
+        const pdp = formData.get("driverPdp") === 'true';
+        const pdpExpiry = formData.get("driverPdpExpiry") as string || null;
+        const passportExpiry = formData.get("driverPassportExpiry") as string || null;
+        const medicExamDate = formData.get("driverMedicExamDate") as string || null;
+        const hazCamDate = formData.get("driverHazCamDate") as string || null;
         
         // Check if driver exists by email
         const { data: existingDriver } = await supabase
@@ -122,9 +136,24 @@ export async function CreateUser(formData: FormData) {
                 .from('drivers')
                 .update({
                     user_id: userId,
+                    first_name: firstName,
+                    surname: surname,
                     email_address: email,
                     cell_number: phone,
-                    driver_code: fullDriverCode
+                    driver_code: fullDriverCode,
+                    id_or_passport_number: idNumber,
+                    license_number: licenseNumber,
+                    license_expiry_date: licenseExpiry,
+                    license_code: licenseCode,
+                    salary: salary ? parseFloat(salary) : null,
+                    hourly_rate: hourlyRate ? parseFloat(hourlyRate) : null,
+                    sa_issued: saIssued,
+                    professional_driving_permit: pdp,
+                    pdp_expiry_date: pdpExpiry,
+                    passport_expiry: passportExpiry,
+                    medic_exam_date: medicExamDate,
+                    hazCamDate: hazCamDate,
+                    available: true
                 })
                 .eq('email_address', email);
                 
@@ -137,10 +166,24 @@ export async function CreateUser(formData: FormData) {
                 .from('drivers')
                 .insert({
                     user_id: userId,
-                    first_name: email,
+                    first_name: firstName,
+                    surname: surname,
                     email_address: email,
                     cell_number: phone,
-                    driver_code: fullDriverCode
+                    driver_code: fullDriverCode,
+                    id_or_passport_number: idNumber,
+                    license_number: licenseNumber,
+                    license_expiry_date: licenseExpiry,
+                    license_code: licenseCode,
+                    salary: salary ? parseFloat(salary) : null,
+                    hourly_rate: hourlyRate ? parseFloat(hourlyRate) : null,
+                    sa_issued: saIssued,
+                    professional_driving_permit: pdp,
+                    pdp_expiry_date: pdpExpiry,
+                    passport_expiry: passportExpiry,
+                    medic_exam_date: medicExamDate,
+                    hazCamDate: hazCamDate,
+                    available: true
                 });
                 
             if (driverError) {

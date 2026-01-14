@@ -35,6 +35,7 @@ import { SecureButton } from "@/components/SecureButton"
 import { resetUserPassword } from "@/lib/action/resetPassword"
 import { disableUser } from "@/lib/action/disableUser"
 import { enableUser } from "@/lib/action/enableUser"
+import { Toaster } from "sonner"
 
 interface User {
     id: string
@@ -94,6 +95,20 @@ export default function SettingsPage() {
     const [newUserRole, setNewUserRole] = useState("");
     const [newUserDriverCode, setNewUserDriverCode] = useState("");
     const [newUserPermissions, setNewUserPermissions] = useState<Permission[]>([]);
+    const [driverFirstName, setDriverFirstName] = useState("");
+    const [driverSurname, setDriverSurname] = useState("");
+    const [driverIdNumber, setDriverIdNumber] = useState("");
+    const [driverLicenseNumber, setDriverLicenseNumber] = useState("");
+    const [driverLicenseExpiry, setDriverLicenseExpiry] = useState("");
+    const [driverLicenseCode, setDriverLicenseCode] = useState("");
+    const [driverSalary, setDriverSalary] = useState("");
+    const [driverHourlyRate, setDriverHourlyRate] = useState("");
+    const [driverSaIssued, setDriverSaIssued] = useState(true);
+    const [driverPdp, setDriverPdp] = useState(false);
+    const [driverPdpExpiry, setDriverPdpExpiry] = useState("");
+    const [driverPassportExpiry, setDriverPassportExpiry] = useState("");
+    const [driverMedicExamDate, setDriverMedicExamDate] = useState("");
+    const [driverHazCamDate, setDriverHazCamDate] = useState("");
     const [expandedPages, setExpandedPages] = useState<Set<string>>(new Set());
     const [roleFilter, setRoleFilter] = useState<string>("all");
     const [emailSearch, setEmailSearch] = useState<string>("");
@@ -372,6 +387,22 @@ export default function SettingsPage() {
             formData.append('role', newUserRole);
             formData.append('driverCode', newUserDriverCode);
             formData.append('permissions', JSON.stringify(newUserPermissions));
+            if (newUserRole === 'driver') {
+                formData.append('driverFirstName', driverFirstName);
+                formData.append('driverSurname', driverSurname);
+                formData.append('driverIdNumber', driverIdNumber);
+                formData.append('driverLicenseNumber', driverLicenseNumber);
+                formData.append('driverLicenseExpiry', driverLicenseExpiry);
+                formData.append('driverLicenseCode', driverLicenseCode);
+                formData.append('driverSalary', driverSalary);
+                formData.append('driverHourlyRate', driverHourlyRate);
+                formData.append('driverSaIssued', driverSaIssued.toString());
+                formData.append('driverPdp', driverPdp.toString());
+                formData.append('driverPdpExpiry', driverPdpExpiry);
+                formData.append('driverPassportExpiry', driverPassportExpiry);
+                formData.append('driverMedicExamDate', driverMedicExamDate);
+                formData.append('driverHazCamDate', driverHazCamDate);
+            }
 
             console.log('Calling CreateUser with formData');
             const result = await CreateUser(formData);
@@ -385,6 +416,20 @@ export default function SettingsPage() {
                 setNewUserRole('');
                 setNewUserDriverCode('');
                 setNewUserPermissions([]);
+                setDriverFirstName('');
+                setDriverSurname('');
+                setDriverIdNumber('');
+                setDriverLicenseNumber('');
+                setDriverLicenseExpiry('');
+                setDriverLicenseCode('');
+                setDriverSalary('');
+                setDriverHourlyRate('');
+                setDriverSaIssued(true);
+                setDriverPdp(false);
+                setDriverPdpExpiry('');
+                setDriverPassportExpiry('');
+                setDriverMedicExamDate('');
+                setDriverHazCamDate('');
                 await fetchUsers();
             } else {
                 setResultDialog({
@@ -442,6 +487,7 @@ export default function SettingsPage() {
 
     return (
         <>
+            <Toaster position="top-right" richColors />
             <div className="flex-1 space-y-4 p-4 pt-6">
                 <div className="flex items-center justify-between">
                     <h2 className="text-3xl font-bold tracking-tight">Settings & Administration</h2>
@@ -485,6 +531,20 @@ export default function SettingsPage() {
                                         setNewUserRole('');
                                         setNewUserDriverCode('');
                                         setNewUserPermissions([]);
+                                        setDriverFirstName('');
+                                        setDriverSurname('');
+                                        setDriverIdNumber('');
+                                        setDriverLicenseNumber('');
+                                        setDriverLicenseExpiry('');
+                                        setDriverLicenseCode('');
+                                        setDriverSalary('');
+                                        setDriverHourlyRate('');
+                                        setDriverSaIssued(true);
+                                        setDriverPdp(false);
+                                        setDriverPdpExpiry('');
+                                        setDriverPassportExpiry('');
+                                        setDriverMedicExamDate('');
+                                        setDriverHazCamDate('');
                                     }
                                 }}>
                                 <DialogTrigger asChild>
@@ -494,180 +554,132 @@ export default function SettingsPage() {
                                     </SecureButton>
                                 </DialogTrigger>
                                 <DialogContent className="!max-w-none w-[80vw] max-h-[90vh] overflow-y-auto sm:!max-w-none">
-                                    <DialogHeader className="pb-6">
-                                        <div className="flex items-center gap-3">
-                                            <div className="p-2 bg-blue-100 rounded-lg">
-                                                <User className="h-5 w-5 text-blue-600" />
+                                    <DialogHeader className="pb-4">
+                                        <div className="flex items-center gap-2">
+                                            <div className="p-1.5 bg-blue-100 rounded-lg">
+                                                <User className="h-4 w-4 text-blue-600" />
                                             </div>
-                                            <div>
-                                                <DialogTitle className="text-xl">Add New User</DialogTitle>
-                                                <DialogDescription className="text-sm text-gray-600">
-                                                    Create a new user account with appropriate role and permissions
-                                                </DialogDescription>
-                                            </div>
+                                            <DialogTitle className="text-lg">Add New User</DialogTitle>
                                         </div>
                                     </DialogHeader>
                                     <TooltipProvider>
-                                        <form onSubmit={handleCreateUser} className="space-y-8">
+                                        <form onSubmit={handleCreateUser} className="space-y-4">
                                             <input type="hidden" name="email" value={newUserEmail} />
                                             <input type="hidden" name="phone" value={newUserPhone} />
                                             <input type="hidden" name="role" value={newUserRole} />
                                             <input type="hidden" name="permissions" value={JSON.stringify(newUserPermissions)} />
                                             
-                                            <div className="bg-gray-50 rounded-lg p-6 space-y-6">
-                                                <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                                                    <User className="h-5 w-5" />
-                                                    User Information
-                                                </h3>
-                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                                    <div className="space-y-2">
-                                                        <Label htmlFor="email" className="text-sm font-medium flex items-center gap-2">
-                                                            Email Address
-                                                            <Tooltip>
-                                                                <TooltipTrigger>
-                                                                    <Info className="h-4 w-4 text-gray-400" />
-                                                                </TooltipTrigger>
-                                                                <TooltipContent>
-                                                                    <p>User will receive login credentials at this email</p>
-                                                                </TooltipContent>
-                                                            </Tooltip>
-                                                        </Label>
-                                                        <Input 
-                                                            id="email" 
-                                                            type="email" 
-                                                            placeholder="user@company.com"
-                                                            required 
-                                                            value={newUserEmail}
-                                                            onChange={(e) => setNewUserEmail(e.target.value)}
-                                                            className="h-11"
-                                                        />
+                                            <div className="bg-gray-50 rounded-lg p-4 space-y-4">
+                                                <h3 className="text-sm font-semibold text-gray-900">User Information</h3>
+                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                    <div className="space-y-1.5">
+                                                        <Label htmlFor="email" className="text-xs font-medium">Email Address *</Label>
+                                                        <Input id="email" type="email" placeholder="user@company.com" required value={newUserEmail} onChange={(e) => setNewUserEmail(e.target.value)} className="h-9 text-sm" />
                                                     </div>
-                                                    <div className="space-y-2">
-                                                        <Label htmlFor="phone" className="text-sm font-medium flex items-center gap-2">
-                                                            Phone Number
-                                                            <Tooltip>
-                                                                <TooltipTrigger>
-                                                                    <Info className="h-4 w-4 text-gray-400" />
-                                                                </TooltipTrigger>
-                                                                <TooltipContent>
-                                                                    <p>Contact number for the user</p>
-                                                                </TooltipContent>
-                                                            </Tooltip>
-                                                        </Label>
-                                                        <Input 
-                                                            id="phone" 
-                                                            type="tel" 
-                                                            placeholder="073 123 4567"
-                                                            required 
-                                                            value={newUserPhone}
-                                                            onChange={(e) => setNewUserPhone(e.target.value)}
-                                                            className="h-11"
-                                                        />
+                                                    <div className="space-y-1.5">
+                                                        <Label htmlFor="phone" className="text-xs font-medium">Phone Number *</Label>
+                                                        <Input id="phone" type="tel" placeholder="073 123 4567" required value={newUserPhone} onChange={(e) => setNewUserPhone(e.target.value)} className="h-9 text-sm" />
                                                     </div>
-                                                    <div className="space-y-2">
-                                                        <Label htmlFor="role" className="text-sm font-medium flex items-center gap-2">
-                                                            User Role
-                                                            <Tooltip>
-                                                                <TooltipTrigger>
-                                                                    <Info className="h-4 w-4 text-gray-400" />
-                                                                </TooltipTrigger>
-                                                                <TooltipContent>
-                                                                    <p>Role determines default permissions and access level</p>
-                                                                </TooltipContent>
-                                                            </Tooltip>
-                                                        </Label>
-                                                        <Select 
-                                                            value={newUserRole} 
-                                                            onValueChange={(value) => {
-                                                                setNewUserRole(value);
-                                                                setNewUserPermissions(DEFAULT_ROLE_PERMISSIONS[value] || []);
-                                                            }}
-                                                        >
-                                                            <SelectTrigger className="h-11">
-                                                                <SelectValue placeholder="Choose user role" />
-                                                            </SelectTrigger>
+                                                    <div className="space-y-1.5">
+                                                        <Label htmlFor="role" className="text-xs font-medium">User Role *</Label>
+                                                        <Select value={newUserRole} onValueChange={(value) => { setNewUserRole(value); setNewUserPermissions(DEFAULT_ROLE_PERMISSIONS[value] || []); }}>
+                                                            <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Choose role" /></SelectTrigger>
                                                             <SelectContent>
-                                                                <SelectItem value="admin">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <Shield className="h-4 w-4 text-red-500" />
-                                                                        <div>
-                                                                            <div className="font-medium">Administrator</div>
-                                                                            <div className="text-xs text-gray-500">Full system access and user management</div>
-                                                                        </div>
-                                                                    </div>
-                                                                </SelectItem>
-                                                                <SelectItem value="fleet manager">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <Users className="h-4 w-4 text-blue-500" />
-                                                                        <div>
-                                                                            <div className="font-medium">Fleet Manager</div>
-                                                                            <div className="text-xs text-gray-500">Manage vehicles, drivers, and operations</div>
-                                                                        </div>
-                                                                    </div>
-                                                                </SelectItem>
-                                                                <SelectItem value="driver">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <User className="h-4 w-4 text-purple-500" />
-                                                                        <div>
-                                                                            <div className="font-medium">Driver</div>
-                                                                            <div className="text-xs text-gray-500">Driver access to mobile app</div>
-                                                                        </div>
-                                                                    </div>
-                                                                </SelectItem>
-                                                                <SelectItem value="fc">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <Eye className="h-4 w-4 text-green-500" />
-                                                                        <div>
-                                                                            <div className="font-medium">Fleet Controller</div>
-                                                                            <div className="text-xs text-gray-500">Monitor and track fleet operations</div>
-                                                                        </div>
-                                                                    </div>
-                                                                </SelectItem>
-                                                                <SelectItem value="customer">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <Building className="h-4 w-4 text-orange-500" />
-                                                                        <div>
-                                                                            <div className="font-medium">External User</div>
-                                                                            <div className="text-xs text-gray-500">Limited access for external partners</div>
-                                                                        </div>
-                                                                    </div>
-                                                                </SelectItem>
+                                                                <SelectItem value="admin"><div className="text-sm">Administrator</div></SelectItem>
+                                                                <SelectItem value="fleet manager"><div className="text-sm">Fleet Manager</div></SelectItem>
+                                                                <SelectItem value="driver"><div className="text-sm">Driver</div></SelectItem>
+                                                                <SelectItem value="fc"><div className="text-sm">Fleet Controller</div></SelectItem>
+                                                                <SelectItem value="customer"><div className="text-sm">External User</div></SelectItem>
                                                             </SelectContent>
                                                         </Select>
                                                     </div>
                                                     {newUserRole === 'driver' && (
-                                                        <div className="space-y-2">
-                                                            <Label htmlFor="driverCode" className="text-sm font-medium flex items-center gap-2">
-                                                                Driver Code
-                                                                <Tooltip>
-                                                                    <TooltipTrigger>
-                                                                        <Info className="h-4 w-4 text-gray-400" />
-                                                                    </TooltipTrigger>
-                                                                    <TooltipContent>
-                                                                        <p>Enter numbers only (EPS prefix will be added automatically)</p>
-                                                                    </TooltipContent>
-                                                                </Tooltip>
-                                                            </Label>
+                                                        <div className="space-y-1.5">
+                                                            <Label htmlFor="driverCode" className="text-xs font-medium">Driver Code *</Label>
                                                             <div className="flex">
-                                                                <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500 text-sm">
-                                                                    EPS
-                                                                </span>
-                                                                <Input 
-                                                                    id="driverCode" 
-                                                                    type="text" 
-                                                                    placeholder="12345"
-                                                                    required 
-                                                                    value={newUserDriverCode}
-                                                                    onChange={(e) => setNewUserDriverCode(e.target.value.replace(/[^0-9]/g, ''))}
-                                                                    className="h-11 rounded-l-none"
-                                                                />
+                                                                <span className="inline-flex items-center px-2 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500 text-xs">EPS</span>
+                                                                <Input id="driverCode" type="text" placeholder="12345" required value={newUserDriverCode} onChange={(e) => setNewUserDriverCode(e.target.value.replace(/[^0-9]/g, ''))} className="h-9 rounded-l-none text-sm" />
                                                             </div>
                                                         </div>
                                                     )}
                                                 </div>
                                             </div>
                                         
-                                            {newUserRole && (
+                                            {newUserRole === 'driver' && (
+                                                <div className="bg-blue-50 rounded-lg p-4 space-y-4">
+                                                    <h3 className="text-sm font-semibold text-gray-900">Driver Details</h3>
+                                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                        <div className="space-y-1.5">
+                                                            <Label htmlFor="driverFirstName" className="text-xs font-medium">First Name *</Label>
+                                                            <Input id="driverFirstName" placeholder="John" required value={driverFirstName} onChange={(e) => setDriverFirstName(e.target.value)} className="h-9 text-sm" />
+                                                        </div>
+                                                        <div className="space-y-1.5">
+                                                            <Label htmlFor="driverSurname" className="text-xs font-medium">Surname *</Label>
+                                                            <Input id="driverSurname" placeholder="Doe" required value={driverSurname} onChange={(e) => setDriverSurname(e.target.value)} className="h-9 text-sm" />
+                                                        </div>
+                                                        <div className="space-y-1.5">
+                                                            <Label htmlFor="driverIdNumber" className="text-xs font-medium">ID/Passport Number</Label>
+                                                            <Input id="driverIdNumber" placeholder="8901015800080" value={driverIdNumber} onChange={(e) => setDriverIdNumber(e.target.value)} className="h-9 text-sm" />
+                                                        </div>
+                                                        <div className="space-y-1.5">
+                                                            <Label className="text-xs font-medium">SA Issued</Label>
+                                                            <div className="flex items-center h-9">
+                                                                <Switch checked={driverSaIssued} onCheckedChange={setDriverSaIssued} />
+                                                                <span className="ml-2 text-xs text-gray-600">{driverSaIssued ? 'Yes' : 'No'}</span>
+                                                            </div>
+                                                        </div>
+                                                        {!driverSaIssued && (
+                                                            <div className="space-y-1.5">
+                                                                <Label htmlFor="driverPassportExpiry" className="text-xs font-medium">Passport Expiry</Label>
+                                                                <Input id="driverPassportExpiry" type="date" value={driverPassportExpiry} onChange={(e) => setDriverPassportExpiry(e.target.value)} className="h-9 text-sm" />
+                                                            </div>
+                                                        )}
+                                                        <div className="space-y-1.5">
+                                                            <Label htmlFor="driverLicenseNumber" className="text-xs font-medium">License Number</Label>
+                                                            <Input id="driverLicenseNumber" placeholder="ABC123456" value={driverLicenseNumber} onChange={(e) => setDriverLicenseNumber(e.target.value)} className="h-9 text-sm" />
+                                                        </div>
+                                                        <div className="space-y-1.5">
+                                                            <Label htmlFor="driverLicenseExpiry" className="text-xs font-medium">License Expiry</Label>
+                                                            <Input id="driverLicenseExpiry" type="date" value={driverLicenseExpiry} onChange={(e) => setDriverLicenseExpiry(e.target.value)} className="h-9 text-sm" />
+                                                        </div>
+                                                        <div className="space-y-1.5">
+                                                            <Label htmlFor="driverLicenseCode" className="text-xs font-medium">License Code</Label>
+                                                            <Input id="driverLicenseCode" placeholder="C1, EB" value={driverLicenseCode} onChange={(e) => setDriverLicenseCode(e.target.value)} className="h-9 text-sm" />
+                                                        </div>
+                                                        <div className="space-y-1.5">
+                                                            <Label className="text-xs font-medium">PDP</Label>
+                                                            <div className="flex items-center h-9">
+                                                                <Switch checked={driverPdp} onCheckedChange={setDriverPdp} />
+                                                                <span className="ml-2 text-xs text-gray-600">{driverPdp ? 'Yes' : 'No'}</span>
+                                                            </div>
+                                                        </div>
+                                                        {driverPdp && (
+                                                            <div className="space-y-1.5">
+                                                                <Label htmlFor="driverPdpExpiry" className="text-xs font-medium">PDP Expiry</Label>
+                                                                <Input id="driverPdpExpiry" type="date" value={driverPdpExpiry} onChange={(e) => setDriverPdpExpiry(e.target.value)} className="h-9 text-sm" />
+                                                            </div>
+                                                        )}
+                                                        <div className="space-y-1.5">
+                                                            <Label htmlFor="driverMedicExamDate" className="text-xs font-medium">Medical Exam</Label>
+                                                            <Input id="driverMedicExamDate" type="date" value={driverMedicExamDate} onChange={(e) => setDriverMedicExamDate(e.target.value)} className="h-9 text-sm" />
+                                                        </div>
+                                                        <div className="space-y-1.5">
+                                                            <Label htmlFor="driverHazCamDate" className="text-xs font-medium">HazCam Date</Label>
+                                                            <Input id="driverHazCamDate" type="date" value={driverHazCamDate} onChange={(e) => setDriverHazCamDate(e.target.value)} className="h-9 text-sm" />
+                                                        </div>
+                                                        <div className="space-y-1.5">
+                                                            <Label htmlFor="driverSalary" className="text-xs font-medium">Salary (R)</Label>
+                                                            <Input id="driverSalary" type="number" step="0.01" placeholder="15000" value={driverSalary} onChange={(e) => setDriverSalary(e.target.value)} className="h-9 text-sm" />
+                                                        </div>
+                                                        <div className="space-y-1.5">
+                                                            <Label htmlFor="driverHourlyRate" className="text-xs font-medium">Hourly Rate (R)</Label>
+                                                            <Input id="driverHourlyRate" type="number" step="0.01" placeholder="85.50" value={driverHourlyRate} onChange={(e) => setDriverHourlyRate(e.target.value)} className="h-9 text-sm" />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        
+                                            {newUserRole && newUserRole !== 'driver' && (
                                                 <div className="bg-white border rounded-lg p-6 space-y-6">
                                                     <div className="flex items-center justify-between">
                                                         <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
@@ -844,21 +856,15 @@ export default function SettingsPage() {
                                                 </div>
                                             </div>
                                             
-                                            <div className="flex justify-end gap-3 pt-6 border-t">
-                                                <Button 
-                                                    type="button" 
-                                                    variant="outline" 
-                                                    onClick={() => setIsAddUserOpen(false)}
-                                                    className="px-6"
-                                                >
-                                                    Cancel
-                                                </Button>
-                                                <Button 
-                                                    type="submit" 
-                                                    disabled={!newUserEmail || !newUserPhone || !newUserRole || (newUserRole === 'driver' && !newUserDriverCode)}
-                                                    className="px-6 bg-blue-600 hover:bg-blue-700"
-                                                >
-                                                    Create User Account
+                                            <div className="flex justify-end gap-2 pt-4 border-t">
+                                                <Button type="button" variant="outline" onClick={() => setIsAddUserOpen(false)} className="px-4 h-9 text-sm" disabled={isCreatingUser}>Cancel</Button>
+                                                <Button type="submit" disabled={!newUserEmail || !newUserPhone || !newUserRole || (newUserRole === 'driver' && (!newUserDriverCode || !driverFirstName || !driverSurname)) || isCreatingUser} className="px-4 h-9 text-sm bg-blue-600 hover:bg-blue-700">
+                                                    {isCreatingUser ? (
+                                                        <>
+                                                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                                            Creating...
+                                                        </>
+                                                    ) : 'Create User'}
                                                 </Button>
                                             </div>
                                         </form>

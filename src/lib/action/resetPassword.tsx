@@ -23,15 +23,15 @@ export async function resetUserPassword(userId: string, email: string) {
 
     let newPassword: string;
     
-    // For drivers, use fixed password
+    // For drivers, use driver code as password
     if (userData?.role === 'driver') {
         const { data: driverData } = await supabase
             .from('drivers')
-            .select('cell_number')
+            .select('cell_number, driver_code')
             .eq('user_id', userId)
             .single();
         
-        newPassword = 'EPS83782';
+        newPassword = driverData?.driver_code || 'EPS83782';
         
         // Update user password to driver_code
         const { error } = await supabase.auth.admin.updateUserById(userId, {

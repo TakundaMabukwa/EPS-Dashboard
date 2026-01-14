@@ -43,6 +43,7 @@ export default function LoadPlanPage() {
   const [toast, setToast] = useState({ message: '', type: 'success' as 'success' | 'error', isVisible: false })
   const [isEditMode, setIsEditMode] = useState(false)
   const [editTripId, setEditTripId] = useState(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type, isVisible: true })
   }
@@ -1081,6 +1082,11 @@ export default function LoadPlanPage() {
   const handleCreateClick = (e: React.FormEvent) => {
     e.preventDefault()
     
+    // Prevent duplicate submissions
+    if (isSubmitting) {
+      return
+    }
+    
     // Validate required fields
     if (!client || !commodity || !loadingLocation || !dropOffPoint) {
       showToast('Please fill out all required fields', 'error')
@@ -1208,6 +1214,7 @@ export default function LoadPlanPage() {
   }
   
   const handleUpdate = async () => {
+    setIsSubmitting(true)
     try {
       const tripData = {
         ordernumber: orderNumber,
@@ -1281,10 +1288,13 @@ export default function LoadPlanPage() {
     } catch (err) {
       console.error('Error updating trip:', err)
       showToast('Failed to update trip', 'error')
+    } finally {
+      setIsSubmitting(false)
     }
   }
   
   const handleCreate = async () => {
+    setIsSubmitting(true)
     try {
       // Save route to database for both trip types when creating the load
       let routeId = null
@@ -1440,6 +1450,8 @@ export default function LoadPlanPage() {
     } catch (err) {
       console.error('Error creating load:', err)
       showToast('Something went wrong while creating the load', 'error')
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -2198,8 +2210,9 @@ export default function LoadPlanPage() {
                     type="button" 
                     onClick={handleCreateClick} 
                     className="flex-1"
+                    disabled={isSubmitting}
                   >
-                    {isEditMode ? 'Update Trip' : 'Create Load'}
+                    {isSubmitting ? 'Processing...' : (isEditMode ? 'Update Trip' : 'Create Load')}
                   </Button>
                 </div>
               </form>
