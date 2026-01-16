@@ -247,25 +247,49 @@ export default function LoadPlanPage() {
     console.log('Starting fetchData...')
     try {
       console.log('Fetching from Supabase...')
+      
+      // Recursive fetch for vehicles to get all records
+      const fetchAllVehicles = async () => {
+        let allVehicles = []
+        let from = 0
+        const batchSize = 1000
+        let hasMore = true
+        
+        while (hasMore) {
+          const { data, error } = await supabase
+            .from('vehiclesc')
+            .select('id, registration_number, engine_number, vin_number, make, model, sub_model, manufactured_year, vehicle_type, veh_dormant_flag')
+            .range(from, from + batchSize - 1)
+          
+          if (error) throw error
+          if (!data || data.length === 0) break
+          
+          allVehicles = [...allVehicles, ...data]
+          hasMore = data.length === batchSize
+          from += batchSize
+        }
+        
+        return allVehicles
+      }
+      
       const [
         { data: loadsData, error: loadsError },
         { data: clientsData, error: clientsError },
-        { data: vehiclesData, error: vehiclesError },
+        vehiclesData,
         { data: driversData, error: driversError },
         { data: costCentersData, error: costCentersError },
         trackingResponse
       ] = await Promise.all([
         supabase.from('trips').select('*').order('created_at', { ascending: false }),
         fetch('/api/eps-client-list').then(res => res.json()).then(data => ({ data: data.data, error: null })).catch(error => ({ data: null, error })),
-        supabase.from('vehiclesc').select('id, registration_number, engine_number, vin_number, make, model, sub_model, manufactured_year, vehicle_type').eq('veh_dormant_flag', false),
+        fetchAllVehicles(),
         supabase.from('drivers').select('*'),
         supabase.from('cost_centers').select('*'),
         fetch('/api/eps-vehicles')
       ])
       
-
-      
-      console.log('Supabase errors:', { loadsError, clientsError, vehiclesError, driversError, costCentersError })
+      console.log('Supabase errors:', { loadsError, clientsError, driversError, costCentersError })
+      console.log('Total vehicles fetched:', vehiclesData?.length || 0)
       
       const trackingData = await trackingResponse.json()
       const vehicleData = trackingData?.result?.data || trackingData?.data || []
@@ -367,11 +391,12 @@ export default function LoadPlanPage() {
       '8T JHB (NEW - EPS)': ['R8T'],
       '8T JHB (NEW) - X-BRDER - MOZ': ['R8T'],
       '8T JHB (OLD)': ['R8T'],
-      '14 TON CURTAIN': ['vehicle'],
-      '1TON BAKKIE': ['LDV', 'LPV']
+      '14 TON CURTAIN': ['vehicle', 'VFD'],
+      '1TON BAKKIE': ['LDV', 'LPV', 'R5T']
     }
     
     const allowedTypes = typeMapping[selectedVehicleType] || []
+    if (allowedTypes.length === 0) return nonTrailers
     
     return nonTrailers.filter(vehicle => 
       allowedTypes.includes(vehicle.vehicle_type)
@@ -1966,14 +1991,14 @@ export default function LoadPlanPage() {
                   
                   {/* Vehicle Type Dropdown */}
                   <div className="space-y-2">
-                    <Label htmlFor="vehicleType" className="text-sm font-medium text-slate-700">Vehicle Type</Label>
+                    <Label htmlFor="vehicleType" className="text-sm font-medium text-slate-700">Vehicle Type (Optional)</Label>
                     <VehicleTypeDropdown
                       value={selectedVehicleType}
                       onChange={(value) => {
                         setSelectedVehicleType(value)
                         setSelectedVehicleId('') // Reset vehicle selection when type changes
                       }}
-                      placeholder="Select vehicle type"
+                      placeholder="Select vehicle type to filter"
                     />
                   </div>
 
