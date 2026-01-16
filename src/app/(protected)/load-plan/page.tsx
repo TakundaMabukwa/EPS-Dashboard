@@ -350,29 +350,32 @@ export default function LoadPlanPage() {
 
   // Filter vehicles based on selected type
   const filteredVehicles = useMemo(() => {
-    if (!selectedVehicleType) return vehicles
+    // Exclude 'trailer' type from all results
+    const nonTrailers = vehicles.filter(v => v.vehicle_type !== 'trailer')
     
-    const keywords = {
-      'TAUTLINER': ['taut', 'liner'],
-      'TAUT X-BRDER - BOTSWANA': ['taut', 'botswana', 'x-border'],
-      'TAUT X-BRDER - NAMIBIA': ['taut', 'namibia', 'x-border'],
-      'CITRUS LOAD (+1 DAY STANDING FPT)': ['citrus', 'fpt'],
-      '14M/15M COMBO (NEW)': ['14m', '15m', 'combo'],
-      '14M/15M REEFER': ['14m', '15m', 'reefer'],
-      '9 METER (NEW)': ['9m', '9 meter'],
-      '8T JHB (NEW - EPS)': ['8t', '8 ton', 'jhb'],
-      '8T JHB (NEW) - X-BRDER - MOZ': ['8t', '8 ton', 'jhb', 'moz'],
-      '8T JHB (OLD)': ['8t', '8 ton', 'jhb', 'old'],
-      '14 TON CURTAIN': ['14 ton', 'curtain'],
-      '1TON BAKKIE': ['1 ton', 'bakkie']
+    if (!selectedVehicleType) return nonTrailers
+    
+    // Map vehicle_type codes to vehicle type categories
+    const typeMapping = {
+      'TAUTLINER': ['TRTR', 'TRFLT', 'TRRLT', 'TRTRS'],
+      'TAUT X-BRDER - BOTSWANA': ['TRTR', 'TRFLT', 'TRRLT', 'TRTRS'],
+      'TAUT X-BRDER - NAMIBIA': ['TRTR', 'TRFLT', 'TRRLT', 'TRTRS'],
+      'CITRUS LOAD (+1 DAY STANDING FPT)': ['TRTR', 'TRFLT', 'TRRLT', 'TRTRS'],
+      '14M/15M COMBO (NEW)': ['TR14M'],
+      '14M/15M REEFER': ['TR14M'],
+      '9 METER (NEW)': ['TRS9M'],
+      '8T JHB (NEW - EPS)': ['R8T'],
+      '8T JHB (NEW) - X-BRDER - MOZ': ['R8T'],
+      '8T JHB (OLD)': ['R8T'],
+      '14 TON CURTAIN': ['vehicle'],
+      '1TON BAKKIE': ['LDV', 'LPV']
     }
     
-    const typeKeywords = keywords[selectedVehicleType] || []
+    const allowedTypes = typeMapping[selectedVehicleType] || []
     
-    return vehicles.filter(vehicle => {
-      const searchText = `${vehicle.model || vehicle.make || ''}`.toLowerCase()
-      return typeKeywords.some(keyword => searchText.includes(keyword.toLowerCase()))
-    })
+    return nonTrailers.filter(vehicle => 
+      allowedTypes.includes(vehicle.vehicle_type)
+    )
   }, [vehicles, selectedVehicleType])
 
   // Memoized vehicle and driver lookups
@@ -1974,24 +1977,24 @@ export default function LoadPlanPage() {
                     />
                   </div>
 
-                  {/* Horse Dropdown - Vehicles only */}
+                  {/* Horse Dropdown - Filtered by selected type */}
                   <div className="space-y-2">
                     <Label htmlFor="horse" className="text-sm font-medium text-slate-700">Select Horse</Label>
                     <VehicleDropdown
                       value={selectedVehicleId}
                       onChange={setSelectedVehicleId}
-                      vehicles={vehicles.filter(vehicle => vehicle.vehicle_type === 'vehicle')}
+                      vehicles={filteredVehicles}
                       placeholder="Select horse (vehicle)"
                     />
                   </div>
 
-                  {/* Trailer Dropdown - All except vehicles */}
+                  {/* Trailer Dropdown - Only trailers */}
                   <div className="space-y-2">
                     <Label htmlFor="trailer" className="text-sm font-medium text-slate-700">Select Trailer</Label>
                     <TrailerDropdown
                       value={selectedTrailerId}
                       onChange={setSelectedTrailerId}
-                      trailers={vehicles.filter(vehicle => vehicle.vehicle_type !== 'vehicle')}
+                      trailers={vehicles.filter(v => v.vehicle_type === 'trailer')}
                       placeholder="Select trailer"
                     />
                   </div>
