@@ -376,31 +376,40 @@ export default function LoadPlanPage() {
   const filteredVehicles = useMemo(() => {
     // Exclude 'trailer' type from all results
     const nonTrailers = vehicles.filter(v => v.vehicle_type !== 'trailer')
+    console.log('Non-trailer vehicles:', nonTrailers.length)
+    console.log('Sample non-trailers:', nonTrailers.slice(0, 5).map(v => ({ reg: v.registration_number, type: v.vehicle_type })))
     
     if (!selectedVehicleType) return nonTrailers
     
     // Map vehicle_type codes to vehicle type categories
     const typeMapping = {
-      'TAUTLINER': ['TRTR', 'TRFLT', 'TRRLT', 'TRTRS'],
-      'TAUT X-BRDER - BOTSWANA': ['TRTR', 'TRFLT', 'TRRLT', 'TRTRS'],
-      'TAUT X-BRDER - NAMIBIA': ['TRTR', 'TRFLT', 'TRRLT', 'TRTRS'],
-      'CITRUS LOAD (+1 DAY STANDING FPT)': ['TRTR', 'TRFLT', 'TRRLT', 'TRTRS'],
-      '14M/15M COMBO (NEW)': ['TR14M'],
-      '14M/15M REEFER': ['TR14M'],
-      '9 METER (NEW)': ['TRS9M'],
-      '8T JHB (NEW - EPS)': ['R8T'],
-      '8T JHB (NEW) - X-BRDER - MOZ': ['R8T'],
-      '8T JHB (OLD)': ['R8T'],
+      'TAUTLINER': ['TRTR', 'TRFLT', 'TRRLT', 'TRTRS', 'vehicle'],
+      'TAUT X-BRDER - BOTSWANA': ['TRTR', 'TRFLT', 'TRRLT', 'TRTRS', 'vehicle'],
+      'TAUT X-BRDER - NAMIBIA': ['TRTR', 'TRFLT', 'TRRLT', 'TRTRS', 'vehicle'],
+      'CITRUS LOAD (+1 DAY STANDING FPT)': ['TRTR', 'TRFLT', 'TRRLT', 'TRTRS', 'vehicle'],
+      '14M/15M COMBO (NEW)': ['TR14M', 'vehicle'],
+      '14M/15M REEFER': ['TR14M', 'vehicle'],
+      '9 METER (NEW)': ['TRS9M', 'vehicle'],
+      '8T JHB (NEW - EPS)': ['R8T', 'vehicle'],
+      '8T JHB (NEW) - X-BRDER - MOZ': ['R8T', 'vehicle'],
+      '8T JHB (OLD)': ['R8T', 'vehicle'],
       '14 TON CURTAIN': ['vehicle', 'VFD'],
-      '1TON BAKKIE': ['LDV', 'LPV', 'R5T']
+      '1TON BAKKIE': ['LDV', 'LPV', 'R5T', 'vehicle']
     }
     
     const allowedTypes = typeMapping[selectedVehicleType] || []
+    console.log('Selected vehicle type:', selectedVehicleType)
+    console.log('Allowed types:', allowedTypes)
+    
     if (allowedTypes.length === 0) return nonTrailers
     
-    return nonTrailers.filter(vehicle => 
+    const filtered = nonTrailers.filter(vehicle => 
       allowedTypes.includes(vehicle.vehicle_type)
     )
+    console.log('Filtered vehicles:', filtered.length)
+    console.log('Sample filtered:', filtered.slice(0, 5).map(v => ({ reg: v.registration_number, type: v.vehicle_type })))
+    
+    return filtered
   }, [vehicles, selectedVehicleType])
 
   // Memoized vehicle and driver lookups
