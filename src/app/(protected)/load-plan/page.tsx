@@ -290,6 +290,7 @@ export default function LoadPlanPage() {
       
       console.log('Supabase errors:', { loadsError, clientsError, driversError, costCentersError })
       console.log('Total vehicles fetched:', vehiclesData?.length || 0)
+      console.log('Sample vehicles:', vehiclesData?.slice(0, 5).map(v => ({ reg: v.registration_number, type: v.vehicle_type })))
       
       const trackingData = await trackingResponse.json()
       const vehicleData = trackingData?.result?.data || trackingData?.data || []
@@ -411,6 +412,17 @@ export default function LoadPlanPage() {
     
     return filtered
   }, [vehicles, selectedVehicleType])
+
+  // Filter trailers - exclude only 'vehicle' type
+  const filteredTrailers = useMemo(() => {
+    const trailers = vehicles.filter(v => v.vehicle_type !== 'vehicle')
+    const trfltVehicles = vehicles.filter(v => v.vehicle_type === 'TRFLT')
+    console.log('Filtered trailers:', trailers.length)
+    console.log('Sample trailers:', trailers.slice(0, 5).map(v => ({ reg: v.registration_number, type: v.vehicle_type })))
+    console.log('TRFLT vehicles found:', trfltVehicles.length)
+    console.log('TRFLT samples:', trfltVehicles.slice(0, 3).map(v => ({ reg: v.registration_number, type: v.vehicle_type })))
+    return trailers
+  }, [vehicles])
 
   // Memoized vehicle and driver lookups
   const vehicleMap = useMemo(() => 
@@ -2028,7 +2040,7 @@ export default function LoadPlanPage() {
                     <TrailerDropdown
                       value={selectedTrailerId}
                       onChange={setSelectedTrailerId}
-                      trailers={vehicles.filter(v => v.vehicle_type === 'trailer')}
+                      trailers={filteredTrailers}
                       placeholder="Select trailer"
                     />
                   </div>
