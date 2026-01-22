@@ -23,7 +23,7 @@ export async function GET() {
       throw new Error('CAN bus endpoint or key not configured')
     }
 
-    const response = await fetch(`${endpoint}/canbus/snapshot?key=${key}`)
+    const response = await fetch(`${endpoint}/canbus/snapshot?key=${key}&company=eps`)
     if (!response.ok) throw new Error('Failed to fetch CAN bus data')
     
     const vehicles: CanBusVehicle[] = await response.json()

@@ -19,29 +19,6 @@ export default function FuelCanBusDisplay() {
   const [vehicles, setVehicles] = useState<Map<string, FuelData>>(new Map())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const processVehicleData = (vehicle: any): FuelData => {
-    const fuelLevelItem = vehicle.data?.find((item: any) => 
-      item.name === 'fuel Level Liter' || item.code === '96'
-    )
-    const engineTempItem = vehicle.data?.find((item: any) => 
-      item.name === 'engine temperature' || item.code === '6E'
-    )
-    const totalFuelUsedItem = vehicle.data?.find((item: any) => 
-      item.name === 'total fuel used' || item.code === 'FA'
-    )
-    const fuelPercentItem = vehicle.data?.find((item: any) => 
-      item.name === 'fuel level %' || item.code === '60'
-    )
-
-    return {
-      plate: vehicle.plate,
-      timestamp: vehicle.timestamp,
-      fuelLevel: fuelLevelItem?.value || 0,
-      fuelPercentage: fuelPercentItem?.value || 0,
-      engineTemperature: engineTempItem?.value || 0,
-      totalFuelUsed: totalFuelUsedItem?.value || 0
-    }
-  }
 
   const fetchFuelData = async () => {
     try {
@@ -55,8 +32,7 @@ export default function FuelCanBusDisplay() {
       
       const vehicleMap = new Map()
       data.forEach((vehicle: any) => {
-        const processedVehicle = processVehicleData(vehicle)
-        vehicleMap.set(processedVehicle.plate, processedVehicle)
+        vehicleMap.set(vehicle.plate, vehicle)
       })
       setVehicles(vehicleMap)
       setLoading(false)
@@ -73,30 +49,39 @@ export default function FuelCanBusDisplay() {
 
   // Convert CAN bus fuel data to fuel gauge format
   const getFuelGaugeData = () => {
+    console.log('Vehicles Map size:', vehicles.size)
+    console.log('Sample vehicle from Map:', Array.from(vehicles.values())[0])
+    
     const gaugeData = Array.from(vehicles.values()).map((vehicle) => {
-      const fuelPercentage = vehicle.fuelPercentage || 0
       const fuelLevel = vehicle.fuelLevel || 0
+      const fuelPercent = vehicle.fuelPercentage || 0
       const engineTemp = vehicle.engineTemperature || 0
       const isEngineOn = engineTemp > 40
 
-      return {
+      // Use liters as main, percentage as fallback
+      const displayPercent = fuelLevel > 0 ? fuelLevel : fuelPercent
+
+      const result = {
         id: vehicle.plate,
         location: vehicle.plate,
-        fuelLevel: Math.max(0, fuelLevel),
-        temperature: Math.max(0, engineTemp),
-        volume: Math.max(0, fuelLevel),
+        fuelLevel: displayPercent,
+        temperature: engineTemp,
+        volume: fuelLevel,
 
         status: isEngineOn ? 'Active' : 'Engine Off',
         lastUpdated: formatForDisplay(vehicle.timestamp),
         updated_at: vehicle.timestamp
       }
+
+      console.log(`Gauge ${vehicle.plate}:`, { fuelLevel: result.fuelLevel, volume: result.volume, temp: result.temperature })
+      return result
     })
     
-    // Sort to move 0 fuel level vehicles to the end
+    // Sort by latest update first, then move 0 fuel level vehicles to the end
     return gaugeData.sort((a, b) => {
-      if (a.fuelLevel === 0 && b.fuelLevel !== 0) return 1
-      if (a.fuelLevel !== 0 && b.fuelLevel === 0) return -1
-      return 0
+      if (a.volume === 0 && b.volume !== 0) return 1
+      if (a.volume !== 0 && b.volume === 0) return -1
+      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
     })
   }
 

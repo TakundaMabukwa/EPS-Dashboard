@@ -527,12 +527,22 @@ export default function AuditPage() {
                           action="view"
                           variant="outline"
                           size="sm"
-                          onClick={() => {
-                            setSelectedRouteRecord(record)
-                            setRouteModalOpen(true)
+                          onClick={async () => {
+                            try {
+                              const response = await fetch(`/api/trip-route?tripId=${record.id}`)
+                              if (!response.ok) {
+                                const error = await response.json()
+                                throw new Error(error.error || 'Failed to fetch route')
+                              }
+                              const routeData = await response.json()
+                              setSelectedRouteRecord({ ...record, route_points: routeData.route_points })
+                              setRouteModalOpen(true)
+                            } catch (error: any) {
+                              console.error('Error fetching route:', error)
+                              alert(error.message || 'Failed to load route data')
+                            }
                           }}
-                          disabled={!hasRoutePoints(record.route_points)}
-                          className={`h-7 px-2 text-xs ${!hasRoutePoints(record.route_points) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          className="h-7 px-2 text-xs"
                         >
                           <Route className="h-3 w-3" />
                         </SecureButton>
