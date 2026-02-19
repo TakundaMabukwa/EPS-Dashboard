@@ -5,9 +5,11 @@ const BASE_URL = 'http://64.227.138.235:3000/api/eps-rewards'
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url)
-    const path = searchParams.get('path') || ''
+    const endpoint = searchParams.get('endpoint') || ''
     
-    const url = `${BASE_URL}/${path}`
+    const url = endpoint ? `${BASE_URL}/${endpoint}` : BASE_URL
+    
+    console.log('Fetching from:', url)
     
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 15000)
@@ -21,6 +23,7 @@ export async function GET(request) {
     clearTimeout(timeoutId)
     
     if (!response.ok) {
+      console.error(`API error: ${response.status} for ${url}`)
       throw new Error(`API error: ${response.status}`)
     }
     
@@ -28,14 +31,16 @@ export async function GET(request) {
     return NextResponse.json(data)
     
   } catch (error) {
-    console.error('Error fetching EPS rewards data:', error)
+    console.error('Error fetching EPS rewards data:', error.message)
     
+    // Return empty data structure instead of error to prevent UI crashes
     return NextResponse.json(
       { 
-        message: 'Failed to fetch EPS rewards data',
-        error: error.message 
+        drivers: [],
+        error: error.message,
+        message: 'Failed to fetch EPS rewards data'
       },
-      { status: 500 }
+      { status: 200 } // Return 200 to prevent error propagation
     )
   }
 }

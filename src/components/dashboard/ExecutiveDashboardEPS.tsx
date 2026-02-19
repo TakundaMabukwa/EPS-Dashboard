@@ -47,56 +47,30 @@ export default function ExecutiveDashboardEPS() {
     try {
       setLoading(true)
       
-      const endpoints = [
-        { name: 'executive', url: '/api/eps-rewards?endpoint=executive-dashboard' },
-        { name: 'dailyStats', url: '/api/eps-rewards?endpoint=daily-stats' },
-        { name: 'riskAssessment', url: '/api/eps-rewards?endpoint=driver-risk-assessment' },
-        { name: 'performance', url: '/api/eps-rewards?endpoint=performance' },
-        { name: 'worstDrivers', url: '/api/eps-rewards?endpoint=top-worst-drivers' },
-        { name: 'violations', url: '/api/eps-rewards?endpoint=violations' },
-        { name: 'leaderboard', url: '/api/eps-rewards?endpoint=leaderboard' },
-        { name: 'monthlyIncidents', url: '/api/eps-rewards?endpoint=monthly-incident-criteria' },
-        { name: 'allDriverProfiles', url: '/api/eps-rewards?endpoint=all-driver-profiles' },
-        { name: 'latest', url: '/api/eps-rewards?endpoint=latest' }
-      ]
+      const [executive, dailyStats, leaderboard] = await Promise.all([
+        fetch('/api/eps-rewards/executive-dashboard').then(r => r.json()).catch(() => ({})),
+        fetch('/api/eps-rewards/daily-stats').then(r => r.json()).catch(() => []),
+        fetch('/api/stats/leaderboard?limit=50').then(r => r.json()).catch(() => ({}))
+      ])
       
-      const responses = await Promise.all(
-        endpoints.map(async ({ name, url }) => {
-          try {
-            const res = await fetch(url)
-            
-            if (!res.ok) {
-              console.warn(`API ${name} returned ${res.status}`)
-              return { error: `API returned ${res.status}` }
-            }
-            
-            const data = await res.json()
-            return data
-          } catch (error) {
-            console.warn(`Error fetching ${name}:`, error.message)
-            return { error: `Failed to fetch ${name}` }
-          }
-        })
-      )
-      
-      const [executive, dailyStats, riskAssessment, performance, worstDrivers, violations, leaderboard, monthlyIncidents, allDriverProfiles, latest] = responses
+      const drivers = Array.isArray(dailyStats) ? dailyStats : []
       
       setData({
-        executive: executive?.error ? {} : (executive || {}),
-        dailyStats: dailyStats?.error ? [] : (Array.isArray(dailyStats) ? dailyStats : []),
-        riskAssessment: riskAssessment?.error ? [] : (riskAssessment?.drivers || []),
-        performance: performance?.error ? [] : (Array.isArray(performance) ? performance : []),
-        worstDrivers: worstDrivers?.error ? [] : (worstDrivers?.worst_drivers || []),
-        violations: violations?.error ? [] : (Array.isArray(violations) ? violations : []),
-        leaderboard: allDriverProfiles?.error ? [] : (allDriverProfiles?.drivers || []),
-        monthlyIncidents: monthlyIncidents?.error ? {} : (monthlyIncidents || {}),
-        allDriverProfiles: allDriverProfiles?.error ? [] : (allDriverProfiles?.drivers || []),
-        latest: latest?.error ? {} : (latest || {})
+        executive: executive || {},
+        dailyStats: drivers,
+        riskAssessment: [],
+        performance: leaderboard.best_performers || [],
+        worstDrivers: leaderboard.worst_performers || [],
+        violations: leaderboard.top_speeders || [],
+        leaderboard: leaderboard.all_drivers || [],
+        monthlyIncidents: {},
+        allDriverProfiles: leaderboard.all_drivers || [],
+        latest: leaderboard.fleet_summary || {}
       })
       
       setLastUpdated(new Date())
     } catch (error) {
-      console.warn('Error fetching dashboard data:', error.message)
+      console.error('Error fetching dashboard data:', error.message)
     } finally {
       setLoading(false)
     }
@@ -143,7 +117,7 @@ export default function ExecutiveDashboardEPS() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">Total Drivers</p>
-                <p className="text-2xl font-bold text-blue-600">{data.allDriverProfiles.length || 0}</p>
+                <p className="text-2xl font-bold text-blue-600">{data.latest.total_drivers || data.dailyStats.length || 0}</p>
               </div>
               <Users className="w-8 h-8 text-blue-600" />
             </div>
@@ -153,8 +127,19 @@ export default function ExecutiveDashboardEPS() {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">High Risk Drivers</p>
-                <p className="text-2xl font-bold text-red-600">{data.riskAssessment.filter(d => d.risk_category === 'High Risk').length || 0}</p>
+                <p className="text-sm font-medium text-gray-600">Average Points</p>
+                <p className="text-2xl font-bold text-green-600">{data.latest.average_points || 0}</p>
+              </div>
+              <Award className="w-8 h-8 text-green-600" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Total Violations</p>
+                <p className="text-2xl font-bold text-red-600">{data.latest.total_violations || 0}</p>
               </div>
               <AlertTriangle className="w-8 h-8 text-red-600" />
             </div>
@@ -164,8 +149,8 @@ export default function ExecutiveDashboardEPS() {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">Active Vehicles</p>
-                <p className="text-2xl font-bold text-orange-600">{data.executive.fleet_summary?.active_vehicles || 0}</p>
+                <p className="text-sm font-medium text-gray-600">Speed Violations</p>
+                <p className="text-2xl font-bold text-orange-600">{data.latest.total_speed_violations || 0}</p>
               </div>
               <TrendingUp className="w-8 h-8 text-orange-600" />
             </div>
@@ -175,22 +160,11 @@ export default function ExecutiveDashboardEPS() {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">Total Points</p>
-                <p className="text-2xl font-bold text-purple-600">{data.leaderboard.reduce((sum, l) => sum + (l.totalPoints || 0), 0)}</p>
+                <p className="text-sm font-medium text-gray-600">Total Distance</p>
+                <p className="text-2xl font-bold text-purple-600">{(data.latest.total_distance_km || 0).toLocaleString()} km</p>
               </div>
-              <Award className="w-8 h-8 text-purple-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Night Violations</p>
-                <p className="text-2xl font-bold text-yellow-600">{data.monthlyIncidents.penalty_events?.night_driving || 0}</p>
-              </div>
-              <div className="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center">
-                <span className="text-yellow-600 text-sm font-semibold">!</span>
+              <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                <span className="text-purple-600 text-sm font-semibold">📍</span>
               </div>
             </div>
           </CardContent>
@@ -199,133 +173,166 @@ export default function ExecutiveDashboardEPS() {
 
       {/* Main Dashboard Charts */}
       <div className="space-y-8">
-        {/* Driver Rewards Leaderboard */}
+        {/* Best Performers */}
         <Card className="min-h-[400px]">
           <CardHeader>
-            <CardTitle className="text-xl font-bold text-gray-800">Driver Rewards Leaderboard</CardTitle>
+            <CardTitle className="text-xl font-bold text-gray-800">🏆 Top Performers - Leaderboard</CardTitle>
           </CardHeader>
           <CardContent className="h-80">
-            <BarChart
-              xAxis={[{
-                scaleType: 'band',
-                data: data.leaderboard
-                  .sort((a, b) => (Number(b.currentPoints) || 0) - (Number(a.currentPoints) || 0))
-                  .slice(0, 10)
-                  .map(d => d.driverName || 'Unknown')
-              }]}
-              series={[
-                {
-                  data: data.leaderboard
-                    .sort((a, b) => (Number(b.currentPoints) || 0) - (Number(a.currentPoints) || 0))
-                    .slice(0, 10)
-                    .map(d => Number(d.currentPoints) || 0),
-                  label: 'Current Points',
-                  color: '#8b5cf6'
-                },
-                {
-                  data: data.leaderboard
-                    .sort((a, b) => (Number(b.currentPoints) || 0) - (Number(a.currentPoints) || 0))
-                    .slice(0, 10)
-                    .map(d => Number(d.totalEarned) || 0),
-                  label: 'Total Earned',
+            {data.performance.length > 0 ? (
+              <BarChart
+                xAxis={[{
+                  scaleType: 'band',
+                  data: data.performance.slice(0, 10).map(d => d.driver_name || 'Unknown')
+                }]}
+                series={[{
+                  data: data.performance.slice(0, 10).map(d => Number(d.current_points) || 0),
+                  label: 'Points',
                   color: '#22c55e'
-                }
-              ]}
-              width={800}
-              height={300}
-            />
-          </CardContent>
-        </Card>
-
-        {/* Driver Performance Scores */}
-        <Card className="min-h-[500px]">
-          <CardHeader>
-            <CardTitle className="text-center text-2xl font-bold text-gray-800">Top Driver Performance Scores</CardTitle>
-          </CardHeader>
-          <CardContent className="h-96">
-            <BarChart
-              xAxis={[{
-                scaleType: 'band',
-                data: data.leaderboard.slice(0, 8).map(d => d.driverName || 'Unknown')
-              }]}
-              series={[{
-                data: data.leaderboard.slice(0, 8).map(d => Number(d.performanceScore) || 0),
-                color: '#B8860B'
-              }]}
-              width={800}
-              height={350}
-            />
+                }]}
+                width={800}
+                height={300}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full">
+                <p className="text-gray-500">No leaderboard data available</p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
         {/* Risk Assessment and Violations */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <FleetRiskGauge />
+          <Card className="min-h-[400px]">
+            <CardHeader>
+              <CardTitle className="text-xl font-bold text-gray-800">⚠️ Worst Performers</CardTitle>
+            </CardHeader>
+            <CardContent className="h-80">
+              {data.worstDrivers.length > 0 ? (
+                <BarChart
+                  xAxis={[{
+                    scaleType: 'band',
+                    data: data.worstDrivers.slice(0, 6).map(d => d.driver_name || 'Unknown')
+                  }]}
+                  series={[{
+                    data: data.worstDrivers.slice(0, 6).map(d => Number(d.current_points) || 0),
+                    color: '#ef4444'
+                  }]}
+                  width={400}
+                  height={300}
+                />
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <p className="text-gray-500">No data available</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           <Card className="min-h-[400px]">
             <CardHeader>
-              <CardTitle className="text-xl font-bold text-gray-800">Driver Violations & Speeding Incidents</CardTitle>
+              <CardTitle className="text-xl font-bold text-gray-800">🚨 Top Speeders</CardTitle>
             </CardHeader>
             <CardContent className="h-80">
-              <BarChart
-                xAxis={[{
-                  scaleType: 'band',
-                  data: data.leaderboard.slice(0, 6).map(d => d.driverName || 'Unknown')
-                }]}
-                series={[{
-                  data: data.leaderboard.slice(0, 6).map(d => (Number(d.violations) || 0) + (Number(d.speedingIncidents) || 0)),
-                  color: '#ef4444'
-                }]}
-                width={400}
-                height={300}
-              />
+              {data.violations.length > 0 ? (
+                <BarChart
+                  xAxis={[{
+                    scaleType: 'band',
+                    data: data.violations.slice(0, 6).map(d => d.driver_name || 'Unknown')
+                  }]}
+                  series={[{
+                    data: data.violations.slice(0, 6).map(d => Number(d.speed_violations) || 0),
+                    color: '#f97316'
+                  }]}
+                  width={400}
+                  height={300}
+                />
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <p className="text-gray-500">No violation data available</p>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
 
       </div>
 
+      {/* Top Speeders Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-xl font-bold text-gray-800">🚨 Top Speeding Drivers</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-red-50">
+                  <th className="text-left p-2">Rank</th>
+                  <th className="text-left p-2">Driver</th>
+                  <th className="text-left p-2">Speed Violations</th>
+                  <th className="text-left p-2">Harsh Braking</th>
+                  <th className="text-left p-2">Night Driving</th>
+                  <th className="text-left p-2">Total Violations</th>
+                  <th className="text-left p-2">Points</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.violations.slice(0, 10).map((driver, index) => (
+                  <tr key={index} className="border-b hover:bg-gray-50">
+                    <td className="p-2 font-bold">{driver.rank || index + 1}</td>
+                    <td className="p-2 font-medium">{driver.driver_name || 'Unknown'}</td>
+                    <td className="p-2 text-red-600 font-bold">{driver.speed_violations || 0}</td>
+                    <td className="p-2 text-orange-600">{driver.harsh_braking || 0}</td>
+                    <td className="p-2 text-purple-600">{driver.night_driving || 0}</td>
+                    <td className="p-2 font-semibold">{driver.total_violations || 0}</td>
+                    <td className="p-2">
+                      <Badge variant={driver.current_points > 50 ? 'default' : 'destructive'}>
+                        {driver.current_points || 0}
+                      </Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Risk Assessment Table */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-xl font-bold text-gray-800">Driver Risk Assessment</CardTitle>
+          <CardTitle className="text-xl font-bold text-gray-800">Leaderboard - All Drivers</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b">
+                  <th className="text-left p-2">Rank</th>
                   <th className="text-left p-2">Driver</th>
-                  <th className="text-left p-2">Risk Category</th>
-                  <th className="text-left p-2">Score</th>
+                  <th className="text-left p-2">Level</th>
+                  <th className="text-left p-2">Points</th>
                   <th className="text-left p-2">Violations</th>
-                  <th className="text-left p-2">Status</th>
+                  <th className="text-left p-2">Distance (km)</th>
                 </tr>
               </thead>
               <tbody>
-                {data.riskAssessment.slice(0, 10).map((driver, index) => (
+                {data.leaderboard.slice(0, 15).map((driver, index) => (
                   <tr key={index} className="border-b hover:bg-gray-50">
+                    <td className="p-2 font-bold">{driver.rank || index + 1}</td>
                     <td className="p-2 font-medium">{driver.driver_name || 'Unknown'}</td>
                     <td className="p-2">
                       <Badge 
-                        variant={driver.risk_category === 'High Risk' ? 'destructive' : 
-                                driver.risk_category === 'Medium Risk' ? 'secondary' : 'default'}
+                        variant={driver.current_level === 'Gold' ? 'default' : 
+                                driver.current_level === 'Silver' ? 'secondary' : 'outline'}
                       >
-                        {driver.risk_category}
+                        {driver.current_level || 'Bronze'}
                       </Badge>
                     </td>
-                    <td className="p-2">{driver.risk_score || 0}</td>
-                    <td className="p-2">{driver.total_violations || 0}</td>
-                    <td className="p-2">
-                      <span className={`px-2 py-1 rounded-full text-xs ${
-                        driver.risk_category === 'High Risk' ? 'bg-red-100 text-red-800' :
-                        driver.risk_category === 'Medium Risk' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-green-100 text-green-800'
-                      }`}>
-                        {driver.risk_category === 'High Risk' ? 'Requires Action' :
-                         driver.risk_category === 'Medium Risk' ? 'Monitor' : 'Good Standing'}
-                      </span>
-                    </td>
+                    <td className="p-2 font-semibold text-green-600">{driver.current_points || 0}</td>
+                    <td className="p-2 text-red-600">{driver.total_violations || 0}</td>
+                    <td className="p-2">{Number(driver.biweekly_distance_km || 0).toLocaleString()}</td>
                   </tr>
                 ))}
               </tbody>
@@ -403,7 +410,7 @@ export default function ExecutiveDashboardEPS() {
                 </tr>
                 <tr className="bg-green-50">
                   <td className="border border-gray-300 p-3 font-bold">Total Kilometres</td>
-                  <td className="border border-gray-300 p-3 text-center font-semibold">{data.leaderboard.reduce((sum, d) => sum + (d.totalKilometers || 0), 0).toLocaleString()}</td>
+                  <td className="border border-gray-300 p-3 text-center font-semibold">{(data.latest.total_distance_km || 0).toLocaleString()}</td>
                   <td className="border border-gray-300 p-3 text-center">-</td>
                   <td className="border border-gray-300 p-3 text-center">-</td>
                   <td className="border border-gray-300 p-3 text-center">-</td>
@@ -411,7 +418,7 @@ export default function ExecutiveDashboardEPS() {
                 </tr>
                 <tr>
                   <td className="border border-gray-300 p-3 font-medium">Fleet Size</td>
-                  <td className="border border-gray-300 p-3 text-center">{data.executive.fleet_summary?.total_vehicles || data.allDriverProfiles.length || 0}</td>
+                  <td className="border border-gray-300 p-3 text-center">{data.latest.total_drivers || 0}</td>
                   <td className="border border-gray-300 p-3 text-center">-</td>
                   <td className="border border-gray-300 p-3 text-center">-</td>
                   <td className="border border-gray-300 p-3 text-center">-</td>
@@ -419,7 +426,7 @@ export default function ExecutiveDashboardEPS() {
                 </tr>
                 <tr className="bg-red-50">
                   <td className="border border-gray-300 p-3 font-medium">Total Violations</td>
-                  <td className="border border-gray-300 p-3 text-center font-bold text-red-600">{data.executive.violations_summary?.total_violations || data.monthlyIncidents.penalty_events?.total_penalties || 0}</td>
+                  <td className="border border-gray-300 p-3 text-center font-bold text-red-600">{data.latest.total_violations || 0}</td>
                   <td className="border border-gray-300 p-3 text-center">-</td>
                   <td className="border border-gray-300 p-3 text-center">-</td>
                   <td className="border border-gray-300 p-3 text-center">-</td>
