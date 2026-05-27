@@ -107,131 +107,114 @@ export default function LiveMapView() {
   }, []);
 
   // Fetch vehicle data from API - only called after map loads
+  const processEpsVehicles = (epsData: any, existingPlates: Set<string>): Vehicle[] => {
+    if (!epsData) return [];
+    let data = epsData;
+    if (data?.data) data = data.data;
+    else if (data?.vehicles) data = data.vehicles;
+    const vehicles = Array.isArray(data) ? data : data?.vehicles || data?.data || [];
+    return vehicles.map((v: any) => {
+      const plate = v.plate || v.registrationNumber || 'Unknown';
+      existingPlates.add(plate);
+      const vehicle: Vehicle = {
+        id: v.id || plate || Math.random().toString(),
+        plate,
+        driver: v.driver || v.driverName || 'Unassigned',
+        status: v.status || v.online === true ? 'online' :
+                v.online === false ? 'offline' : 'idle',
+        speed: v.speed != null ? v.speed : (v.gps_speed || 0),
+        lastUpdate: v.lastUpdate || v.loc_time || v.timestamp || new Date().toISOString(),
+        address: v.address || v.locationAddress || '',
+        hasVideo: vehiclesWithVideo.has((v.plate || '').trim().toUpperCase()),
+      };
+      const lat = parseFloat(v.latitude || v.lat);
+      const lng = parseFloat(v.longitude || v.lng);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        vehicle.location = { lat, lng, address: vehicle.address };
+        vehicle.latitude = lat;
+        vehicle.longitude = lng;
+      }
+      return vehicle;
+    }).filter((v: Vehicle) => v.location);
+  };
+
+  const processCtrackVehicles = (ctrackData: any, existingPlates: Set<string>): Vehicle[] => {
+    if (!ctrackData) return [];
+    const vehicles = Array.isArray(ctrackData) ? ctrackData :
+      ctrackData?.data || ctrackData?.vehicles || [];
+    return vehicles.filter((v: any) => {
+      const plate = v.plate || v.registrationNumber || v.vehicleReg || '';
+      if (!plate || existingPlates.has(plate)) return false;
+      const lat = parseFloat(v.latitude || v.lat);
+      const lng = parseFloat(v.longitude || v.lng);
+      return !isNaN(lat) && !isNaN(lng);
+    }).map((v: any) => {
+      const plate = v.plate || v.registrationNumber || v.vehicleReg || '';
+      existingPlates.add(plate);
+      return {
+        id: v.id || plate || Math.random().toString(),
+        plate,
+        driver: v.driver || v.driverName || 'Unassigned',
+        status: v.status || v.online === true ? 'online' : 'offline',
+        location: { lat: parseFloat(v.latitude || v.lat), lng: parseFloat(v.longitude || v.lng), address: v.address || '' },
+        speed: v.speed != null ? v.speed : 0,
+        lastUpdate: v.timestamp || v.loc_time || new Date().toISOString(),
+        address: v.address || '',
+        hasVideo: vehiclesWithVideo.has(plate.trim().toUpperCase()),
+        timestamp: v.timestamp || new Date().toISOString(),
+      } as Vehicle;
+    });
+  };
+
+  const mergeVehicles = (newVehicles: Vehicle[], existing: Vehicle[]): Vehicle[] => {
+    const plates = new Set(existing.map(v => v.plate?.trim().toUpperCase() || 'UNKNOWN'));
+    const deduped = existing.filter(v => {
+      const p = v.plate?.trim().toUpperCase() || 'UNKNOWN';
+      if (plates.has(p)) return false;
+      plates.add(p);
+      return true;
+    });
+    return [...deduped, ...newVehicles.filter(v => {
+      const p = v.plate?.trim().toUpperCase() || 'UNKNOWN';
+      if (plates.has(p)) return false;
+      plates.add(p);
+      return true;
+    })];
+  };
+
   const fetchVehicles = async () => {
     try {
       setLoading(true);
-      const [epsResult, ctrackResult] = await Promise.allSettled([
-        fetch('/api/eps-vehicles'),
-        fetch('/api/ctrack-data')
-      ]);
+      const existingPlates = new Set<string>();
 
-      let allVehicles: Vehicle[] = [];
-
-      // Process EPS API data
-      if (epsResult.status === 'fulfilled') {
-        try {
-          (window as any).__EPS_DATA__ = epsResult.value;
-        } catch (e) {}
-      }
-
-      // Process EPS API
-      if (epsResult.status === 'fulfilled' && epsResult.value) {
-        try {
-          let epsData = epsResult.value;
-          if (epsData?.data) {
-            epsData = epsData.data;
-          } else if (epsData?.vehicles) {
-            epsData = epsData.vehicles;
-          }
-          const epsVehicles = Array.isArray(epsData) ? epsData : 
-            epsData?.vehicles || epsData?.data || [];
-          allVehicles = epsVehicles.map((v: any) => {
-            const vehicle: Vehicle = {
-              id: v.id || v.plate || Math.random().toString(),
-              plate: v.plate || v.registrationNumber || 'Unknown',
-              driver: v.driver || v.driverName || 'Unassigned',
-              status: v.status || v.online === true ? 'online' : 
-                      v.online === false ? 'offline' : 'idle',
-              speed: v.speed != null ? v.speed : (v.gps_speed || 0),
-              lastUpdate: v.lastUpdate || v.loc_time || v.timestamp || new Date().toISOString(),
-              address: v.address || v.locationAddress || '',
-              hasVideo: vehiclesWithVideo.has((v.plate || '').trim().toUpperCase()),
-            };
-            
-            const lat = parseFloat(v.latitude || v.lat);
-            const lng = parseFloat(v.longitude || v.lng);
-            if (!isNaN(lat) && !isNaN(lng)) {
-              vehicle.location = { lat, lng, address: vehicle.address };
-              vehicle.latitude = lat;
-              vehicle.longitude = lng;
-            }
-            
-            return vehicle;
-          }).filter((v: Vehicle) => v.location);
-        } catch (e) {
-          console.error('Error parsing EPS data:', e);
-        }
-      }
-
-      // Process CTrack API
-      if (ctrackResult.status === 'fulfilled' && ctrackResult.value) {
-        try {
-          let ctrackData = ctrackResult.value;
-          const ctrackVehicles = Array.isArray(ctrackData) ? ctrackData : 
-            ctrackData?.data || ctrackData?.vehicles || [];
-          
-          const existingPlates = new Set(allVehicles.map(v => v.plate));
-          ctrackVehicles.forEach((v: any) => {
-            const plate = v.plate || v.registrationNumber || v.vehicleReg || '';
-            if (existingPlates.has(plate)) return;
-            
-            const lat = parseFloat(v.latitude || v.lat);
-            const lng = parseFloat(v.longitude || v.lng);
-            if (isNaN(lat) || isNaN(lng)) return;
-            
-            existingPlates.add(plate);
-            allVehicles.push({
-              id: v.id || plate || Math.random().toString(),
-              plate,
-              driver: v.driver || v.driverName || 'Unassigned',
-              status: v.status || v.online === true ? 'online' : 'offline',
-              location: { lat, lng, address: v.address || '' },
-              speed: v.speed != null ? v.speed : 0,
-              lastUpdate: v.timestamp || v.loc_time || new Date().toISOString(),
-              address: v.address || '',
-              hasVideo: vehiclesWithVideo.has(plate.trim().toUpperCase()),
-              timestamp: v.timestamp || new Date().toISOString(),
-            });
-          });
-        } catch (e) {
-          console.error('Error parsing CTrack data:', e);
-        }
-      }
-
-      const vehiclesWithLocation = allVehicles.filter(v => v.location);
-      const uniqueVehicles = vehiclesWithLocation.reduce((acc, vehicle) => {
-        const normalizedPlate = vehicle.plate?.trim().toUpperCase() || 'UNKNOWN';
-        const existingIndex = acc.findIndex(v => 
-          (v.plate?.trim().toUpperCase() || 'UNKNOWN') === normalizedPlate
-        );
-        if (existingIndex === -1) {
-          acc.push(vehicle);
-        } else {
-          const existingTime = acc[existingIndex].timestamp ? new Date(acc[existingIndex].timestamp).getTime() : 0;
-          const newTime = vehicle.timestamp ? new Date(vehicle.timestamp).getTime() : 0;
-          if (newTime > existingTime) {
-            acc[existingIndex] = vehicle;
-          }
-        }
-        return acc;
-      }, [] as Vehicle[]);
-
-      const filteredVehicles = uniqueVehicles.filter(v => {
-        const cleanPlate = v.plate?.trim() || '';
-        return cleanPlate.length === 8;
-      }).map(v => {
-        const existingVehicle = vehicles.find(ev => ev.plate === v.plate);
-        return {
-          ...v,
-          hasVideo: existingVehicle?.hasVideo || vehiclesWithVideo.has(v.plate?.trim().toUpperCase() || '')
-        };
+      const epsPromise = fetch('/api/eps-vehicles').then(async (res) => {
+        const data = await res.json();
+        const vehicles = processEpsVehicles(data, existingPlates);
+        return vehicles;
+      }).catch((e) => {
+        console.error('Error fetching EPS vehicles:', e);
+        return [] as Vehicle[];
       });
-      
-      console.log(`Loaded ${filteredVehicles.length} vehicles with 8-char plates from ${allVehicles.length} total records`);
-      setVehicles(filteredVehicles);
-      setLoading(false);
+
+      const ctrackPromise = fetch('/api/ctrack-data').then(async (res) => {
+        const data = await res.json();
+        return processCtrackVehicles(data, existingPlates);
+      }).catch((e) => {
+        console.error('Error fetching CTrack data:', e);
+        return [] as Vehicle[];
+      });
+
+      // Show CTrack vehicles as soon as they arrive
+      ctrackPromise.then((ctrackVehicles) => {
+        setVehicles(prev => mergeVehicles(ctrackVehicles, prev));
+      });
+
+      // Wait for both to finish for the final merge (+ EPS cache priming)
+      const [epsVehicles, ctrackVehicles] = await Promise.all([epsPromise, ctrackPromise]);
+      setVehicles(mergeVehicles(epsVehicles, ctrackVehicles));
     } catch (error) {
       console.error('Error fetching vehicles:', error);
+    } finally {
       setLoading(false);
     }
   };
