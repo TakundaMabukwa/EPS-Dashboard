@@ -821,7 +821,7 @@ export default function LiveMapView() {
                           <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                           </svg>
-                          <span>{vehicle.speed.toFixed(1)} km/h</span>
+                          <span>{Number(vehicle.speed).toFixed(1)} km/h</span>
                         </div>
                         
                         <div className="flex items-start gap-1.5">
