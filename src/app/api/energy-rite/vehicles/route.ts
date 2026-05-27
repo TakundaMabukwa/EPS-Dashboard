@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 
-const API_BASE = 'http://209.38.217.58:8000/api/vehicles';
+const API_BASE = 'http://209.38.217.58:8000/api/vehicles/account/EPSC-0001';
 
 let cachedData: any = null;
 let cachedTime = 0;

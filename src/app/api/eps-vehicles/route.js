@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 
-const API_BASE = 'http://209.38.217.58:8000/api/vehicles'
+const API_BASE = 'http://209.38.217.58:8000/api/vehicles/account/EPSC-0001'
 
 export async function GET(request) {
   try {

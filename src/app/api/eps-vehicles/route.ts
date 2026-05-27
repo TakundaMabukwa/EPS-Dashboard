@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const API_BASE = 'http://209.38.217.58:8000/api/vehicles'
+const API_BASE = 'http://209.38.217.58:8000/api/vehicles/account/EPSC-0001'
 
 let cachedData: any = null
 let cachedTime = 0
@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
 
   let url: string
   if (endpoint === 'by-plate' && plate) {
-    url = `${API_BASE}/reg/${encodeURIComponent(plate)}`
+    url = `http://209.38.217.58:8000/api/vehicles/reg/${encodeURIComponent(plate)}`
   } else if (endpoint === 'by-driver' && driver) {
     url = API_BASE
   } else {
@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 45000)
+    const timeoutId = setTimeout(() => controller.abort(), 15000)
 
     const response = await fetch(url, {
       signal: controller.signal,
