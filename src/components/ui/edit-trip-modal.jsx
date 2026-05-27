@@ -193,14 +193,14 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
       const customLocation = customStopPoints[i]
       
       if (customLocation) {
-        // Geocode custom location
+        // Geocode custom location using Google
         try {
           const response = await fetch(
-            `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(customLocation)}.json?access_token=${process.env.NEXT_PUBLIC_MAPBOX_TOKEN}&country=za&limit=1`
+            `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(customLocation)}&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_TOKEN}&region=za`
           )
           const data = await response.json()
-          if (data.features?.[0]) {
-            const [lng, lat] = data.features[0].center
+          if (data.status === 'OK' && data.results?.[0]) {
+            const { lat, lng } = data.results[0].geometry.location
             results.push({
               id: `custom_${i}`,
               name: customLocation,
@@ -472,10 +472,24 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
       
       setIsOptimizing(true)
       try {
-        const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN
-        if (!mapboxToken) {
+        const gm = window.google?.maps
+        if (!gm) {
           setIsOptimizing(false)
           return
+        }
+        
+        const geocodeAddress = async (address) => {
+          const geocoder = new gm.Geocoder()
+          return new Promise((resolve) => {
+            geocoder.geocode({ address, region: 'za' }, (results, status) => {
+              if (status === 'OK' && results?.[0]?.geometry?.location) {
+                const loc = results[0].geometry.location
+                resolve({ lat: loc.lat(), lng: loc.lng() })
+              } else {
+                resolve(null)
+              }
+            })
+          })
         }
         
         // Get stop points data if available
@@ -492,76 +506,51 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
           }
         }
         
-        // Use proxy API for better performance
-        const params = new URLSearchParams({
-          endpoint: `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(loadingLocation)}.json`,
-          access_token: mapboxToken,
-          country: 'za',
-          limit: '1'
-        })
-        
-        const [loadingResponse, dropOffResponse] = await Promise.all([
-          fetch(`/api/mapbox?${params}`),
-          fetch(`/api/mapbox?${new URLSearchParams({
-            endpoint: `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(dropOffPoint)}.json`,
-            access_token: mapboxToken,
-            country: 'za',
-            limit: '1'
-          })}`)
+        const [loadingCoords, dropOffCoords] = await Promise.all([
+          geocodeAddress(loadingLocation),
+          geocodeAddress(dropOffPoint)
         ])
         
-        const [loadingData, dropOffData] = await Promise.all([
-          loadingResponse.json(),
-          dropOffResponse.json()
-        ])
-        
-        if (loadingData.features?.[0] && dropOffData.features?.[0]) {
-          const loadingCoords = loadingData.features[0].center
-          const dropOffCoords = dropOffData.features[0].center
-          
-          // Build waypoints string including stop points
-          let waypoints = `${loadingCoords[0]},${loadingCoords[1]}`
+        if (loadingCoords && dropOffCoords) {
+          // Build waypoints
+          const waypoints = []
           
           // Add stop points as waypoints
           if (stopPointsData.length > 0) {
-            const stopWaypoints = stopPointsData.map(point => {
+            stopPointsData.forEach(point => {
               const coords = point.coordinates
               const avgLng = coords.reduce((sum, coord) => sum + coord[0], 0) / coords.length
               const avgLat = coords.reduce((sum, coord) => sum + coord[1], 0) / coords.length
-              return `${avgLng},${avgLat}`
-            }).filter(waypoint => waypoint && !waypoint.includes('NaN'))
-            
-            if (stopWaypoints.length > 0) {
-              waypoints += `;${stopWaypoints.join(';')}`
-            }
+              if (!isNaN(avgLng) && !isNaN(avgLat)) {
+                waypoints.push({ location: { lat: avgLat, lng: avgLng }, stopover: true })
+              }
+            })
           }
           
-          waypoints += `;${dropOffCoords[0]},${dropOffCoords[1]}`
-          
-          // Use proxy API for directions
-          const directionsParams = new URLSearchParams({
-            endpoint: `https://api.mapbox.com/directions/v5/mapbox/driving/${waypoints}`,
-            geometries: 'geojson',
-            overview: 'full',
-            exclude: 'ferry'
-          })
-          
-          const directionsResponse = await fetch(`/api/mapbox?${directionsParams}`)
-          
-          if (directionsResponse.ok) {
-            const directionsData = await directionsResponse.json()
-            
-            if (directionsData.code === 'Ok' && directionsData.routes?.[0]) {
-              const route = directionsData.routes[0]
-              setOptimizedRoute({
-                route: route,
-                distance: route.distance,
-                duration: route.duration,
-                geometry: route.geometry,
-                stopPoints: stopPointsData
-              })
+          // Use Google Directions Service
+          const directionsService = new gm.DirectionsService()
+          directionsService.route(
+            {
+              origin: loadingCoords,
+              destination: dropOffCoords,
+              waypoints: waypoints,
+              travelMode: gm.TravelMode.DRIVING,
+              optimizeWaypoints: true,
+            },
+            (res, status) => {
+              if (status === 'OK' && res.routes?.[0]) {
+                const route = res.routes[0]
+                const overviewPath = route.overview_path.map(p => ({ lat: p.lat(), lng: p.lng() }))
+                setOptimizedRoute({
+                  route: route,
+                  distance: route.legs.reduce((sum, leg) => sum + leg.distance.value, 0),
+                  duration: route.legs.reduce((sum, leg) => sum + leg.duration.value, 0),
+                  geometry: { type: 'LineString', coordinates: overviewPath },
+                  stopPoints: stopPointsData
+                })
+              }
             }
-          }
+          )
         }
       } catch (error) {
         console.error('Route preview failed:', error)

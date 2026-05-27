@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server'
 
+const API_BASE = 'http://209.38.217.58:8000/api/vehicles'
+
 export async function GET(request) {
   try {
-    const url = process.env.NEXT_PUBLIC_VEHICLE_API_ENDPOINT
-    
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 15000)
     
-    const response = await fetch(url, {
+    const response = await fetch(API_BASE, {
       signal: controller.signal,
       headers: { 'Content-Type': 'application/json' },
       cache: 'no-store'

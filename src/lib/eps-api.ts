@@ -1,5 +1,5 @@
 // EPS Reward System API Service
-const BASE_URL = 'http://64.227.138.235:3000/api/eps-rewards'
+const BASE_URL = `${process.env.NEXT_PUBLIC_CAN_BUS_ENDPOINT || process.env.NEXT_PUBLIC_EPS_HTTP_SERVER_ENDPOINT || 'http://209.38.217.58:3001'}/api/eps-rewards`
 
 // Types for EPS API responses
 export interface BiWeeklyCategoryPoints {

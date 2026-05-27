@@ -12,9 +12,9 @@ export const getTechnicianLocation = async (techId: number) => {
 
   if (error || !location) throw error;
 
-  const res = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(location.location)}.json?access_token=${process.env.NEXT_PUBLIC_MAPBOX_TOKEN}`);
+  const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(location.location)}&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_TOKEN}&region=za`);
   const data = await res.json();
-  const [lng, lat] = data.features[0].center;
+  const { lat, lng } = data.results[0].geometry.location;
 
   return { lat, lng, name: location.location };
 };

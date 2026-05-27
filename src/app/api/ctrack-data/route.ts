@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(request: NextRequest) {
-  const baseUrl = process.env.NEXT_PUBLIC_CRTACK_VEHICLE_API_ENDPOINT || 'http://64.227.126.176:3001/api/ctrack/data'
+  const baseUrl = process.env.NEXT_PUBLIC_CRTACK_VEHICLE_API_ENDPOINT || 'http://165.227.134.97:3001/api/ctrack/data'
 
   try {
     const controller = new AbortController()

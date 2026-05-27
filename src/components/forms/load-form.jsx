@@ -127,20 +127,20 @@ const LoadForm = ({ onClose, id }) => {
     return R * c
   }
 
-  // Get pickup location coordinates using Mapbox
+  // Get pickup location coordinates using Google Geocoding API
   const getPickupCoordinates = async (location) => {
     if (!location) return null
     try {
-      const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN
-      if (!mapboxToken) return null
+      const googleKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_TOKEN
+      if (!googleKey) return null
       
       const response = await fetch(
-        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(location)}.json?access_token=${mapboxToken}&country=za&limit=1`
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(location)}&key=${googleKey}&region=za`
       )
       const data = await response.json()
-      if (data.features?.[0]?.center) {
-        const [lon, lat] = data.features[0].center
-        return { lat, lon }
+      if (data.status === 'OK' && data.results?.[0]) {
+        const { lat, lng } = data.results[0].geometry.location
+        return { lat, lon: lng }
       }
     } catch (error) {
       console.error('Error geocoding pickup location:', error)

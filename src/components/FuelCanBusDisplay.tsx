@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react'
 import { FuelGauge } from '@/components/ui/fuel-gauge'
 import { Button } from '@/components/ui/button'
 import { RefreshCw, Fuel } from 'lucide-react'
-import { formatForDisplay } from '@/lib/utils/date-formatter'
 
 interface FuelData {
   plate: string
@@ -47,52 +46,38 @@ export default function FuelCanBusDisplay() {
     fetchFuelData()
   }, [])
 
-  // Convert CAN bus fuel data to fuel gauge format
   const getFuelGaugeData = () => {
-    console.log('Vehicles Map size:', vehicles.size)
-    console.log('Sample vehicle from Map:', Array.from(vehicles.values())[0])
-    
     const gaugeData = Array.from(vehicles.values()).map((vehicle) => {
       const fuelLevel = vehicle.fuelLevel || 0
       const fuelPercent = vehicle.fuelPercentage || 0
       const engineTemp = vehicle.engineTemperature || 0
       const isEngineOn = engineTemp > 40
 
-      // Use liters as main, percentage as fallback
       const displayPercent = fuelLevel > 0 ? fuelLevel : fuelPercent
 
-      const result = {
+      return {
         id: vehicle.plate,
         location: vehicle.plate,
         fuelLevel: displayPercent,
         temperature: engineTemp,
         volume: fuelLevel,
-
         status: isEngineOn ? 'Active' : 'Engine Off',
-        lastUpdated: formatForDisplay(vehicle.timestamp),
-        updated_at: vehicle.timestamp
       }
-
-      console.log(`Gauge ${vehicle.plate}:`, { fuelLevel: result.fuelLevel, volume: result.volume, temp: result.temperature })
-      return result
     })
-    
-    // Sort by latest update first, then move 0 fuel level vehicles to the end
+
     return gaugeData.sort((a, b) => {
       if (a.volume === 0 && b.volume !== 0) return 1
       if (a.volume !== 0 && b.volume === 0) return -1
-      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+      return 0
     })
   }
 
-
-
   if (loading) {
     return (
-      <div className="flex justify-center items-center bg-gray-50 h-full">
+      <div className="flex h-full items-center justify-center bg-slate-50">
         <div className="text-center">
-          <div className="mx-auto mb-4 border-b-2 border-blue-600 rounded-full w-12 h-12 animate-spin"></div>
-          <p className="text-gray-600">Loading fuel data...</p>
+          <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-[#001e42]"></div>
+          <p className="text-sm text-slate-600">Loading fuel data...</p>
         </div>
       </div>
     )
@@ -100,13 +85,13 @@ export default function FuelCanBusDisplay() {
 
   if (error) {
     return (
-      <div className="flex justify-center items-center bg-gray-50 h-full">
+      <div className="flex h-full items-center justify-center bg-slate-50">
         <div className="text-center">
-          <div className="mx-auto mb-4 text-red-500 text-6xl">⚠️</div>
-          <p className="mb-4 text-red-600">Error loading fuel data</p>
-          <p className="mb-4 text-gray-600">{error}</p>
-          <Button onClick={fetchFuelData} variant="outline">
-            <RefreshCw className="mr-2 w-4 h-4" />
+          <div className="mx-auto mb-4 text-5xl text-red-400">⚠</div>
+          <p className="mb-2 text-sm font-medium text-red-600">Error loading fuel data</p>
+          <p className="mb-4 text-xs text-slate-500">{error}</p>
+          <Button onClick={fetchFuelData} variant="outline" size="sm">
+            <RefreshCw className="mr-2 h-4 w-4" />
             Retry
           </Button>
         </div>
@@ -115,12 +100,10 @@ export default function FuelCanBusDisplay() {
   }
 
   return (
-    <div className="bg-gray-50 h-full">
+    <div className="h-full bg-slate-50">
       <div className="p-4">
-
-        
         {vehicles.size > 0 ? (
-          <div className="gap-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 xl:grid-cols-5">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
             {getFuelGaugeData().map((data) => (
               <FuelGauge
                 key={data.id}
@@ -129,21 +112,16 @@ export default function FuelCanBusDisplay() {
                 fuelLevel={data.fuelLevel}
                 temperature={data.temperature}
                 volume={data.volume}
-
                 status={data.status}
-                lastUpdated={data.lastUpdated}
-                updated_at={data.updated_at}
-
-                className="hover:scale-105 transition-transform duration-200 transform"
               />
             ))}
           </div>
         ) : (
-          <div className="flex justify-center items-center py-12">
+          <div className="flex items-center justify-center py-16">
             <div className="text-center">
-              <Fuel className="mx-auto mb-4 w-16 h-16 text-gray-400" />
-              <p className="text-gray-500 text-lg">No fuel data available</p>
-              <p className="text-gray-400 text-sm">Check your connection to the EPS server</p>
+              <Fuel className="mx-auto mb-4 h-16 w-16 text-slate-300" />
+              <p className="text-base font-medium text-slate-500">No fuel data available</p>
+              <p className="mt-1 text-xs text-slate-400">Check your connection to the EPS server</p>
             </div>
           </div>
         )}

@@ -24,7 +24,7 @@ export default function DriverPerformanceDashboard() {
     try {
       setLoading(true)
       console.log('Using proxy POST method...')
-      const HTTP_SERVER_ENDPOINT = process.env.NEXT_PUBLIC_HTTP_SERVER_ENDPOINT || 'http://localhost:3001'
+      const HTTP_SERVER_ENDPOINT = process.env.NEXT_PUBLIC_CAN_BUS_ENDPOINT || process.env.NEXT_PUBLIC_EPS_HTTP_SERVER_ENDPOINT || 'http://209.38.217.58:3001'
       console.log('Target endpoint:', `${HTTP_SERVER_ENDPOINT}/api/eps-rewards/all-driver-profiles`)
       const response = await fetch('/api/eps-rewards', {
         method: 'POST',

@@ -76,13 +76,7 @@ export default function AddressAutocomplete({
         }
 
         if (onAddressSelect) {
-            onAddressSelect({
-                street,
-                city,
-                state,
-                country,
-                formatted_address: suggestion.place_name,
-            })
+            onAddressSelect({ street, city, state, country, formatted_address: suggestion.place_name })
         }
     }
 

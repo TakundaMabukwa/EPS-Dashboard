@@ -1,9 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import mapboxgl from 'mapbox-gl'
-
-mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN!
+import { loadGoogleMaps } from '@/lib/google-maps'
 
 interface RouteMapProps {
   coordinates?: number[][]
@@ -11,7 +9,7 @@ interface RouteMapProps {
 
 export default function RouteMap({ coordinates }: RouteMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null)
-  const map = useRef<mapboxgl.Map | null>(null)
+  const map = useRef<any>(null)
 
   const defaultCoordinates = [
     [31.018885, -29.903031], [31.018965, -29.903105], [31.019861, -29.903916],
@@ -30,72 +28,71 @@ export default function RouteMap({ coordinates }: RouteMapProps) {
   useEffect(() => {
     if (map.current || !mapContainer.current) return
 
-    // Calculate center from coordinates
-    const lngs = routeCoords.map(coord => coord[0])
-    const lats = routeCoords.map(coord => coord[1])
-    const centerLng = (Math.min(...lngs) + Math.max(...lngs)) / 2
-    const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2
+    const init = async () => {
+      await loadGoogleMaps()
+      const gm = (window as any).google.maps
 
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/streets-v11',
-      center: [centerLng, centerLat],
-      zoom: 10,
-    })
+      const lngs = routeCoords.map(coord => coord[0])
+      const lats = routeCoords.map(coord => coord[1])
+      const centerLng = (Math.min(...lngs) + Math.max(...lngs)) / 2
+      const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2
 
-    map.current.addControl(new mapboxgl.NavigationControl(), 'bottom-right')
-
-    map.current.on('load', () => {
-      if (!map.current) return
-
-      // Add route source
-      map.current.addSource('route', {
-        type: 'geojson',
-        data: {
-          type: 'Feature',
-          properties: {},
-          geometry: {
-            type: 'LineString',
-            coordinates: routeCoords
-          }
-        }
+      map.current = new gm.Map(mapContainer.current, {
+        center: { lat: centerLat, lng: centerLng },
+        zoom: 10,
+        mapTypeId: 'roadmap',
+        mapTypeControl: false,
+        streetViewControl: false,
+        zoomControl: true,
       })
 
-      // Add route layer
-      map.current.addLayer({
-        id: 'route',
-        type: 'line',
-        source: 'route',
-        layout: {
-          'line-join': 'round',
-          'line-cap': 'round'
+      const routePath = routeCoords.map(coord => ({ lat: coord[1], lng: coord[0] }))
+
+      new gm.Polyline({
+        path: routePath,
+        map: map.current,
+        strokeColor: '#3b82f6',
+        strokeWeight: 4,
+        strokeOpacity: 0.9,
+      })
+
+      new gm.Marker({
+        position: routePath[0],
+        map: map.current,
+        icon: {
+          path: gm.SymbolPath.CIRCLE,
+          scale: 8,
+          fillColor: '#22c55e',
+          fillOpacity: 1,
+          strokeColor: '#ffffff',
+          strokeWeight: 2,
         },
-        paint: {
-          'line-color': '#3b82f6',
-          'line-width': 4
-        }
+        title: 'Start',
       })
 
-      // Add markers for start and end points
-      new mapboxgl.Marker({ color: '#22c55e' })
-        .setLngLat(routeCoords[0])
-        .setPopup(new mapboxgl.Popup().setHTML('<div>Start Point</div>'))
-        .addTo(map.current)
+      new gm.Marker({
+        position: routePath[routePath.length - 1],
+        map: map.current,
+        icon: {
+          path: gm.SymbolPath.CIRCLE,
+          scale: 8,
+          fillColor: '#ef4444',
+          fillOpacity: 1,
+          strokeColor: '#ffffff',
+          strokeWeight: 2,
+        },
+        title: 'End',
+      })
 
-      new mapboxgl.Marker({ color: '#ef4444' })
-        .setLngLat(routeCoords[routeCoords.length - 1])
-        .setPopup(new mapboxgl.Popup().setHTML('<div>End Point</div>'))
-        .addTo(map.current)
+      const bounds = new gm.LatLngBounds()
+      routePath.forEach(p => bounds.extend(p))
+      map.current.fitBounds(bounds, 50)
+    }
 
-      // Fit map to route bounds
-      const bounds = new mapboxgl.LngLatBounds()
-      routeCoords.forEach(coord => bounds.extend(coord as [number, number]))
-      map.current.fitBounds(bounds, { padding: 50 })
-    })
+    init()
 
     return () => {
       if (map.current) {
-        map.current.remove()
         map.current = null
       }
     }

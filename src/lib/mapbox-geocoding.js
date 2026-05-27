@@ -1,14 +1,13 @@
-const MAPBOX_ACCESS_TOKEN =
-  'pk.eyJ1IjoicmVuZGFuaS1kZXYiLCJhIjoiY21kM2c3OXQ4MDJ6MjJqczlqbzNwcDZvaCJ9.6skTnPcXqD7h24o9mfuQnw'
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || ''
+const GOOGLE_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_TOKEN || ''
 
 /**
- * Geocode an address to get coordinates using Mapbox Geocoding API
+ * Geocode an address to get coordinates using Google Geocoding API
  */
 export async function geocodeAddress(address) {
   try {
-    const encodedAddress = encodeURIComponent(address)
     const response = await fetch(
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodedAddress}.json?access_token=${MAPBOX_ACCESS_TOKEN}&limit=1`
+      `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${GOOGLE_KEY}&region=za`
     )
 
     if (!response.ok) {
@@ -17,15 +16,15 @@ export async function geocodeAddress(address) {
 
     const data = await response.json()
 
-    if (data.features && data.features.length > 0) {
-      const feature = data.features[0]
-      const [lng, lat] = feature.center
+    if (data.status === 'OK' && data.results && data.results.length > 0) {
+      const result = data.results[0]
+      const { lat, lng } = result.geometry.location
 
       return {
         lat,
         lng,
-        formatted_address: feature.place_name,
-        place_name: feature.place_name,
+        formatted_address: result.formatted_address,
+        place_name: result.formatted_address,
       }
     }
 
@@ -51,12 +50,12 @@ export async function geocodeFromFormData(formData) {
 }
 
 /**
- * Reverse geocode coordinates to get address components
+ * Reverse geocode coordinates to get address components using Google Geocoding API
  */
 export async function reverseGeocode(lat, lng) {
   try {
     const response = await fetch(
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${MAPBOX_ACCESS_TOKEN}&types=address`
+      `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GOOGLE_KEY}&region=za`
     )
 
     if (!response.ok) {
@@ -65,31 +64,21 @@ export async function reverseGeocode(lat, lng) {
 
     const data = await response.json()
 
-    if (data.features && data.features.length > 0) {
-      const feature = data.features[0]
-      const context = feature.context || []
+    if (data.status === 'OK' && data.results && data.results.length > 0) {
+      const result = data.results[0]
+      const components = result.address_components || []
 
-      const street = feature.text || ''
-      let city = ''
-      let state = ''
-      let country = ''
-
-      context.forEach((item) => {
-        if (item.id.startsWith('place')) {
-          city = item.text
-        } else if (item.id.startsWith('region')) {
-          state = item.text
-        } else if (item.id.startsWith('country')) {
-          country = item.text
-        }
-      })
+      const street = components.find(c => c.types.includes('route'))?.long_name || ''
+      const city = components.find(c => c.types.includes('locality'))?.long_name || ''
+      const state = components.find(c => c.types.includes('administrative_area_level_1'))?.long_name || ''
+      const country = components.find(c => c.types.includes('country'))?.long_name || ''
 
       return {
-        street,
+        street: result.geometry?.location_type === 'ROOFTOP' ? result.formatted_address : street,
         city,
         state,
         country,
-        formatted_address: feature.place_name,
+        formatted_address: result.formatted_address,
       }
     }
 
@@ -101,7 +90,7 @@ export async function reverseGeocode(lat, lng) {
 }
 
 /**
- * Search for places/addresses with autocomplete
+ * Search for places/addresses with autocomplete using Mapbox Geocoding API
  */
 export async function searchPlaces(query, limit = 5) {
   try {
@@ -111,7 +100,7 @@ export async function searchPlaces(query, limit = 5) {
 
     const encodedQuery = encodeURIComponent(query)
     const response = await fetch(
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodedQuery}.json?access_token=${MAPBOX_ACCESS_TOKEN}&limit=${limit}&types=address,poi`
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodedQuery}.json?access_token=${MAPBOX_TOKEN}&limit=${limit}&types=address,poi&country=za`
     )
 
     if (!response.ok) {

@@ -37,6 +37,8 @@ import {
   ChevronDown,
   ChevronRight,
   Video,
+  Moon,
+  Sun,
 } from "lucide-react";
 import { getDashboardStats } from "@/lib/stats/dashboard";
 import { createClient } from "@/lib/supabase/client";
@@ -461,16 +463,20 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
             
             if (pickup && dropoff) {
               try {
-                const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-                
-                // Geocode pickup and dropoff addresses to coordinates
                 const geocodeAddress = async (address) => {
-                  const geocodeResponse = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(address)}.json?access_token=${mapboxToken}&limit=1`);
-                  const geocodeData = await geocodeResponse.json();
-                  if (geocodeData.features && geocodeData.features[0]) {
-                    return geocodeData.features[0].center; // [lng, lat]
-                  }
-                  return null;
+                  const gm = window.google?.maps;
+                  if (!gm) return null;
+                  const geocoder = new gm.Geocoder();
+                  return new Promise((resolve) => {
+                    geocoder.geocode({ address, region: 'za' }, (results, status) => {
+                      if (status === 'OK' && results?.[0]?.geometry?.location) {
+                        const loc = results[0].geometry.location;
+                        resolve([loc.lng(), loc.lat()]);
+                      } else {
+                        resolve(null);
+                      }
+                    });
+                  });
                 };
                 
                 const pickupCoords = await geocodeAddress(pickup);
@@ -481,9 +487,8 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
                   throw new Error('Geocoding failed');
                 }
                 
-                let waypoints = `${pickupCoords[0]},${pickupCoords[1]};${dropoffCoords[0]},${dropoffCoords[1]}`;
+                let waypoints = [{ location: { lat: pickupCoords[1], lng: pickupCoords[0] }, stopover: true }];
                 
-                // Add stop points if available
                 const selectedStopPoints = trip.selected_stop_points || trip.selectedstoppoints || [];
                 if (selectedStopPoints.length > 0) {
                   const stopPointIds = selectedStopPoints.map(stop => typeof stop === 'object' ? stop.id : stop);
@@ -492,23 +497,42 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
                     .select('coordinates')
                     .in('id', stopPointIds);
                   
-                  const stopWaypoints = (stopPointsData || []).map(point => {
+                  (stopPointsData || []).forEach(point => {
                     if (point.coordinates) {
                       const coords = point.coordinates.split(' ')[0].split(',');
-                      return `${coords[0]},${coords[1]}`; // lng,lat
+                      waypoints.push({ location: { lat: parseFloat(coords[1]), lng: parseFloat(coords[0]) }, stopover: true });
                     }
-                  }).filter(Boolean);
-                  
-                  if (stopWaypoints.length > 0) {
-                    waypoints = `${pickupCoords[0]},${pickupCoords[1]};${stopWaypoints.join(';')};${dropoffCoords[0]},${dropoffCoords[1]}`;
-                  }
+                  });
                 }
                 
-                const response = await fetch(`https://api.mapbox.com/directions/v5/mapbox/driving/${waypoints}?access_token=${mapboxToken}&geometries=geojson&overview=full&exclude=ferry`);
-                const routeData = await response.json();
-                if (routeData.routes && routeData.routes[0]) {
-                  routeCoords = routeData.routes[0].geometry.coordinates;
-                  console.log('Generated preplanned route with', routeCoords.length, 'points');
+                waypoints.push({ location: { lat: dropoffCoords[1], lng: dropoffCoords[0] }, stopover: true });
+                
+                // Use Google Directions Service
+                const gm = window.google?.maps;
+                if (gm) {
+                  const directionsService = new gm.DirectionsService();
+                  const result = await new Promise((resolve) => {
+                    directionsService.route(
+                      {
+                        origin: waypoints[0].location,
+                        destination: waypoints[waypoints.length - 1].location,
+                        waypoints: waypoints.slice(1, -1),
+                        travelMode: gm.TravelMode.DRIVING,
+                      },
+                      (res, status) => {
+                        if (status === 'OK' && res.routes?.[0]) {
+                          const path = res.routes[0].overview_path.map(p => [p.lng(), p.lat()]);
+                          resolve(path);
+                        } else {
+                          resolve(null);
+                        }
+                      }
+                    );
+                  });
+                  if (result) {
+                    routeCoords = result;
+                    console.log('Generated preplanned route with', routeCoords.length, 'points');
+                  }
                 }
               } catch (error) {
                 console.error('Error generating preplanned route:', error);
@@ -539,26 +563,43 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
                 const destination = dropoff || trip.destination;
                 
                 if (origin && destination) {
-                  const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+                  const gm = window.google?.maps;
+                  if (!gm) throw new Error('Google Maps not loaded');
                   
-                  // Geocode addresses first
                   const geocodeAddress = async (address) => {
-                    const geocodeResponse = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(address)}.json?access_token=${mapboxToken}&limit=1`);
-                    const geocodeData = await geocodeResponse.json();
-                    if (geocodeData.features && geocodeData.features[0]) {
-                      return geocodeData.features[0].center;
-                    }
-                    return null;
+                    const geocoder = new gm.Geocoder();
+                    return new Promise((resolve) => {
+                      geocoder.geocode({ address, region: 'za' }, (results, status) => {
+                        if (status === 'OK' && results?.[0]?.geometry?.location) {
+                          const loc = results[0].geometry.location;
+                          resolve({ lat: loc.lat(), lng: loc.lng() });
+                        } else {
+                          resolve(null);
+                        }
+                      });
+                    });
                   };
                   
                   const originCoords = await geocodeAddress(origin);
                   const destCoords = await geocodeAddress(destination);
                   
                   if (originCoords && destCoords) {
-                    const response = await fetch(`https://api.mapbox.com/directions/v5/mapbox/driving/${originCoords[0]},${originCoords[1]};${destCoords[0]},${destCoords[1]}?access_token=${mapboxToken}&geometries=geojson&overview=full&alternatives=true`);
-                    const routeData = await response.json();
-                    if (routeData.routes && routeData.routes[0]) {
-                      routeCoords = routeData.routes[0].geometry.coordinates;
+                    const directionsService = new gm.DirectionsService();
+                    const result = await new Promise((resolve) => {
+                      directionsService.route(
+                        { origin: originCoords, destination: destCoords, travelMode: gm.TravelMode.DRIVING, provideRouteAlternatives: true },
+                        (res, status) => {
+                          if (status === 'OK' && res.routes?.[0]) {
+                            const path = res.routes[0].overview_path.map(p => [p.lng(), p.lat()]);
+                            resolve(path);
+                          } else {
+                            resolve(null);
+                          }
+                        }
+                      );
+                    });
+                    if (result) {
+                      routeCoords = result;
                       console.log('Generated fallback route:', routeCoords.length, 'points');
                     }
                   }
@@ -2407,383 +2448,410 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Pre-define Google Maps Night Style */}
+      {(() => {
+        if (typeof window !== 'undefined' && !(window as any).__googleMapsNightStyle) {
+          (window as any).__googleMapsNightStyle = [
+            { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
+            { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
+            { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
+            { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] },
+            { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] },
+            { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#263c3f" }] },
+            { featureType: "poi.park", elementType: "labels.text.fill", stylers: [{ color: "#6b9a76" }] },
+            { featureType: "road", elementType: "geometry", stylers: [{ color: "#38414e" }] },
+            { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#212a37" }] },
+            { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#9ca5b3" }] },
+            { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#746855" }] },
+            { featureType: "road.highway", elementType: "geometry.stroke", stylers: [{ color: "#1f2835" }] },
+            { featureType: "road.highway", elementType: "labels.text.fill", stylers: [{ color: "#f3d19c" }] },
+            { featureType: "transit", elementType: "geometry", stylers: [{ color: "#2f3948" }] },
+            { featureType: "transit.station", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] },
+            { featureType: "water", elementType: "geometry", stylers: [{ color: "#17263c" }] },
+            { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#515c6d" }] },
+            { featureType: "water", elementType: "labels.text.stroke", stylers: [{ color: "#17263c" }] },
+          ];
+        }
+        return null;
+      })()}
+
       {/* Map Modal */}
       {mapOpen && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-lg w-full max-w-7xl h-full max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b flex-shrink-0">
-              <h3 className="text-lg font-semibold">Driver Location</h3>
-              <Button variant="ghost" size="sm" onClick={() => setMapOpen(false)}>
-                <X className="h-4 w-4" />
-              </Button>
+          <div className="bg-white dark:bg-gray-900 rounded-lg shadow-lg w-full max-w-7xl h-full max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b dark:border-gray-700 flex-shrink-0">
+              <h3 className="text-lg font-semibold dark:text-white">Driver Location</h3>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    const isDark = document.documentElement.classList.contains("dark");
+                    if (isDark) {
+                      document.documentElement.classList.remove("dark");
+                    } else {
+                      document.documentElement.classList.add("dark");
+                    }
+                    const gMap = (window as any).__gMapInstance;
+                    if (gMap) {
+                      const isNight = document.documentElement.classList.contains("dark");
+                      gMap.setOptions({ styles: isNight ? (window as any).__googleMapsNightStyle : [] });
+                    }
+                  }}
+                  className="gap-1"
+                >
+                  {(() => {
+                    const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains("dark");
+                    return isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />;
+                  })()}
+                  <span className="hidden sm:inline">Map Theme</span>
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setMapOpen(false)}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
             <div className="flex flex-col lg:flex-row gap-4 p-4 flex-1 min-h-0">
               {/* Render Map First - Priority Loading */}
               <div className="flex-1 min-h-0 order-1 lg:order-2">
                 <div 
                   id="driver-map" 
-                  className="w-full h-full min-h-[400px] rounded border bg-slate-100"
+                  className="w-full h-full min-h-[400px] rounded border dark:border-gray-700 bg-slate-100 dark:bg-gray-800"
                   ref={(el) => {
                     if (el && mapData) {
-                      // Show loading state
                       el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#64748b;font-size:14px;"><div>Loading map...</div></div>';
                       
-                      // Load map immediately with priority
-                      const loadMap = () => {
-                        const script = document.createElement('script');
-                        script.src = 'https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js';
-                        script.async = true;
-                        script.onload = () => {
-                          const link = document.createElement('link');
-                          link.href = 'https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css';
-                          link.rel = 'stylesheet';
-                          document.head.appendChild(link);
-                          
-                          // Clear loading state
-                          el.innerHTML = '';
-                          
-                          if (window.mapboxgl) {
-                            window.mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-                            const map = new window.mapboxgl.Map({
-                              container: el,
-                              style: 'mapbox://styles/mapbox/streets-v12',
-                              center: mapData.longitude && mapData.latitude ? 
-                                [parseFloat(mapData.longitude), parseFloat(mapData.latitude)] : 
-                                [28.0473, -26.2041],
-                              zoom: mapData.showBasicRoute ? 10 : 15,
-                              preserveDrawingBuffer: true,
-                              attributionControl: false
+                      const initMap = () => {
+                        if (!(window as any).google?.maps) {
+                          const existingScript = document.querySelector('script[src*="maps.googleapis.com"]');
+                          if (!existingScript) {
+                            const script = document.createElement('script');
+                            script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_TOKEN}&libraries=places`;
+                            script.async = true;
+                            script.onload = () => renderGoogleMap(el);
+                            document.head.appendChild(script);
+                          } else {
+                            const checkGoogle = setInterval(() => {
+                              if ((window as any).google?.maps) {
+                                clearInterval(checkGoogle);
+                                renderGoogleMap(el);
+                              }
+                            }, 100);
+                          }
+                        } else {
+                          renderGoogleMap(el);
+                        }
+                      };
+
+                      const renderGoogleMap = (container: HTMLElement) => {
+                        container.innerHTML = '';
+                        
+                        const isNight = document.documentElement.classList.contains("dark");
+                        const map = new (window as any).google.maps.Map(container, {
+                          center: mapData.longitude && mapData.latitude ? 
+                            { lat: parseFloat(mapData.latitude), lng: parseFloat(mapData.longitude) } : 
+                            { lat: -26.2041, lng: 28.0473 },
+                          zoom: mapData.showBasicRoute ? 10 : 15,
+                          mapTypeId: 'roadmap',
+                          styles: isNight ? (window as any).__googleMapsNightStyle : [],
+                          mapTypeControl: false,
+                          fullscreenControl: true,
+                          streetViewControl: false,
+                          zoomControl: true,
+                        });
+                        
+                        (window as any).__gMapInstance = map;
+                        const bounds = new (window as any).google.maps.LatLngBounds();
+                        const infoWindows: any[] = [];
+
+                        // Vehicle marker
+                        let vehicleMarker: any = null;
+                        if (!mapData.showRouteOnly && !mapData.showBasicRoute && mapData.longitude && mapData.latitude) {
+                          const vehiclePos = { lat: parseFloat(mapData.latitude), lng: parseFloat(mapData.longitude) };
+                          vehicleMarker = new (window as any).google.maps.Marker({
+                            position: vehiclePos,
+                            map: map,
+                            icon: {
+                              path: (window as any).google.maps.SymbolPath.CIRCLE,
+                              scale: 10,
+                              fillColor: '#3b82f6',
+                              fillOpacity: 1,
+                              strokeColor: '#ffffff',
+                              strokeWeight: 3,
+                            },
+                            title: 'Vehicle',
+                          });
+                          bounds.extend(vehiclePos);
+                        }
+
+                        // Add high risk zones
+                        if (mapData.highRiskZones?.length > 0) {
+                          mapData.highRiskZones.forEach((area: any) => {
+                            if (!area.polygon || area.polygon.length < 3) return;
+                            const paths = area.polygon.map((coord: number[]) => ({
+                              lat: coord[1],
+                              lng: coord[0]
+                            }));
+                            new (window as any).google.maps.Polygon({
+                              paths: paths,
+                              map: map,
+                              fillColor: '#ef4444',
+                              fillOpacity: 0.3,
+                              strokeColor: '#dc2626',
+                              strokeWeight: 2,
                             });
-                            
-                            map.on('load', () => {
-                            let vehicleMarker = null
-                            
-                            // Prioritize vehicle marker for immediate visibility
-                            if (!mapData.showRouteOnly && !mapData.showBasicRoute && mapData.longitude && mapData.latitude) {
-                              const vehicleEl = document.createElement('div')
-                              vehicleEl.innerHTML = '🚛'
-                              vehicleEl.style.cssText = `
-                                font-size: 24px; width: 32px; height: 32px;
-                                display: flex; align-items: center; justify-content: center;
-                                background: #3b82f6; border: 3px solid #fff;
-                                border-radius: 50%; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-                              `
-                              
-                              vehicleMarker = new window.mapboxgl.Marker(vehicleEl)
-                                .setLngLat([parseFloat(mapData.longitude), parseFloat(mapData.latitude)])
-                                .addTo(map)
-                            }
-                            
-                            // Load additional features after map is visible
-                            requestAnimationFrame(() => {
-                              // Add high risk zones
-                              if (mapData.highRiskZones && mapData.highRiskZones.length > 0) {
-                                mapData.highRiskZones.forEach((area, index) => {
-                                if (!area.polygon || area.polygon.length < 3) return;
-                                
-                                const sourceId = `risk-zone-${index}`;
-                                
-                                if (!map.getSource(sourceId)) {
-                                  map.addSource(sourceId, {
-                                    type: 'geojson',
-                                    data: {
-                                      type: 'Feature',
-                                      properties: { name: area.name },
-                                      geometry: {
-                                        type: 'Polygon',
-                                        coordinates: [area.polygon]
-                                      }
-                                    }
-                                  });
-                                  
-                                  map.addLayer({
-                                    id: `${sourceId}-fill`,
-                                    type: 'fill',
-                                    source: sourceId,
-                                    paint: {
-                                      'fill-color': '#ef4444',
-                                      'fill-opacity': 0.5
-                                    }
-                                  });
-                                  
-                                  map.addLayer({
-                                    id: `${sourceId}-border`,
-                                    type: 'line',
-                                    source: sourceId,
-                                    paint: {
-                                      'line-color': '#dc2626',
-                                      'line-width': 3
-                                    }
-                                  });
-                                  console.log('Added risk zone:', sourceId);
-                                }
+                          });
+                        }
+
+                        // Add route coordinates
+                        if (mapData.routeCoordinates?.length > 1) {
+                          const routePath = mapData.routeCoordinates.map((coord: number[]) => ({
+                            lat: coord[1],
+                            lng: coord[0]
+                          }));
+                          
+                          new (window as any).google.maps.Polyline({
+                            path: routePath,
+                            map: map,
+                            strokeColor: '#3b82f6',
+                            strokeWeight: 4,
+                            strokeOpacity: 0.9,
+                          });
+
+                          // Start marker
+                          const startPos = routePath[0];
+                          new (window as any).google.maps.Marker({
+                            position: startPos,
+                            map: map,
+                            icon: {
+                              path: (window as any).google.maps.SymbolPath.CIRCLE,
+                              scale: 8,
+                              fillColor: '#22c55e',
+                              fillOpacity: 1,
+                              strokeColor: '#ffffff',
+                              strokeWeight: 2,
+                            },
+                            title: 'Start',
+                          });
+                          bounds.extend(startPos);
+
+                          // End marker
+                          const endPos = routePath[routePath.length - 1];
+                          new (window as any).google.maps.Marker({
+                            position: endPos,
+                            map: map,
+                            icon: {
+                              path: (window as any).google.maps.SymbolPath.CIRCLE,
+                              scale: 8,
+                              fillColor: '#ef4444',
+                              fillOpacity: 1,
+                              strokeColor: '#ffffff',
+                              strokeWeight: 2,
+                            },
+                            title: 'End',
+                          });
+                          bounds.extend(endPos);
+
+                          // Extend bounds for all route points
+                          routePath.forEach((p: any) => bounds.extend(p));
+                        }
+
+                        // Add stop points
+                        if (mapData.stopPoints?.length > 0) {
+                          mapData.stopPoints.forEach((stopPoint: any, index: number) => {
+                            if (stopPoint.polygon?.length > 2) {
+                              const paths = stopPoint.polygon.map((coord: number[]) => ({
+                                lat: coord[1],
+                                lng: coord[0]
+                              }));
+                              new (window as any).google.maps.Polygon({
+                                paths: paths,
+                                map: map,
+                                fillColor: '#fbbf24',
+                                fillOpacity: 0.3,
+                                strokeColor: '#f59e0b',
+                                strokeWeight: 2,
                               });
                             }
-
-                            // Add route coordinates if available
-                            if (mapData.routeCoordinates && mapData.routeCoordinates.length > 1) {
-                              console.log('Adding route with', mapData.routeCoordinates.length, 'coordinates');
-                              
-                              try {
-                                map.addSource('route', {
-                                  type: 'geojson',
-                                  data: {
-                                    type: 'Feature',
-                                    properties: {},
-                                    geometry: {
-                                      type: 'LineString',
-                                      coordinates: mapData.routeCoordinates
-                                    }
-                                  }
-                                });
-                                
-                                map.addLayer({
-                                  id: 'route',
-                                  type: 'line',
-                                  source: 'route',
-                                  layout: {
-                                    'line-join': 'round',
-                                    'line-cap': 'round'
-                                  },
-                                  paint: {
-                                    'line-color': '#ef4444',
-                                    'line-width': 4
-                                  }
-                                });
-                                
-                                // Add markers
-                                new window.mapboxgl.Marker({ color: 'green' })
-                                  .setLngLat(mapData.routeCoordinates[0])
-                                  .addTo(map);
-                                  
-                                new window.mapboxgl.Marker({ color: 'red' })
-                                  .setLngLat(mapData.routeCoordinates[mapData.routeCoordinates.length - 1])
-                                  .addTo(map);
-                                  
-                                console.log('Route added successfully');
-                              } catch (error) {
-                                console.error('Error adding route:', error);
-                              }
-                              
-
-
-                              // Add stop points if available
-                              if (mapData.stopPoints && mapData.stopPoints.length > 0) {
-                                mapData.stopPoints.forEach((stopPoint, index) => {
-                                  // Add polygon if coordinates available
-                                  if (stopPoint.polygon && stopPoint.polygon.length > 2) {
-                                    map.addSource(`stop-polygon-${index}`, {
-                                      type: 'geojson',
-                                      data: {
-                                        type: 'Feature',
-                                        properties: { name: stopPoint.name },
-                                        geometry: {
-                                          type: 'Polygon',
-                                          coordinates: [stopPoint.polygon]
-                                        }
-                                      }
-                                    });
-                                    
-                                    map.addLayer({
-                                      id: `stop-polygon-fill-${index}`,
-                                      type: 'fill',
-                                      source: `stop-polygon-${index}`,
-                                      paint: {
-                                        'fill-color': '#fbbf24',
-                                        'fill-opacity': 0.3
-                                      }
-                                    });
-                                    
-                                    map.addLayer({
-                                      id: `stop-polygon-outline-${index}`,
-                                      type: 'line',
-                                      source: `stop-polygon-${index}`,
-                                      paint: {
-                                        'line-color': '#f59e0b',
-                                        'line-width': 2
-                                      }
-                                    });
-                                  }
-                                  
-                                  // Add center marker
-                                  const stopEl = document.createElement('div');
-                                  stopEl.innerHTML = '🛑';
-                                  stopEl.style.fontSize = '20px';
-                                  
-                                  const marker = new window.mapboxgl.Marker(stopEl)
-                                    .setLngLat(stopPoint.coordinates)
-                                    .addTo(map);
-                                  
-                                  const popup = new window.mapboxgl.Popup({ offset: 25 })
-                                    .setHTML(`<div class="p-2"><strong>Stop Point ${index + 1}</strong><br/>${stopPoint.name}</div>`);
-                                  marker.setPopup(popup);
-                                });
-                              }
-                              
-                              // Fit map to route
-                              const bounds = new window.mapboxgl.LngLatBounds();
-                              mapData.routeCoordinates.forEach(coord => bounds.extend(coord));
-                              
-                              if (!mapData.showRouteOnly && mapData.longitude && mapData.latitude) {
-                                bounds.extend([parseFloat(mapData.longitude), parseFloat(mapData.latitude)]);
-                              }
-                              
-                              map.fitBounds(bounds, { padding: 50 });
-                            } else {
-                              console.log('No route coordinates available');
-                            }
                             
-                            // Add popup with driver details if vehicle marker exists
-                            if (mapData.driverDetails && vehicleMarker) {
-                              const popup = new window.mapboxgl.Popup({ offset: 25 })
-                                .setHTML(`
-                                  <div class="p-3">
-                                    <div class="font-bold text-blue-900 mb-2">${mapData.driverDetails.fullName}</div>
-                                    <div class="text-sm space-y-1">
-                                      <div><strong>Vehicle:</strong> ${mapData.driverDetails.plate}</div>
-                                      <div><strong>Speed:</strong> ${mapData.driverDetails.speed} km/h</div>
-                                      <div><strong>Company:</strong> ${mapData.driverDetails.company || 'N/A'}</div>
-                                      <div class="text-xs text-gray-600 mt-2">
-                                        Last updated: ${new Date(mapData.driverDetails.lastUpdate).toLocaleTimeString()}
-                                      </div>
-                                    </div>
-                                  </div>
-                                `)
-                              vehicleMarker.setPopup(popup)
-                            } else if (mapData.showRouteOnly) {
-                              // Add a text overlay for route-only view
-                              const routeInfo = document.createElement('div')
-                              routeInfo.className = 'mapboxgl-ctrl mapboxgl-ctrl-group'
-                              routeInfo.style.cssText = 'position: absolute; top: 10px; left: 10px; background: white; padding: 10px; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'
-                              routeInfo.innerHTML = `
-                                <div class="text-sm">
-                                  <div class="font-bold text-blue-900 mb-1">${mapData.driverDetails.fullName}</div>
-                                  <div class="text-gray-600">Pre-planned route</div>
-                                  <div class="text-xs text-gray-500 mt-1">Vehicle location unavailable</div>
-                                </div>
-                              `
-                              map.getContainer().appendChild(routeInfo)
-                            } else if (mapData.showBasicRoute && (mapData.origin || mapData.destination)) {
-                              // Handle basic route from origin to destination
-                              const routeInfo = document.createElement('div')
-                              routeInfo.className = 'mapboxgl-ctrl mapboxgl-ctrl-group'
-                              routeInfo.style.cssText = 'position: absolute; top: 10px; left: 10px; background: white; padding: 10px; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'
-                              routeInfo.innerHTML = `
-                                <div class="text-sm">
-                                  <div class="font-bold text-blue-900 mb-1">${mapData.driverDetails.fullName}</div>
-                                  <div class="text-gray-600">Trip Route</div>
-                                  <div class="text-xs text-gray-500 mt-1">No GPS tracking available</div>
-                                </div>
-                              `
-                              map.getContainer().appendChild(routeInfo)
+                            if (stopPoint.coordinates) {
+                              const pos = { lat: stopPoint.coordinates[1], lng: stopPoint.coordinates[0] };
+                              const marker = new (window as any).google.maps.Marker({
+                                position: pos,
+                                map: map,
+                                label: `${index + 1}`,
+                                icon: {
+                                  path: (window as any).google.maps.SymbolPath.CIRCLE,
+                                  scale: 7,
+                                  fillColor: '#f59e0b',
+                                  fillOpacity: 1,
+                                  strokeColor: '#ffffff',
+                                  strokeWeight: 2,
+                                },
+                                title: stopPoint.name,
+                              });
+                              bounds.extend(pos);
                               
-                              // Generate route between origin and destination
-                              if (mapData.origin && mapData.destination) {
-                                fetch(`https://api.mapbox.com/directions/v5/mapbox/driving/${encodeURIComponent(mapData.origin)};${encodeURIComponent(mapData.destination)}?access_token=${process.env.NEXT_PUBLIC_MAPBOX_TOKEN}&geometries=geojson&overview=full`)
-                                  .then(response => response.json())
-                                  .then(data => {
-                                    if (data.routes && data.routes[0]) {
-                                      const routeCoords = data.routes[0].geometry.coordinates
-                                      
-                                      map.addSource('basic-route', {
-                                        type: 'geojson',
-                                        data: {
-                                          type: 'Feature',
-                                          properties: {},
-                                          geometry: {
-                                            type: 'LineString',
-                                            coordinates: routeCoords
-                                          }
-                                        }
-                                      })
-                                      
-                                      map.addLayer({
-                                        id: 'basic-route',
-                                        type: 'line',
-                                        source: 'basic-route',
-                                        layout: {
-                                          'line-join': 'round',
-                                          'line-cap': 'round'
-                                        },
-                                        paint: {
-                                          'line-color': '#3b82f6',
-                                          'line-width': 4
-                                        }
-                                      })
-                                      
-                                      // Add markers for origin and destination
-                                      new window.mapboxgl.Marker({ color: 'green' })
-                                        .setLngLat(routeCoords[0])
-                                        .setPopup(new window.mapboxgl.Popup().setHTML(`<div class="p-2"><strong>Origin</strong><br/>${mapData.origin}</div>`))
-                                        .addTo(map)
-                                        
-                                      new window.mapboxgl.Marker({ color: 'red' })
-                                        .setLngLat(routeCoords[routeCoords.length - 1])
-                                        .setPopup(new window.mapboxgl.Popup().setHTML(`<div class="p-2"><strong>Destination</strong><br/>${mapData.destination}</div>`))
-                                        .addTo(map)
-                                      
-                                      // Fit map to route
-                                      const bounds = new window.mapboxgl.LngLatBounds()
-                                      routeCoords.forEach(coord => bounds.extend(coord))
-                                      map.fitBounds(bounds, { padding: 50 })
-                                    }
-                                  })
-                                  .catch(error => console.error('Error generating basic route:', error))
+                              const iw = new (window as any).google.maps.InfoWindow({
+                                content: `<div style="padding:8px;font-size:13px"><strong>Stop Point ${index + 1}</strong><br/>${stopPoint.name}</div>`,
+                              });
+                              marker.addListener('click', () => iw.open(map, marker));
+                              infoWindows.push(iw);
+                            }
+                          });
+                        }
+
+                        // Fit bounds
+                        if (mapData.routeCoordinates?.length > 1) {
+                          map.fitBounds(bounds, 50);
+                        } else if (vehicleMarker) {
+                          map.setCenter(vehicleMarker.getPosition());
+                          map.setZoom(15);
+                        }
+
+                        // Info window for vehicle
+                        if (mapData.driverDetails && vehicleMarker) {
+                          const iw = new (window as any).google.maps.InfoWindow({
+                            content: `
+                              <div style="padding:12px;max-width:250px;font-family:sans-serif;">
+                                <div style="font-weight:bold;color:#1e3a5f;margin-bottom:8px;font-size:14px;">${mapData.driverDetails.fullName}</div>
+                                <div style="font-size:13px;line-height:1.6;">
+                                  <div><strong>Vehicle:</strong> ${mapData.driverDetails.plate}</div>
+                                  <div><strong>Speed:</strong> ${mapData.driverDetails.speed} km/h</div>
+                                  <div><strong>Company:</strong> ${mapData.driverDetails.company || 'N/A'}</div>
+                                  <div style="font-size:11px;color:#666;margin-top:8px;">
+                                    Last updated: ${new Date(mapData.driverDetails.lastUpdate).toLocaleTimeString()}
+                                  </div>
+                                </div>
+                              </div>
+                            `,
+                          });
+                          vehicleMarker.addListener('click', () => iw.open(map, vehicleMarker));
+                          infoWindows.push(iw);
+                        }
+
+                        // Route overlay info for route-only / basic route
+                        if (mapData.showRouteOnly || mapData.showBasicRoute) {
+                          const infoDiv = document.createElement('div');
+                          infoDiv.style.cssText = 'position:absolute;top:10px;left:10px;background:white;padding:12px;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15);font-size:13px;z-index:1;max-width:250px;';
+                          if (mapData.showRouteOnly) {
+                            infoDiv.innerHTML = `
+                              <div style="font-weight:bold;color:#1e3a5f;margin-bottom:4px;">${mapData.driverDetails?.fullName || 'Driver'}</div>
+                              <div style="color:#666;">Pre-planned route</div>
+                              <div style="font-size:11px;color:#999;margin-top:4px;">Vehicle location unavailable</div>
+                            `;
+                          } else {
+                            infoDiv.innerHTML = `
+                              <div style="font-weight:bold;color:#1e3a5f;margin-bottom:4px;">${mapData.driverDetails?.fullName || 'Driver'}</div>
+                              <div style="color:#666;">Trip Route</div>
+                              <div style="font-size:11px;color:#999;margin-top:4px;">No GPS tracking available</div>
+                            `;
+                          }
+                          map.controls[(window as any).google.maps.ControlPosition.TOP_LEFT].push(infoDiv);
+                        }
+
+                        // Basic route via Google Maps Directions Service
+                        if (mapData.showBasicRoute && mapData.origin && mapData.destination) {
+                          const directionsService = new (window as any).google.maps.DirectionsService();
+                          const directionsRenderer = new (window as any).google.maps.DirectionsRenderer({
+                            map: map,
+                            suppressMarkers: true,
+                            polylineOptions: {
+                              strokeColor: '#3b82f6',
+                              strokeWeight: 4,
+                              strokeOpacity: 0.9,
+                            },
+                          });
+                          
+                          directionsService.route(
+                            {
+                              origin: mapData.origin,
+                              destination: mapData.destination,
+                              travelMode: (window as any).google.maps.TravelMode.DRIVING,
+                            },
+                            (result: any, status: string) => {
+                              if (status === 'OK') {
+                                directionsRenderer.setDirections(result);
+                                const route = result.routes[0];
+                                const path = route.overview_path;
+                                const routeBounds = new (window as any).google.maps.LatLngBounds();
+                                path.forEach((p: any) => routeBounds.extend(p));
+                                map.fitBounds(routeBounds, 50);
+
+                                // Origin marker
+                                new (window as any).google.maps.Marker({
+                                  position: path[0],
+                                  map: map,
+                                  icon: {
+                                    path: (window as any).google.maps.SymbolPath.CIRCLE,
+                                    scale: 8,
+                                    fillColor: '#22c55e',
+                                    fillOpacity: 1,
+                                    strokeColor: '#ffffff',
+                                    strokeWeight: 2,
+                                  },
+                                  title: 'Origin',
+                                });
+
+                                // Destination marker
+                                new (window as any).google.maps.Marker({
+                                  position: path[path.length - 1],
+                                  map: map,
+                                  icon: {
+                                    path: (window as any).google.maps.SymbolPath.CIRCLE,
+                                    scale: 8,
+                                    fillColor: '#ef4444',
+                                    fillOpacity: 1,
+                                    strokeColor: '#ffffff',
+                                    strokeWeight: 2,
+                                  },
+                                  title: 'Destination',
+                                });
                               }
                             }
-                            });  // Close requestAnimationFrame callback
-                          });  // Close map.on('load')
-                        }  // Close if (window.mapboxgl)
-                      };  // Close script.onload
-                      
-                      // Check if mapbox is already loaded
-                      if (!document.querySelector('script[src*="mapbox-gl.js"]')) {
-                        document.head.appendChild(script);
-                      } else if (window.mapboxgl) {
-                        script.onload();
+                          );
+                        }
+                      };
+
+                      if ('requestIdleCallback' in window) {
+                        requestIdleCallback(initMap);
+                      } else {
+                        initMap();
                       }
-                    };  // Close loadMap
-                    
-                    // Use requestIdleCallback for non-critical script loading, or fallback to immediate
-                    if ('requestIdleCallback' in window) {
-                      requestIdleCallback(loadMap);
-                    } else {
-                      loadMap();
                     }
-                  }
-                }}
+                  }}
                 />
               </div>
               
               {/* Driver Information Panel - Load After Map */}
-              <div className="w-full lg:w-80 bg-gray-50 p-4 rounded-lg flex-shrink-0 max-h-64 lg:max-h-none overflow-y-auto order-2 lg:order-1">
-                <h4 className="font-semibold mb-3">Driver Information</h4>
+              <div className="w-full lg:w-80 bg-gray-50 dark:bg-gray-800 p-4 rounded-lg flex-shrink-0 max-h-64 lg:max-h-none overflow-y-auto order-2 lg:order-1">
+                <h4 className="font-semibold mb-3 dark:text-white">Driver Information</h4>
                 {mapData?.driverDetails && (
                   <div className="space-y-3 text-sm">
-                    <div className="bg-blue-50 p-3 rounded-lg">
-                      <div className="font-medium text-blue-900">{mapData.driverDetails.fullName}</div>
-                      <div className="text-blue-700 text-xs">Vehicle: {mapData.driverDetails.plate}</div>
+                    <div className="bg-blue-50 dark:bg-blue-900/30 p-3 rounded-lg">
+                      <div className="font-medium text-blue-900 dark:text-blue-300">{mapData.driverDetails.fullName}</div>
+                      <div className="text-blue-700 dark:text-blue-400 text-xs">Vehicle: {mapData.driverDetails.plate}</div>
                     </div>
                     <div className="space-y-2">
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Speed:</span>
-                        <span className="font-medium">{mapData.driverDetails.speed} km/h</span>
+                        <span className="text-gray-600 dark:text-gray-400">Speed:</span>
+                        <span className="font-medium dark:text-white">{mapData.driverDetails.speed} km/h</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Mileage:</span>
-                        <span className="font-medium">{parseFloat(mapData.driverDetails.mileage || 0).toLocaleString()} km</span>
+                        <span className="text-gray-600 dark:text-gray-400">Mileage:</span>
+                        <span className="font-medium dark:text-white">{parseFloat(mapData.driverDetails.mileage || 0).toLocaleString()} km</span>
                       </div>
-                      <div className="text-xs text-gray-500">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
                         <div className="font-medium mb-1">Current Location:</div>
                         <div>{mapData.driverDetails.address}</div>
                       </div>
                       {mapData.driverDetails.geozone && (
-                        <div className="text-xs text-gray-500">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
                           <div className="font-medium mb-1">Geozone:</div>
                           <div>{mapData.driverDetails.geozone}</div>
                         </div>
                       )}
-                      <div className="text-xs text-gray-500">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
                         <div className="font-medium mb-1">Last Update:</div>
                         <div>{new Date(mapData.driverDetails.lastUpdate).toLocaleString()}</div>
                       </div>

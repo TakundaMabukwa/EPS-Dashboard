@@ -48,16 +48,16 @@ export default function DriverMapModal({ isOpen, onClose, driver }: DriverMapMod
 
   const driverName = driver.driver_name || `${driver.firstName || ''} ${driver.surname || ''}`.trim() || 'Unknown Driver'
 
-  // Geocoding function to convert addresses to coordinates
+  // Geocoding function to convert addresses to coordinates using Google
   const geocodeAddress = async (address: string): Promise<{ lat: number; lng: number } | null> => {
     try {
       const response = await fetch(
-        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(address)}.json?access_token=${process.env.NEXT_PUBLIC_MAPBOX_TOKEN}&country=ZA&limit=1`
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_TOKEN}&region=za`
       )
       const data = await response.json()
       
-      if (data.features && data.features.length > 0) {
-        const [lng, lat] = data.features[0].center
+      if (data.status === 'OK' && data.results?.[0]) {
+        const { lat, lng } = data.results[0].geometry.location
         return { lat, lng }
       }
     } catch (error) {

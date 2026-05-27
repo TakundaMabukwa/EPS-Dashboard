@@ -445,20 +445,20 @@ export default function LoadPlanPage() {
     return R * c
   }, [])
 
-  // Get pickup location coordinates using Mapbox
+  // Get pickup location coordinates using Google Geocoding API
   const getPickupCoordinates = useCallback(async (location) => {
     if (!location) return null
     try {
-      const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN
-      if (!mapboxToken) return null
+      const googleKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_TOKEN
+      if (!googleKey) return null
       
       const response = await fetch(
-        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(location)}.json?access_token=${mapboxToken}&country=za&limit=1`
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(location)}&key=${googleKey}&region=za`
       )
       const data = await response.json()
-      if (data.features?.[0]?.center) {
-        const [lon, lat] = data.features[0].center
-        return { lat, lon }
+      if (data.status === 'OK' && data.results?.[0]) {
+        const { lat, lng } = data.results[0].geometry.location
+        return { lat, lon: lng }
       }
     } catch (error) {
       console.error('Error geocoding pickup location:', error)
@@ -525,6 +525,7 @@ export default function LoadPlanPage() {
       setIsOptimizing(true)
       try {
         const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN
+        const googleKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_TOKEN
         if (!mapboxToken) {
           setIsOptimizing(false)
           return
@@ -559,7 +560,6 @@ export default function LoadPlanPage() {
           try {
             stopPointsData = await getSelectedStopPointsData()
             console.log('Stop points data for route:', stopPointsData)
-            // Filter out invalid stop points
             stopPointsData = stopPointsData.filter(point => 
               point && point.coordinates && point.coordinates.length > 0
             )
@@ -569,25 +569,24 @@ export default function LoadPlanPage() {
           }
         }
         
-        // Geocode loading and drop-off locations
-        const [loadingResponse, dropOffResponse] = await Promise.all([
-          fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(loadingLocation)}.json?access_token=${mapboxToken}&country=za&limit=1`),
-          fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(dropOffPoint)}.json?access_token=${mapboxToken}&country=za&limit=1`)
-        ])
-        
+        // Geocode loading and drop-off locations using Google
+        const geocodeUrl = 'https://maps.googleapis.com/maps/api/geocode/json'
         const [loadingData, dropOffData] = await Promise.all([
-          loadingResponse.json(),
-          dropOffResponse.json()
+          fetch(`${geocodeUrl}?address=${encodeURIComponent(loadingLocation)}&key=${googleKey}&region=za`).then(r => r.json()),
+          fetch(`${geocodeUrl}?address=${encodeURIComponent(dropOffPoint)}&key=${googleKey}&region=za`).then(r => r.json())
         ])
         
-        if (loadingData.features?.[0] && dropOffData.features?.[0]) {
-          const loadingCoords = loadingData.features[0].center
-          const dropOffCoords = dropOffData.features[0].center
+        if (loadingData.status === 'OK' && dropOffData.status === 'OK' && loadingData.results?.[0] && dropOffData.results?.[0]) {
+          const { lat: originLat, lng: originLng } = loadingData.results[0].geometry.location
+          const { lat: destLat, lng: destLng } = dropOffData.results[0].geometry.location
           
-          // Build waypoints string including stop points
-          let waypoints = `${loadingCoords[0]},${loadingCoords[1]}`
+          // Build waypoints string for Mapbox Directions (lng,lat;lng,lat)
+          let waypoints = `${originLng},${originLat}`
           
-          // Add stop points as waypoints
+          if (driverLocation) {
+            waypoints = `${driverLocation.lng},${driverLocation.lat};${waypoints}`
+          }
+          
           if (stopPointsData.length > 0) {
             const stopWaypoints = stopPointsData.map(point => {
               const coords = point.coordinates
@@ -601,16 +600,10 @@ export default function LoadPlanPage() {
             }
           }
           
-          waypoints += `;${dropOffCoords[0]},${dropOffCoords[1]}`
-          
-          // If we have driver location, create complete route: driver → loading → stops → drop-off
-          if (driverLocation) {
-            waypoints = `${driverLocation.lng},${driverLocation.lat};${waypoints}`
-          }
+          waypoints += `;${destLng},${destLat}`
           
           console.log('Calculating route with waypoints:', waypoints)
           
-          // Always use directions API for now to avoid complexity
           const apiEndpoint = `https://api.mapbox.com/directions/v5/mapbox/driving/${waypoints}`
           const apiParams = 'geometries=geojson&overview=full&annotations=duration,distance&exclude=ferry'
           
@@ -699,40 +692,37 @@ export default function LoadPlanPage() {
       }
       
       try {
-        const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN
-        if (!mapboxToken) {
-          console.log('No Mapbox token available')
+        const googleKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_TOKEN
+        if (!googleKey) {
+          console.log('No Google Maps API token available')
           return
         }
         
         console.log('Calculating distance between:', loadingLocation, 'and', dropOffPoint)
         
         // First geocode the locations to get coordinates
-        const [originResponse, destResponse] = await Promise.all([
-          fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(loadingLocation)}.json?access_token=${mapboxToken}&country=za&limit=1`),
-          fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(dropOffPoint)}.json?access_token=${mapboxToken}&country=za&limit=1`)
-        ])
-        
+        const geocodeUrl = 'https://maps.googleapis.com/maps/api/geocode/json'
         const [originData, destData] = await Promise.all([
-          originResponse.json(),
-          destResponse.json()
+          fetch(`${geocodeUrl}?address=${encodeURIComponent(loadingLocation)}&key=${googleKey}&region=za`).then(r => r.json()),
+          fetch(`${geocodeUrl}?address=${encodeURIComponent(dropOffPoint)}&key=${googleKey}&region=za`).then(r => r.json())
         ])
         
-        if (!originData.features?.[0] || !destData.features?.[0]) {
+        if (originData.status !== 'OK' || destData.status !== 'OK' || !originData.results?.[0] || !destData.results?.[0]) {
           console.log('Could not geocode locations')
           return
         }
         
-        const originCoords = originData.features[0].center
-        const destCoords = destData.features[0].center
+        const originLoc = originData.results[0].geometry.location
+        const destLoc = destData.results[0].geometry.location
         
-        console.log('Origin coords:', originCoords, 'Dest coords:', destCoords)
+        console.log('Origin coords:', originLoc, 'Dest coords:', destLoc)
         
-        const response = await fetch(
-          `https://api.mapbox.com/directions/v5/mapbox/driving/${originCoords[0]},${originCoords[1]};${destCoords[0]},${destCoords[1]}?access_token=${mapboxToken}&geometries=geojson`
+        const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN
+        const directionsResponse = await fetch(
+          `https://api.mapbox.com/directions/v5/mapbox/driving/${originLoc.lng},${originLoc.lat};${destLoc.lng},${destLoc.lat}?access_token=${mapboxToken}&geometries=geojson`
         )
-        const data = await response.json()
-        console.log('Mapbox response:', data)
+        const data = await directionsResponse.json()
+        console.log('Mapbox Directions response:', data)
         
         if (data.routes?.[0]?.distance) {
           const distanceKm = Math.round(data.routes[0].distance / 1000)
@@ -942,14 +932,15 @@ export default function LoadPlanPage() {
       console.log(`Processing stop point ${i}:`, { pointId, customLocation })
       
       if (customLocation) {
-        // Geocode custom location
+        // Geocode custom location using Google
         try {
+          const googleKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_TOKEN
           const response = await fetch(
-            `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(customLocation)}.json?access_token=${process.env.NEXT_PUBLIC_MAPBOX_TOKEN}&country=za&limit=1`
+            `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(customLocation)}&key=${googleKey}&region=za`
           )
           const data = await response.json()
-          if (data.features?.[0]) {
-            const [lng, lat] = data.features[0].center
+          if (data.status === 'OK' && data.results?.[0]) {
+            const { lat, lng } = data.results[0].geometry.location
             results.push({
               id: `custom_${i}`,
               name: customLocation,
@@ -1154,18 +1145,18 @@ export default function LoadPlanPage() {
       // Always geocode client address as an additional option
       if (clientData.address) {
         try {
-          const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN
-          if (mapboxToken) {
+          const googleKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_TOKEN
+          if (googleKey) {
             const response = await fetch(
-              `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(clientData.address)}.json?access_token=${mapboxToken}&country=za&limit=1`
+              `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(clientData.address)}&key=${googleKey}&region=za`
             )
             const data = await response.json()
-            if (data.features?.[0]) {
-              const [lng, lat] = data.features[0].center
+            if (data.status === 'OK' && data.results?.[0]) {
+              const { lat, lng } = data.results[0].geometry.location
               const geocodedClient = {
                 ...clientData,
                 geocoded_coordinates: `${lng},${lat}`,
-                geocoded_address: data.features[0].place_name
+                geocoded_address: data.results[0].formatted_address
               }
               setSelectedClient(geocodedClient)
               console.log(`✓ Geocoded client address: ${clientData.address} -> ${lng},${lat}`)
@@ -1198,11 +1189,11 @@ export default function LoadPlanPage() {
           const lng = parseFloat(coords[0])
           const lat = parseFloat(coords[1])
           if (!isNaN(lng) && !isNaN(lat)) {
-            fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${process.env.NEXT_PUBLIC_MAPBOX_TOKEN}`)
+            fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_TOKEN}&region=za`)
               .then(response => response.json())
               .then(data => {
-                if (data.features && data.features.length > 0) {
-                  setLoadingLocation(data.features[0].place_name)
+                if (data.status === 'OK' && data.results?.[0]) {
+                  setLoadingLocation(data.results[0].formatted_address)
                 } else {
                   setLoadingLocation(`${lat},${lng}`)
                 }
@@ -1228,11 +1219,11 @@ export default function LoadPlanPage() {
           const lng = parseFloat(coords[0])
           const lat = parseFloat(coords[1])
           if (!isNaN(lng) && !isNaN(lat)) {
-            fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${process.env.NEXT_PUBLIC_MAPBOX_TOKEN}`)
+            fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_TOKEN}&region=za`)
               .then(response => response.json())
               .then(data => {
-                if (data.features && data.features.length > 0) {
-                  setDropOffPoint(data.features[0].place_name)
+                if (data.status === 'OK' && data.results?.[0]) {
+                  setDropOffPoint(data.results[0].formatted_address)
                 } else {
                   setDropOffPoint(`${lat},${lng}`)
                 }
@@ -1548,7 +1539,16 @@ export default function LoadPlanPage() {
           </div>
 
           <div className="bg-white rounded-xl border shadow-sm">
-            <div className="p-4">
+            <div className="p-4 space-y-4">
+              <div className="flex items-center justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => showToast('Datatims integration coming soon')}
+                >
+                  Datatims
+                </Button>
+              </div>
 
               <Table>
                 <TableHeader>

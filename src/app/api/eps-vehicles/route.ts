@@ -1,18 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+const API_BASE = 'http://209.38.217.58:8000/api/vehicles'
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const endpoint = searchParams.get('endpoint')
   const plate = searchParams.get('plate')
   const driver = searchParams.get('driver')
 
-  const baseUrl = process.env.NEXT_PUBLIC_VEHICLE_API_ENDPOINT || 'http://64.227.138.235:3000/api/eps-vehicles'
-
-  let url = baseUrl
+  let url: string
   if (endpoint === 'by-plate' && plate) {
-    url = `${baseUrl}?plate=${encodeURIComponent(plate)}`
+    url = `${API_BASE}/reg/${encodeURIComponent(plate)}`
   } else if (endpoint === 'by-driver' && driver) {
-    url = `${baseUrl}?driver=${encodeURIComponent(driver)}`
+    // New API doesn't support by-driver; fetch all and filter server-side
+    url = API_BASE
+  } else {
+    url = API_BASE
   }
 
   for (let attempt = 1; attempt <= 3; attempt++) {
@@ -27,6 +30,16 @@ export async function GET(request: NextRequest) {
 
       clearTimeout(timeoutId)
       const data = await response.json()
+
+      // If by-driver, filter the results
+      if (endpoint === 'by-driver' && driver && Array.isArray(data)) {
+        const filtered = data.filter((v: any) => {
+          const d = String(v.DriverName || v.driverName || v.driver || '').toLowerCase()
+          return d.includes(driver.toLowerCase())
+        })
+        return NextResponse.json(filtered.length > 0 ? filtered[0] : { error: 'No match', data: [] }, { status: 200 })
+      }
+
       return NextResponse.json(data, { status: response.status })
 
     } catch (error: any) {

@@ -230,14 +230,14 @@ export default function Drivers() {
 
       // Fetch all driver performance scorecards
       const perfResponse = await fetch(
-        `/api/eps-rewards?endpoint=driver-performance/all?year=${year}&month=${month}`
+        `/api/eps-rewards?endpoint=driver-performance/all&year=${year}&month=${month}`
       )
       const perfData = await perfResponse.json()
       setDriverPerformanceData(perfData.scorecards || [])
 
       // Fetch top speeding drivers
       const speedResponse = await fetch(
-        `/api/eps-rewards?endpoint=top-speeding-drivers?limit=10`
+        `/api/eps-rewards?endpoint=top-speeding-drivers&limit=10`
       )
       const speedData = await speedResponse.json()
       setTopSpeedingDrivers(speedData.top_speeding_drivers || [])

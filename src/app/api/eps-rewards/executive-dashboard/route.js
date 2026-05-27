@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 
-export async function GET(request) {
+export async function GET() {
   try {
-    const HTTP_SERVER_ENDPOINT = process.env.NEXT_PUBLIC_HTTP_SERVER_ENDPOINT || 'http://localhost:3002'
+const HTTP_SERVER_ENDPOINT = process.env.NEXT_PUBLIC_CAN_BUS_ENDPOINT || process.env.NEXT_PUBLIC_EPS_HTTP_SERVER_ENDPOINT || 'http://209.38.217.58:3001'
     const url = `${HTTP_SERVER_ENDPOINT}/api/eps-rewards/executive-dashboard`
     
     console.log('Fetching executive dashboard from:', url)

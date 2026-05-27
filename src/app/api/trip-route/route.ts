@@ -9,7 +9,8 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Trip ID required' }, { status: 400 })
     }
 
-    const response = await fetch(`http://64.227.126.176:3001/api/trips/${tripId}/route?company=eps`)
+    const endpoint = process.env.NEXT_PUBLIC_CAN_BUS_ENDPOINT || 'http://165.227.134.97:3001'
+    const response = await fetch(`${endpoint}/api/trips/${tripId}/route?company=eps`)
     
     if (!response.ok) {
       const error = await response.text()

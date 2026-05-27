@@ -30,11 +30,11 @@ export function MorphingDialogBasicOne({ name, location, tripId, routeCoordinate
     useEffect(() => {
         const fetchCoordinates = async () => {
             const res = await fetch(
-                `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(location)}.json?access_token=${process.env.NEXT_PUBLIC_MAPBOX_TOKEN}`
+                `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(location)}&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_TOKEN}&region=za`
             );
             const data = await res.json();
-            if (data.features && data.features.length > 0) {
-                const [lng, lat] = data.features[0].center;
+            if (data.status === 'OK' && data.results?.[0]) {
+                const { lat, lng } = data.results[0].geometry.location;
                 setCoords({ lat, lng });
             }
         };

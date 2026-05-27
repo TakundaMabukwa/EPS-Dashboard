@@ -4,8 +4,8 @@ export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url)
     const limit = searchParams.get('limit') || '20'
-    
-    const url = `http://64.227.126.176:3001/api/stats/leaderboard?limit=${limit}`
+    const endpoint = process.env.NEXT_PUBLIC_CAN_BUS_ENDPOINT || 'http://165.227.134.97:3001'
+    const url = `${endpoint}/api/stats/leaderboard?limit=${limit}`
     
     const response = await fetch(url, {
       headers: { 'Content-Type': 'application/json' },

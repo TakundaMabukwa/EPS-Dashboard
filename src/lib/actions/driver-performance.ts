@@ -21,7 +21,8 @@ export interface DriverPerformanceData {
 
 export async function getDriverPerformance(): Promise<DriverPerformanceData[]> {
   try {
-    const response = await fetch('http://localhost:3001/api/eps-rewards/all-driver-profiles')
+  const baseUrl = process.env.NEXT_PUBLIC_CAN_BUS_ENDPOINT || process.env.NEXT_PUBLIC_EPS_HTTP_SERVER_ENDPOINT || 'http://209.38.217.58:3001'
+    const response = await fetch(`${baseUrl}/api/eps-rewards/all-driver-profiles`)
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`)

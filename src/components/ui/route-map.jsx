@@ -1,9 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import mapboxgl from 'mapbox-gl'
-
-mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN
+import { loadGoogleMaps } from '@/lib/google-maps'
 
 export function RouteMap({ 
   driverLocation, 
@@ -18,189 +16,179 @@ export function RouteMap({
   const [loading, setLoading] = useState(true)
   const [routeInfo, setRouteInfo] = useState({ distance: 0, duration: 0 })
 
+  const geocodeLocation = async (location) => {
+    if (!location) return null
+    try {
+      const gm = (window as any).google?.maps
+      if (!gm) return null
+      const geocoder = new gm.Geocoder()
+      const result = await new Promise((resolve, reject) => {
+        geocoder.geocode({ address: location, region: 'za' }, (results, status) => {
+          if (status === 'OK' && results?.[0]?.geometry?.location) {
+            const loc = results[0].geometry.location
+            resolve({ lat: loc.lat(), lng: loc.lng() })
+          } else {
+            resolve(null)
+          }
+        })
+      })
+      return result
+    } catch (error) {
+      console.error('Geocoding error:', error)
+    }
+    return null
+  }
+
   useEffect(() => {
     if (map.current || !mapContainer.current) return
 
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/streets-v11',
-      center: driverLocation ? [driverLocation.lng, driverLocation.lat] : [28.0473, -26.2041],
-      zoom: 10,
-    })
+    const init = async () => {
+      await loadGoogleMaps()
+      const gm = (window as any).google.maps
 
-    map.current.addControl(new mapboxgl.NavigationControl(), 'bottom-right')
+      map.current = new gm.Map(mapContainer.current, {
+        center: driverLocation ? { lat: driverLocation.lat, lng: driverLocation.lng } : { lat: -26.2041, lng: 28.0473 },
+        zoom: 10,
+        mapTypeId: 'roadmap',
+        mapTypeControl: false,
+        streetViewControl: false,
+        zoomControl: true,
+      })
 
-    map.current.on('load', async () => {
       setLoading(false)
-      
-      if (!map.current) return
 
       try {
-        // Geocode locations
         const [loadingCoords, dropoffCoords] = await Promise.all([
           geocodeLocation(loadingLocation),
           geocodeLocation(dropoffLocation)
         ])
 
         if (driverLocation) {
-          // Add driver marker
-          new mapboxgl.Marker({ color: '#3b82f6', scale: 1.2 })
-            .setLngLat([driverLocation.lng, driverLocation.lat])
-            .setPopup(new mapboxgl.Popup({ offset: 25 }).setHTML(`
-              <div class="p-2">
-                <h3 class="font-semibold text-sm">${driverName}</h3>
-                <p class="text-xs text-gray-600">Current Location</p>
-              </div>
-            `))
-            .addTo(map.current)
-        }
-
-        if (loadingCoords) {
-          // Add loading marker
-          new mapboxgl.Marker({ color: '#10b981', scale: 0.8 })
-            .setLngLat([loadingCoords.lng, loadingCoords.lat])
-            .setPopup(new mapboxgl.Popup({ offset: 25 }).setHTML(`
-              <div class="p-2">
-                <h3 class="font-semibold text-sm">Loading</h3>
-                <p class="text-xs text-gray-600">${loadingLocation}</p>
-              </div>
-            `))
-            .addTo(map.current)
-        }
-
-        if (dropoffCoords) {
-          // Add dropoff marker
-          new mapboxgl.Marker({ color: '#ef4444', scale: 0.8 })
-            .setLngLat([dropoffCoords.lng, dropoffCoords.lat])
-            .setPopup(new mapboxgl.Popup({ offset: 25 }).setHTML(`
-              <div class="p-2">
-                <h3 class="font-semibold text-sm">Drop-off</h3>
-                <p class="text-xs text-gray-600">${dropoffLocation}</p>
-              </div>
-            `))
-            .addTo(map.current)
-        }
-
-        // Draw route segments
-        const routeCoordinates = []
-        const bounds = new mapboxgl.LngLatBounds()
-        
-        if (driverLocation) {
-          routeCoordinates.push([driverLocation.lng, driverLocation.lat])
-          bounds.extend([driverLocation.lng, driverLocation.lat])
-        }
-        
-        if (loadingCoords) {
-          routeCoordinates.push([loadingCoords.lng, loadingCoords.lat])
-          bounds.extend([loadingCoords.lng, loadingCoords.lat])
-        }
-        
-        if (dropoffCoords) {
-          routeCoordinates.push([dropoffCoords.lng, dropoffCoords.lat])
-          bounds.extend([dropoffCoords.lng, dropoffCoords.lat])
-        }
-
-        // Get driving route with time and distance
-        if (routeCoordinates.length >= 2) {
-          try {
-            const waypoints = routeCoordinates.map(coord => `${coord[0]},${coord[1]}`).join(';')
-            const directionsResponse = await fetch(
-              `https://api.mapbox.com/directions/v5/mapbox/driving/${waypoints}?access_token=${mapboxgl.accessToken}&geometries=geojson&overview=full`
-            )
-            const directionsData = await directionsResponse.json()
-            
-            if (directionsData.routes?.[0]) {
-              const route = directionsData.routes[0]
-              const totalDistance = Math.round(route.distance / 1000 * 10) / 10
-              const totalDuration = Math.round(route.duration / 60)
-              
-              setRouteInfo({ distance: totalDistance, duration: totalDuration })
-              onRouteCalculated?.({ distance: totalDistance, duration: totalDuration })
-              
-              map.current.addSource('route', {
-                type: 'geojson',
-                data: {
-                  type: 'Feature',
-                  properties: {},
-                  geometry: route.geometry
-                }
-              })
-            } else {
-              map.current.addSource('route', {
-                type: 'geojson',
-                data: {
-                  type: 'Feature',
-                  properties: {},
-                  geometry: {
-                    type: 'LineString',
-                    coordinates: routeCoordinates
-                  }
-                }
-              })
-            }
-          } catch (error) {
-            console.error('Directions API error:', error)
-            map.current.addSource('route', {
-              type: 'geojson',
-              data: {
-                type: 'Feature',
-                properties: {},
-                geometry: {
-                  type: 'LineString',
-                  coordinates: routeCoordinates
-                }
-              }
-            })
-          }
-
-          map.current.addLayer({
-            id: 'route',
-            type: 'line',
-            source: 'route',
-            layout: {
-              'line-join': 'round',
-              'line-cap': 'round'
+          new gm.Marker({
+            position: { lat: driverLocation.lat, lng: driverLocation.lng },
+            map: map.current,
+            icon: {
+              path: gm.SymbolPath.CIRCLE,
+              scale: 8,
+              fillColor: '#3b82f6',
+              fillOpacity: 1,
+              strokeColor: '#ffffff',
+              strokeWeight: 2,
             },
-            paint: {
-              'line-color': '#3b82f6',
-              'line-width': 4,
-              'line-opacity': 0.7
-            }
+            title: driverName,
           })
+        }
 
-          if (routeCoordinates.length > 0) {
-            map.current.fitBounds(bounds, { padding: 50, maxZoom: 15 })
-          }
+        if (loadingCoords) {
+          new gm.Marker({
+            position: loadingCoords,
+            map: map.current,
+            icon: {
+              path: gm.SymbolPath.CIRCLE,
+              scale: 6,
+              fillColor: '#10b981',
+              fillOpacity: 1,
+              strokeColor: '#ffffff',
+              strokeWeight: 2,
+            },
+            title: loadingLocation,
+          })
+        }
+
+        if (dropoffCoords) {
+          new gm.Marker({
+            position: dropoffCoords,
+            map: map.current,
+            icon: {
+              path: gm.SymbolPath.CIRCLE,
+              scale: 6,
+              fillColor: '#ef4444',
+              fillOpacity: 1,
+              strokeColor: '#ffffff',
+              strokeWeight: 2,
+            },
+            title: dropoffLocation,
+          })
+        }
+
+        const routePoints = []
+        const bounds = new gm.LatLngBounds()
+
+        if (driverLocation) {
+          routePoints.push({ lat: driverLocation.lat, lng: driverLocation.lng })
+          bounds.extend({ lat: driverLocation.lat, lng: driverLocation.lng })
+        }
+        if (loadingCoords) {
+          routePoints.push(loadingCoords)
+          bounds.extend(loadingCoords)
+        }
+        if (dropoffCoords) {
+          routePoints.push(dropoffCoords)
+          bounds.extend(dropoffCoords)
+        }
+
+        if (routePoints.length >= 2) {
+          const directionsService = new gm.DirectionsService()
+          const waypoints = routePoints.slice(1, -1).map(p => ({
+            location: p,
+            stopover: true
+          }))
+
+          directionsService.route(
+            {
+              origin: routePoints[0],
+              destination: routePoints[routePoints.length - 1],
+              waypoints: waypoints,
+              travelMode: gm.TravelMode.DRIVING,
+            },
+            (result, status) => {
+              if (status === 'OK' && result.routes?.[0]) {
+                const route = result.routes[0]
+                const totalDistance = Math.round(route.legs.reduce((sum, leg) => sum + leg.distance.value, 0) / 1000 * 10) / 10
+                const totalDuration = Math.round(route.legs.reduce((sum, leg) => sum + leg.duration.value, 0) / 60)
+
+                setRouteInfo({ distance: totalDistance, duration: totalDuration })
+                onRouteCalculated?.({ distance: totalDistance, duration: totalDuration })
+
+                new gm.DirectionsRenderer({
+                  map: map.current,
+                  directions: result,
+                  suppressMarkers: true,
+                  polylineOptions: {
+                    strokeColor: '#3b82f6',
+                    strokeWeight: 4,
+                    strokeOpacity: 0.7,
+                  },
+                })
+              } else {
+                new gm.Polyline({
+                  path: routePoints,
+                  map: map.current,
+                  strokeColor: '#3b82f6',
+                  strokeWeight: 4,
+                  strokeOpacity: 0.7,
+                })
+              }
+
+              if (routePoints.length > 0) {
+                map.current.fitBounds(bounds, { padding: 50, maxZoom: 15 })
+              }
+            }
+          )
         }
       } catch (error) {
         console.error('Error setting up map:', error)
       }
-    })
+    }
+
+    init()
 
     return () => {
       if (map.current) {
-        map.current.remove()
         map.current = null
       }
     }
   }, [driverLocation, loadingLocation, dropoffLocation, driverName])
-
-  const geocodeLocation = async (location) => {
-    if (!location) return null
-    try {
-      const response = await fetch(
-        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(location)}.json?access_token=${mapboxgl.accessToken}&country=za&limit=1`
-      )
-      const data = await response.json()
-      if (data.features?.[0]?.center) {
-        const [lng, lat] = data.features[0].center
-        return { lat, lng }
-      }
-    } catch (error) {
-      console.error('Geocoding error:', error)
-    }
-    return null
-  }
 
   return (
     <div className={`relative ${className} rounded-lg overflow-hidden`}>
@@ -212,7 +200,6 @@ export function RouteMap({
         </div>
       )}
 
-      {/* Route Info */}
       <div className="absolute top-4 left-4 bg-white p-3 rounded-lg shadow-md text-xs space-y-2">
         <h4 className="font-semibold">Route Information</h4>
         {routeInfo.distance > 0 && (

@@ -193,13 +193,14 @@ export default function CallCenterPage() {
               return null
             }
             const res = await fetch(
-              `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
+              `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
                 loc
-              )}.json?access_token=${process.env.NEXT_PUBLIC_MAPBOX_TOKEN}`
+              )}&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_TOKEN}&region=za`
             )
             const geoData = await res.json()
-            if (geoData.features && geoData.features.length) {
-              return geoData.features[0].center // [lng, lat]
+            if (geoData.status === 'OK' && geoData.results?.[0]) {
+              const { lat, lng } = geoData.results[0].geometry.location
+              return [lng, lat]
             }
             return null
           })

@@ -1,9 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import mapboxgl from 'mapbox-gl'
-
-mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN!
+import { loadGoogleMaps } from '@/lib/google-maps'
 
 interface DriverLocationMapProps {
   driverLocation?: {
@@ -30,148 +28,113 @@ export default function DriverLocationMap({
   className = "w-full h-[400px]" 
 }: DriverLocationMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null)
-  const map = useRef<mapboxgl.Map | null>(null)
+  const map = useRef<any>(null)
   const [loading, setLoading] = useState(true)
 
-  // Default location (Johannesburg, South Africa)
   const defaultLocation = { lat: -26.2041, lng: 28.0473 }
   const currentLocation = driverLocation || defaultLocation
 
   useEffect(() => {
     if (map.current || !mapContainer.current) return
 
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/streets-v11',
-      center: [currentLocation.lng, currentLocation.lat],
-      zoom: 12,
-    })
+    const init = async () => {
+      await loadGoogleMaps()
+      const gm = (window as any).google.maps
 
-    map.current.addControl(new mapboxgl.NavigationControl(), 'bottom-right')
-
-    map.current.on('load', () => {
-      setLoading(false)
-      
-      if (!map.current) return
-
-      // Add driver location marker
-      const driverMarker = new mapboxgl.Marker({
-        color: '#3b82f6', // Blue color for driver
-        scale: 1.2
+      map.current = new gm.Map(mapContainer.current, {
+        center: currentLocation,
+        zoom: 12,
+        mapTypeId: 'roadmap',
+        mapTypeControl: false,
+        streetViewControl: false,
+        zoomControl: true,
       })
-        .setLngLat([currentLocation.lng, currentLocation.lat])
-        .setPopup(
-          new mapboxgl.Popup({ offset: 25 })
-            .setHTML(`
-              <div class="p-2">
-                <h3 class="font-semibold text-sm">${driverName}</h3>
-                <p class="text-xs text-gray-600">Current Location</p>
-              </div>
-            `)
-        )
-        .addTo(map.current)
 
-      // If trip route is provided, add route visualization
+      setLoading(false)
+
+      new gm.Marker({
+        position: currentLocation,
+        map: map.current,
+        icon: {
+          path: gm.SymbolPath.CIRCLE,
+          scale: 10,
+          fillColor: '#3b82f6',
+          fillOpacity: 1,
+          strokeColor: '#ffffff',
+          strokeWeight: 3,
+        },
+        title: driverName,
+      })
+
       if (tripRoute && tripRoute.waypoints && tripRoute.waypoints.length > 0) {
-        // Add origin marker
-        new mapboxgl.Marker({
-          color: '#10b981', // Green for origin
-          scale: 0.8
-        })
-          .setLngLat([tripRoute.waypoints[0].lng, tripRoute.waypoints[0].lat])
-          .setPopup(
-            new mapboxgl.Popup({ offset: 25 })
-              .setHTML(`
-                <div class="p-2">
-                  <h3 class="font-semibold text-sm">Origin</h3>
-                  <p class="text-xs text-gray-600">${tripRoute.origin}</p>
-                </div>
-              `)
-          )
-          .addTo(map.current)
+        const bounds = new gm.LatLngBounds()
+        bounds.extend(currentLocation)
 
-        // Add destination marker
-        const lastWaypoint = tripRoute.waypoints[tripRoute.waypoints.length - 1]
-        new mapboxgl.Marker({
-          color: '#ef4444', // Red for destination
-          scale: 0.8
-        })
-          .setLngLat([lastWaypoint.lng, lastWaypoint.lat])
-          .setPopup(
-            new mapboxgl.Popup({ offset: 25 })
-              .setHTML(`
-                <div class="p-2">
-                  <h3 class="font-semibold text-sm">Destination</h3>
-                  <p class="text-xs text-gray-600">${tripRoute.destination}</p>
-                </div>
-              `)
-          )
-          .addTo(map.current)
-
-        // Add intermediate waypoints
-        tripRoute.waypoints.slice(1, -1).forEach((waypoint, index) => {
-          new mapboxgl.Marker({
-            color: '#f59e0b', // Orange for waypoints
-            scale: 0.6
-          })
-            .setLngLat([waypoint.lng, waypoint.lat])
-            .setPopup(
-              new mapboxgl.Popup({ offset: 25 })
-                .setHTML(`
-                  <div class="p-2">
-                    <h3 class="font-semibold text-sm">Waypoint ${index + 1}</h3>
-                    <p class="text-xs text-gray-600">${waypoint.address}</p>
-                  </div>
-                `)
-            )
-            .addTo(map.current)
-        })
-
-        // Create route line
-        const routeCoordinates = tripRoute.waypoints.map(wp => [wp.lng, wp.lat])
-        
-        map.current.addSource('route', {
-          type: 'geojson',
-          data: {
-            type: 'Feature',
-            properties: {},
-            geometry: {
-              type: 'LineString',
-              coordinates: routeCoordinates
-            }
-          }
-        })
-
-        map.current.addLayer({
-          id: 'route',
-          type: 'line',
-          source: 'route',
-          layout: {
-            'line-join': 'round',
-            'line-cap': 'round'
+        new gm.Marker({
+          position: { lat: tripRoute.waypoints[0].lat, lng: tripRoute.waypoints[0].lng },
+          map: map.current,
+          icon: {
+            path: gm.SymbolPath.CIRCLE,
+            scale: 7,
+            fillColor: '#10b981',
+            fillOpacity: 1,
+            strokeColor: '#ffffff',
+            strokeWeight: 2,
           },
-          paint: {
-            'line-color': '#3b82f6',
-            'line-width': 4,
-            'line-opacity': 0.7
-          }
+          title: 'Origin',
+        })
+        bounds.extend({ lat: tripRoute.waypoints[0].lat, lng: tripRoute.waypoints[0].lng })
+
+        const lastWp = tripRoute.waypoints[tripRoute.waypoints.length - 1]
+        new gm.Marker({
+          position: { lat: lastWp.lat, lng: lastWp.lng },
+          map: map.current,
+          icon: {
+            path: gm.SymbolPath.CIRCLE,
+            scale: 7,
+            fillColor: '#ef4444',
+            fillOpacity: 1,
+            strokeColor: '#ffffff',
+            strokeWeight: 2,
+          },
+          title: 'Destination',
+        })
+        bounds.extend({ lat: lastWp.lat, lng: lastWp.lng })
+
+        tripRoute.waypoints.slice(1, -1).forEach((wp) => {
+          new gm.Marker({
+            position: { lat: wp.lat, lng: wp.lng },
+            map: map.current,
+            icon: {
+              path: gm.SymbolPath.CIRCLE,
+              scale: 5,
+              fillColor: '#f59e0b',
+              fillOpacity: 1,
+              strokeColor: '#ffffff',
+              strokeWeight: 2,
+            },
+            title: wp.address,
+          })
+          bounds.extend({ lat: wp.lat, lng: wp.lng })
         })
 
-        // Fit map to show all points
-        const bounds = new mapboxgl.LngLatBounds()
-        bounds.extend([currentLocation.lng, currentLocation.lat])
-        tripRoute.waypoints.forEach(wp => bounds.extend([wp.lng, wp.lat]))
-        
-        map.current.fitBounds(bounds, { 
-          padding: 50,
-          maxZoom: 15
+        const routePath = tripRoute.waypoints.map(wp => ({ lat: wp.lat, lng: wp.lng }))
+        new gm.Polyline({
+          path: routePath,
+          map: map.current,
+          strokeColor: '#3b82f6',
+          strokeWeight: 4,
+          strokeOpacity: 0.7,
         })
+
+        map.current.fitBounds(bounds, { padding: 50, maxZoom: 15 })
       }
-    })
+    }
+
+    init()
 
     return () => {
       if (map.current) {
-        map.current.remove()
         map.current = null
       }
     }
@@ -187,7 +150,6 @@ export default function DriverLocationMap({
         </div>
       )}
 
-      {/* Legend */}
       <div className="absolute top-4 left-4 bg-white p-3 rounded-lg shadow-md text-xs">
         <h4 className="font-semibold mb-2">Legend</h4>
         <div className="space-y-1">

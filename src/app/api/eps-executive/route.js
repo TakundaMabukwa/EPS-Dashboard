@@ -1,7 +1,7 @@
 export async function POST(request) {
   try {
     const { endpoint } = await request.json()
-    const HTTP_SERVER_ENDPOINT = process.env.NEXT_PUBLIC_HTTP_SERVER_ENDPOINT || 'http://localhost:3001'
+const HTTP_SERVER_ENDPOINT = process.env.NEXT_PUBLIC_CAN_BUS_ENDPOINT || process.env.NEXT_PUBLIC_EPS_HTTP_SERVER_ENDPOINT || 'http://209.38.217.58:3001'
     
     const response = await fetch(`${HTTP_SERVER_ENDPOINT}${endpoint}`)
     

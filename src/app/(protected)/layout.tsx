@@ -26,6 +26,8 @@ import {
   Fuel,
   Video,
   AlertTriangle,
+  Sun,
+  Moon,
 } from "lucide-react";
 import GlobalProvider from "@/context/global-context/provider";
 import { PAGES, Permission, hasPermission } from "@/lib/permissions/permissions";
@@ -33,6 +35,7 @@ import { createClient } from "@/lib/supabase/client";
 import { ElevationNotification } from "@/components/ui/elevation-notification";
 import { VideoAlertsProvider } from "@/context/video-alerts-context";
 import AlertBellNotification from "@/components/notifications/alert-bell-notification";
+import { useTheme } from "next-themes";
 
 interface ProtectedLayoutProps {
   children: React.ReactNode;
@@ -166,6 +169,7 @@ export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
   const [userId, setUserId] = useState<string>("");
   const [navigation, setNavigation] = useState<any[]>([]);
   const [userPermissions, setUserPermissions] = useState<Permission[]>([]);
+  const { theme, setTheme } = useTheme();
   const pathname = usePathname();
   const supabase = createClient();
 
@@ -342,6 +346,15 @@ export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
             </div>
             <div className="flex items-center gap-4">
               <AlertBellNotification />
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                className="rounded-full"
+                aria-label="Toggle theme"
+              >
+                {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+              </Button>
               <DateTimeDisplay />
             </div>
           </div>

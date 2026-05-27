@@ -187,13 +187,23 @@ export function ElevationNotification({ userRole, userId }) {
                     <div><strong>Total Cost:</strong> R{(trip.total_vehicle_cost || 0).toLocaleString()}</div>
                   </div>
                   
-                  <Button 
-                    onClick={() => handleViewTrip(trip)}
-                    size="sm"
-                    className="w-full"
-                  >
-                    Review & Approve
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button 
+                      onClick={() => handleApprove(trip.id)}
+                      size="sm"
+                      className="flex-1 bg-green-600 hover:bg-green-700"
+                    >
+                      Approve
+                    </Button>
+                    <Button 
+                      onClick={() => handleViewTrip(trip)}
+                      size="sm"
+                      variant="outline"
+                      className="flex-1"
+                    >
+                      Review Details
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
