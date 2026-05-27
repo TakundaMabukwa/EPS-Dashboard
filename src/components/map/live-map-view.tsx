@@ -138,80 +138,17 @@ export default function LiveMapView() {
     }).filter((v: Vehicle) => v.location);
   };
 
-  const processCtrackVehicles = (ctrackData: any, existingPlates: Set<string>): Vehicle[] => {
-    if (!ctrackData) return [];
-    const vehicles = Array.isArray(ctrackData) ? ctrackData :
-      ctrackData?.data || ctrackData?.vehicles || [];
-    return vehicles.filter((v: any) => {
-      const plate = v.plate || v.registrationNumber || v.vehicleReg || '';
-      if (!plate || existingPlates.has(plate)) return false;
-      const lat = parseFloat(v.latitude || v.lat);
-      const lng = parseFloat(v.longitude || v.lng);
-      return !isNaN(lat) && !isNaN(lng);
-    }).map((v: any) => {
-      const plate = v.plate || v.registrationNumber || v.vehicleReg || '';
-      existingPlates.add(plate);
-      return {
-        id: v.id || plate || Math.random().toString(),
-        plate,
-        driver: v.driver || v.driverName || 'Unassigned',
-        status: v.status || v.online === true ? 'online' : 'offline',
-        location: { lat: parseFloat(v.latitude || v.lat), lng: parseFloat(v.longitude || v.lng), address: v.address || '' },
-        speed: v.speed != null ? v.speed : 0,
-        lastUpdate: v.timestamp || v.loc_time || new Date().toISOString(),
-        address: v.address || '',
-        hasVideo: vehiclesWithVideo.has(plate.trim().toUpperCase()),
-        timestamp: v.timestamp || new Date().toISOString(),
-      } as Vehicle;
-    });
-  };
-
-  const mergeVehicles = (newVehicles: Vehicle[], existing: Vehicle[]): Vehicle[] => {
-    const plates = new Set(existing.map(v => v.plate?.trim().toUpperCase() || 'UNKNOWN'));
-    const deduped = existing.filter(v => {
-      const p = v.plate?.trim().toUpperCase() || 'UNKNOWN';
-      if (plates.has(p)) return false;
-      plates.add(p);
-      return true;
-    });
-    return [...deduped, ...newVehicles.filter(v => {
-      const p = v.plate?.trim().toUpperCase() || 'UNKNOWN';
-      if (plates.has(p)) return false;
-      plates.add(p);
-      return true;
-    })];
-  };
-
   const fetchVehicles = async () => {
     try {
       setLoading(true);
-      const existingPlates = new Set<string>();
-
-      const epsPromise = fetch('/api/eps-vehicles').then(async (res) => {
+      const vehicles = await fetch('/api/eps-vehicles').then(async (res) => {
         const data = await res.json();
-        const vehicles = processEpsVehicles(data, existingPlates);
-        return vehicles;
+        return processEpsVehicles(data, new Set<string>());
       }).catch((e) => {
         console.error('Error fetching EPS vehicles:', e);
         return [] as Vehicle[];
       });
-
-      const ctrackPromise = fetch('/api/ctrack-data').then(async (res) => {
-        const data = await res.json();
-        return processCtrackVehicles(data, existingPlates);
-      }).catch((e) => {
-        console.error('Error fetching CTrack data:', e);
-        return [] as Vehicle[];
-      });
-
-      // Show CTrack vehicles as soon as they arrive
-      ctrackPromise.then((ctrackVehicles) => {
-        setVehicles(prev => mergeVehicles(ctrackVehicles, prev));
-      });
-
-      // Wait for both to finish for the final merge (+ EPS cache priming)
-      const [epsVehicles, ctrackVehicles] = await Promise.all([epsPromise, ctrackPromise]);
-      setVehicles(mergeVehicles(epsVehicles, ctrackVehicles));
+      setVehicles(vehicles);
     } catch (error) {
       console.error('Error fetching vehicles:', error);
     } finally {
