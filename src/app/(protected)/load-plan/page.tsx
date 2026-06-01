@@ -2009,19 +2009,7 @@ export default function LoadPlanPage() {
                 {/* Vehicle Selection */}
                 <div className="space-y-4">
                   <Label className="text-lg font-medium">Vehicle Assignment</Label>
-                  
-                  {/* Vehicle Type Dropdown */}
-                  <div className="space-y-2">
-                    <Label htmlFor="vehicleType" className="text-sm font-medium text-slate-700">Vehicle Type (Optional)</Label>
-                    <VehicleTypeDropdown
-                      value={selectedVehicleType}
-                      onChange={(value) => {
-                        setSelectedVehicleType(value)
-                        setSelectedVehicleId('') // Reset vehicle selection when type changes
-                      }}
-                      placeholder="Select vehicle type to filter"
-                    />
-                  </div>
+                
 
                   {/* Horse Dropdown - Filtered by selected type */}
                   <div className="space-y-2">

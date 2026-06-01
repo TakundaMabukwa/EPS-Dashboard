@@ -166,7 +166,7 @@ export async function GET(request: NextRequest) {
   const q = String(searchParams.get('q') || '').trim()
   const lat = String(searchParams.get('lat') || '').trim()
   const lng = String(searchParams.get('lng') || '').trim()
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_TOKEN
+  const apiKey = process.env.GOOGLE_MAPS_API_TOKEN
 
   if (!apiKey) {
     return NextResponse.json({ error: 'GOOGLE_MAPS_API_TOKEN is not configured' }, { status: 500 })
