@@ -40,6 +40,8 @@ export function LocationAutocomplete({
   const suggestionsRef = useRef<HTMLDivElement>(null)
   const lookupCacheRef = useRef(new Map<string, Suggestion[]>())
   const justSelectedRef = useRef(false)
+  const clientLocationsRef = useRef(clientLocations)
+  clientLocationsRef.current = clientLocations
 
   useEffect(() => {
     if (!value || value.length < 2) {
@@ -53,7 +55,8 @@ export function LocationAutocomplete({
     const timeoutId = setTimeout(async () => {
       setIsLoading(true)
 
-      const clientMatches = clientLocations
+      const locations = clientLocationsRef.current
+      const clientMatches = locations
         .filter(
           (loc: any) =>
             loc.name?.toLowerCase().includes(value.toLowerCase()) ||
@@ -107,7 +110,7 @@ export function LocationAutocomplete({
     }, 300)
 
     return () => clearTimeout(timeoutId)
-  }, [value, clientLocations])
+  }, [value])
 
   const handleSuggestionClick = (suggestion: Suggestion) => {
     justSelectedRef.current = true
