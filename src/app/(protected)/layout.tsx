@@ -26,6 +26,7 @@ import {
   Fuel,
   Video,
   AlertTriangle,
+  Bell,
   Sun,
   Moon,
 } from "lucide-react";
@@ -86,7 +87,7 @@ function DateTimeDisplay() {
 const roleNavigation = {
   admin: [
     { name: "Dashboard", href: "/dashboard", Icon: <ChartBar /> },
-    { name: "Video Alerts", href: "/video-alerts", Icon: <AlertTriangle /> },
+    { name: "Notifications", href: "/video-alerts", Icon: <Bell /> },
     { name: "Fleet Jobs", href: "/jobsFleet", Icon: <Briefcase /> },
     { name: "Load Plan", href: "/load-plan", Icon: <Route /> },
     { name: "Clients", href: "/clients", Icon: <Building2 /> },

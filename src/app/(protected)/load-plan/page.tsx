@@ -28,6 +28,7 @@ import { CommodityDropdown } from '@/components/ui/commodity-dropdown'
 import { ClientDropdown } from '@/components/ui/client-dropdown'
 import { ClientNameDisplay } from '@/components/ui/client-name-display'
 import { ClientAddressPopup } from '@/components/ui/client-address-popup'
+import { QuickGeozoneDialog } from '@/components/ui/quick-geozone-dialog'
 import { Toast } from '@/components/ui/toast'
 import { DriverDropdown } from '@/components/ui/driver-dropdown'
 import { VehicleDropdown } from '@/components/ui/vehicle-dropdown'
@@ -73,6 +74,7 @@ export default function LoadPlanPage() {
   const [selectedClient, setSelectedClient] = useState(null)
   const [manualClientName, setManualClientName] = useState('')
   const [showAddressPopup, setShowAddressPopup] = useState(false)
+  const [showQuickGeozoneDialog, setShowQuickGeozoneDialog] = useState(false)
   const [commodity, setCommodity] = useState('')
   const [costCenter, setCostCenter] = useState('')
   const [rate, setRate] = useState('')
@@ -81,8 +83,10 @@ export default function LoadPlanPage() {
   // Address & ETA section
   const [etaPickup, setEtaPickup] = useState('')
   const [loadingLocation, setLoadingLocation] = useState('')
+  const [loadingGeozoneCoords, setLoadingGeozoneCoords] = useState(null)
   const [etaDropoff, setEtaDropoff] = useState('')
   const [dropOffPoint, setDropOffPoint] = useState('')
+  const [dropoffGeozoneCoords, setDropoffGeozoneCoords] = useState(null)
   const [showSecondSection, setShowSecondSection] = useState(false)
   const secondRef = useRef<HTMLDivElement | null>(null)
   const [optimizedRoute, setOptimizedRoute] = useState<any>(null)
@@ -105,6 +109,18 @@ export default function LoadPlanPage() {
   const [approximatedVehicleCost, setApproximatedVehicleCost] = useState(0)
   const [approximatedDriverCost, setApproximatedDriverCost] = useState(0)
   const [totalVehicleCost, setTotalVehicleCost] = useState(0)
+  const [fuelLitres, setFuelLitres] = useState(0)
+  const [maintenanceCost, setMaintenanceCost] = useState(0)
+  const [breakdownCost, setBreakdownCost] = useState(0)
+  const [fixedCost, setFixedCost] = useState(0)
+  const [loadingCost, setLoadingCost] = useState(850)
+  const [packingCost, setPackingCost] = useState(350)
+  const [tollCost, setTollCost] = useState(0)
+  const [borderCost, setBorderCost] = useState(0)
+  const [profitMargin, setProfitMargin] = useState(0.20)
+  const [sellingPrice, setSellingPrice] = useState(0)
+  const [profit, setProfit] = useState(0)
+  const [stopsCount, setStopsCount] = useState(0)
   const [goodsInTransitPremium, setGoodsInTransitPremium] = useState('')
   const [tripType, setTripType] = useState('local')
   const [stopPoints, setStopPoints] = useState([])
@@ -113,110 +129,67 @@ export default function LoadPlanPage() {
   const [customStopPoints, setCustomStopPoints] = useState([])
   const [tripDays, setTripDays] = useState(1)
   const [isManuallyOrdered, setIsManuallyOrdered] = useState(false)
+  const addressDecisionRef = useRef(null)
 
-  // Rate Card System - Complete Costing Model from Excel
-  const RATE_CARD_SYSTEM = {
-    'TAUTLINER': {
-      // FIXED COSTS - TRUCK
-      hp_depr: 22000, tracking: 1800, licence: 1295.87, insurance: 12265,
-      // FIXED COSTS - TRAILER
-      trailer_hp_depr: 12000, trailer_licence: 1695, trailer_insurance: 1270,
-      // FIXED COSTS - OVERHEADS
-      admin: 28000, driver_basic: 22320.17,
-      // VARIABLE COSTS
-      rm_per_km: 1.65, breakdowns_per_km: 0.06, diesel_per_litre: 9.67, tolls_per_km: 1.15,
-      overtime_allow: 1.70,
-      // RATE CARD
-      ppk: 3.00, profit_margin: 0.111,
-    },
-    'TAUT X-BRDER - BOTSWANA': {
-      hp_depr: 10000, tracking: 1800, licence: 1575.44, insurance: 12265,
-      trailer_hp_depr: 12000, trailer_licence: 1695, trailer_insurance: 1270,
-      admin: 28000, driver_basic: 22320.17, xbrdr: 650,
-      rm_per_km: 1.65, breakdowns_per_km: 0.06, diesel_per_litre: 9.67, tolls_per_km: 0.75,
-      overtime_allow: 1.70,
-      ppk: 5.00, profit_margin: 0.162,
-    },
-    'TAUT X-BRDER - NAMIBIA': {
-      hp_depr: 10000, tracking: 1800, licence: 1575.44, insurance: 12265,
-      trailer_hp_depr: 12000, trailer_licence: 1695, trailer_insurance: 1270,
-      admin: 28000, driver_basic: 22320.17, xbrdr: 1500,
-      rm_per_km: 1.65, breakdowns_per_km: 0.06, diesel_per_litre: 9.67, tolls_per_km: 1.48,
-      overtime_allow: 1.70,
-      ppk: 5.00, profit_margin: 0.184,
-    },
-    'CITRUS LOAD (+1 DAY STANDING FPT)': {
-      hp_depr: 22000, tracking: 1800, licence: 1295.87, insurance: 12265,
-      trailer_hp_depr: 12000, trailer_licence: 1695, trailer_insurance: 1270,
-      admin: 28000, driver_basic: 22320.17,
-      rm_per_km: 1.65, breakdowns_per_km: 0.06, diesel_per_litre: 9.67, tolls_per_km: 1.52,
-      overtime_allow: 1.70,
-      ppk: 5.00, profit_margin: 0.062,
-    },
-    '14M/15M COMBO (NEW)': {
-      hp_depr: 22000, tracking: 1800, licence: 1295.87, insurance: 12265,
-      trailer_hp_depr: 8000, trailer_licence: 1406, trailer_insurance: 650,
-      admin: 22000, driver_basic: 22320.17,
-      rm_per_km: 0.90, breakdowns_per_km: 0.06, diesel_per_litre: 8.41, tolls_per_km: 0.82,
-      overtime_allow: 1.30,
-      ppk: 5.00, profit_margin: 0.144,
-    },
-    '14M/15M REEFER': {
-      hp_depr: 22000, tracking: 1800, licence: 1295.87, insurance: 12265,
-      trailer_hp_depr: 27000, trailer_licence: 1406, trailer_insurance: 1533,
-      admin: 22000, driver_basic: 22320.17,
-      rm_per_km: 0.90, breakdowns_per_km: 0.06, diesel_per_litre: 9.21, tolls_per_km: 0.82,
-      overtime_allow: 1.30,
-      ppk: 5.00, profit_margin: 0.126,
-    },
-    '9 METER (NEW)': {
-      hp_depr: 26000, tracking: 1800, licence: 1025, insurance: 8985,
-      trailer_hp_depr: 8000, trailer_licence: 600, trailer_insurance: 950,
-      admin: 15954, driver_basic: 22320.17,
-      rm_per_km: 1.00, breakdowns_per_km: 0.06, diesel_per_litre: 5.53, tolls_per_km: 0.23,
-      overtime_allow: 2.21,
-      ppk: 5.00, profit_margin: 0.177,
-    },
-    '8T JHB (NEW - EPS)': {
-      hp_depr: 22162, tracking: 1358, licence: 873.22, insurance: 8198,
-      trailer_hp_depr: 0, trailer_licence: 0, trailer_insurance: 0,
-      admin: 13620, driver_basic: 22320.17,
-      rm_per_km: 1.00, breakdowns_per_km: 0.06, diesel_per_litre: 4.84, tolls_per_km: 0.15,
-      overtime_allow: 1.71,
-      ppk: 3.00, profit_margin: 0.170,
-    },
-    '8T JHB (NEW) - X-BRDER - MOZ': {
-      hp_depr: 22162, tracking: 1358, licence: 873.22, insurance: 8198,
-      trailer_hp_depr: 0, trailer_licence: 0, trailer_insurance: 0,
-      admin: 13620, driver_basic: 22320.17, xbrdr: 1500,
-      rm_per_km: 1.00, breakdowns_per_km: 0.06, diesel_per_litre: 4.84, tolls_per_km: 1.37,
-      overtime_allow: 1.71,
-      ppk: 5.29, profit_margin: 0.253,
-    },
-    '8T JHB (OLD)': {
-      hp_depr: 10000, tracking: 1358, licence: 873.22, insurance: 3686,
-      trailer_hp_depr: 0, trailer_licence: 0, trailer_insurance: 0,
-      admin: 13620, driver_basic: 22320.17,
-      rm_per_km: 1.00, breakdowns_per_km: 0.06, diesel_per_litre: 4.84, tolls_per_km: 0.15,
-      overtime_allow: 1.71,
-      ppk: 4.00, profit_margin: 0.214,
-    },
-    '14 TON CURTAIN': {
-      hp_depr: 36500, tracking: 1150, licence: 1234.16, insurance: 10941,
-      trailer_hp_depr: 0, trailer_licence: 0, trailer_insurance: 0,
-      admin: 18288, driver_basic: 22320.17,
-      rm_per_km: 0.70, breakdowns_per_km: 0.06, diesel_per_litre: 5.53, tolls_per_km: 0.60,
-      overtime_allow: 1.50,
-      ppk: 5.00, profit_margin: 0.176,
-    },
-    '1TON BAKKIE': {
-      hp_depr: 2500, tracking: 1358, licence: 873.22, insurance: 3686,
-      trailer_hp_depr: 0, trailer_licence: 0, trailer_insurance: 0,
-      admin: 10000, driver_basic: 22320.17,
-      rm_per_km: 1.00, breakdowns_per_km: 0.06, diesel_per_litre: 1.93, tolls_per_km: 0.15,
-      overtime_allow: 1.71,
-      ppk: 1.50, profit_margin: 0.169,
-    },
+  const doesClientHaveGeozone = (clientData) => {
+    if (!clientData?.coordinates) return false
+    try {
+      const parsed = JSON.parse(clientData.coordinates)
+      return Array.isArray(parsed) && parsed.length >= 3
+    } catch {
+      return false
+    }
+  }
+
+  const extractFirstCoord = (clientData) => {
+    if (!clientData?.coordinates) return null
+    try {
+      const parsed = JSON.parse(clientData.coordinates)
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const first = Array.isArray(parsed[0]) ? parsed[0] : parsed
+        return { lng: Number(first[0]), lat: Number(first[1]) }
+      }
+    } catch {}
+    try {
+      const parts = clientData.coordinates.split(' ')[0].split(',')
+      if (parts.length >= 2) {
+        return { lng: Number(parts[0]), lat: Number(parts[1]) }
+      }
+    } catch {}
+    return null
+  }
+
+  const PAYLOAD_EFFICIENCY = [
+    { maxRatio: 0, efficiency: 1.00 },
+    { maxRatio: 0.50, efficiency: 0.95 },
+    { maxRatio: 0.75, efficiency: 0.90 },
+    { maxRatio: 1.00, efficiency: 0.85 },
+  ]
+
+  const getPayloadEfficiency = (payloadKg: number, maxPayloadKg: number) => {
+    if (!maxPayloadKg || !payloadKg) return 1.0
+    const ratio = payloadKg / maxPayloadKg
+    for (let i = PAYLOAD_EFFICIENCY.length - 1; i >= 0; i--) {
+      if (ratio >= (i === 0 ? 0 : PAYLOAD_EFFICIENCY[i - 1].maxRatio)) {
+        return PAYLOAD_EFFICIENCY[i].efficiency
+      }
+    }
+    return 1.0
+  }
+
+  const VEHICLE_COST_PROFILES = {
+    'TAUTLINER':                    { fuelConsumptionKmPerL: 2.3, maintenanceCostPerKm: 1.10, breakdownCostPerKm: 0.06, driverAllowancePerKm: 1.40, fixedDailyCost: 3824, maxPayloadKg: 34000 },
+    'TAUT X-BRDER - BOTSWANA':      { fuelConsumptionKmPerL: 2.3, maintenanceCostPerKm: 1.10, breakdownCostPerKm: 0.06, driverAllowancePerKm: 1.40, fixedDailyCost: 4000, maxPayloadKg: 34000 },
+    'TAUT X-BRDER - NAMIBIA':       { fuelConsumptionKmPerL: 2.3, maintenanceCostPerKm: 1.10, breakdownCostPerKm: 0.06, driverAllowancePerKm: 1.40, fixedDailyCost: 4000, maxPayloadKg: 34000 },
+    'CITRUS LOAD (+1 DAY STANDING FPT)': { fuelConsumptionKmPerL: 2.3, maintenanceCostPerKm: 1.10, breakdownCostPerKm: 0.06, driverAllowancePerKm: 1.40, fixedDailyCost: 4200, maxPayloadKg: 34000 },
+    '14M/15M COMBO (NEW)':          { fuelConsumptionKmPerL: 2.3, maintenanceCostPerKm: 1.10, breakdownCostPerKm: 0.06, driverAllowancePerKm: 1.40, fixedDailyCost: 3824, maxPayloadKg: 34000 },
+    '14M/15M REEFER':               { fuelConsumptionKmPerL: 2.1, maintenanceCostPerKm: 1.20, breakdownCostPerKm: 0.06, driverAllowancePerKm: 1.40, fixedDailyCost: 4200, maxPayloadKg: 30000 },
+    '9 METER (NEW)':                { fuelConsumptionKmPerL: 3.0, maintenanceCostPerKm: 0.90, breakdownCostPerKm: 0.05, driverAllowancePerKm: 1.20, fixedDailyCost: 2800, maxPayloadKg: 12000 },
+    '8T JHB (NEW - EPS)':           { fuelConsumptionKmPerL: 4.0, maintenanceCostPerKm: 0.80, breakdownCostPerKm: 0.05, driverAllowancePerKm: 1.10, fixedDailyCost: 1650, maxPayloadKg: 8000 },
+    '8T JHB (NEW) - X-BRDER - MOZ': { fuelConsumptionKmPerL: 4.0, maintenanceCostPerKm: 0.80, breakdownCostPerKm: 0.05, driverAllowancePerKm: 1.10, fixedDailyCost: 1800, maxPayloadKg: 8000 },
+    '8T JHB (OLD)':                 { fuelConsumptionKmPerL: 4.0, maintenanceCostPerKm: 0.80, breakdownCostPerKm: 0.05, driverAllowancePerKm: 1.10, fixedDailyCost: 1500, maxPayloadKg: 8000 },
+    '14 TON CURTAIN':               { fuelConsumptionKmPerL: 2.8, maintenanceCostPerKm: 0.90, breakdownCostPerKm: 0.06, driverAllowancePerKm: 1.30, fixedDailyCost: 3000, maxPayloadKg: 14000 },
+    '1TON BAKKIE':                  { fuelConsumptionKmPerL: 8.0, maintenanceCostPerKm: 0.50, breakdownCostPerKm: 0.03, driverAllowancePerKm: 0.80, fixedDailyCost: 800, maxPayloadKg: 1000 },
   }
 
   // Fetch loads and reference data
@@ -628,6 +601,14 @@ export default function LoadPlanPage() {
           
           const route = directionsData.routes?.[0]
           if (route) {
+            const numStops = stopPointsData.length
+            const totalDurationHours = route.duration / 3600
+            const stopDelayHours = numStops * 1
+            const totalHours = totalDurationHours + stopDelayHours
+            const calculatedDays = Math.ceil(totalHours / 10)
+            setStopsCount(numStops)
+            setTripDays((prev) => Math.max(prev, calculatedDays || 1))
+            
             const routeInfo = {
               route: route,
               distance: route.distance,
@@ -739,81 +720,77 @@ export default function LoadPlanPage() {
     calculateRouteDistance()
   }, [loadingLocation, dropOffPoint])
 
-  // Rate Card Calculation Function - Matches Excel COSTING Sheet
-  const calculateRateCardCost = useCallback((vehicleType, kms, days) => {
-    if (!vehicleType || !RATE_CARD_SYSTEM[vehicleType]) {
+  const calculateTripCost = useCallback((vehicleType, kms, days, fuelPrice, loading, packing, tolls, border, margin, payloadKg) => {
+    const profile = VEHICLE_COST_PROFILES[vehicleType]
+    if (!profile || !kms || !days) {
       return {
-        fuel_cost: 0, base_cost: 0, transport_cost: 0, profit_amount: 0, total_transport: 0,
-        total_fixed: 0, total_variable: 0
+        fuelLitres: 0, fuelCost: 0, maintenanceCost: 0, breakdownCost: 0, driverCost: 0,
+        fixedCost: 0, totalCost: 0, cpk: 0, sellingPrice: 0, profit: 0,
       }
     }
 
-    const rc = RATE_CARD_SYSTEM[vehicleType]
-    
-    // FIXED COSTS (prorated by days)
-    const fixed_truck = (rc.hp_depr + rc.tracking + rc.licence + rc.insurance) / 30 * days
-    const fixed_trailer = (rc.trailer_hp_depr + rc.trailer_licence + rc.trailer_insurance) / 30 * days
-    const fixed_overheads = (rc.admin + rc.driver_basic) / 30 * days
-    const fixed_xbrdr = (rc.xbrdr || 0)
-    const total_fixed = fixed_truck + fixed_trailer + fixed_overheads + fixed_xbrdr
-    
-    // VARIABLE COSTS (distance-based)
-    const rm_cost = kms * rc.rm_per_km
-    const breakdowns_cost = kms * rc.breakdowns_per_km
-    const diesel_cost = kms * rc.diesel_per_litre
-    const tolls_cost = kms * rc.tolls_per_km
-    const overtime_cost = kms * rc.overtime_allow
-    const total_variable = rm_cost + breakdowns_cost + diesel_cost + tolls_cost + overtime_cost
-    
-    // TOTAL COST
-    const total_cost = total_fixed + total_variable
-    
-    // PROFIT
-    const profit_amount = total_cost * rc.profit_margin
-    
-    // REVENUE
-    const total_transport = total_cost + profit_amount
+    const payloadEfficiency = getPayloadEfficiency(payloadKg || 0, profile.maxPayloadKg)
+    const effectiveConsumption = profile.fuelConsumptionKmPerL * payloadEfficiency
+    const litres = kms / effectiveConsumption
+    const fuel = litres * fuelPrice
+    const maintenance = kms * profile.maintenanceCostPerKm
+    const breakdown = kms * profile.breakdownCostPerKm
+    const driver = kms * profile.driverAllowancePerKm
+    const fixed = days * profile.fixedDailyCost
+    const totalCost = fuel + maintenance + breakdown + driver + fixed + loading + packing + tolls + border
+    const cpk = totalCost / kms
+    const selling = totalCost * (1 + margin)
+    const profitVal = selling - totalCost
 
     return {
-      fuel_cost: diesel_cost,
-      base_cost: total_fixed,
-      transport_cost: total_cost,
-      profit_amount,
-      total_transport,
-      total_fixed,
-      total_variable
+      fuelLitres: litres,
+      fuelCost: fuel,
+      maintenanceCost: maintenance,
+      breakdownCost: breakdown,
+      driverCost: driver,
+      fixedCost: fixed,
+      totalCost,
+      cpk,
+      sellingPrice: selling,
+      profit: profitVal,
     }
-  }, [RATE_CARD_SYSTEM])
+  }, [VEHICLE_COST_PROFILES])
 
-  // Calculate costs when relevant values change
   useEffect(() => {
     if (selectedVehicleType && estimatedDistance > 0) {
-      const costBreakdown = calculateRateCardCost(selectedVehicleType, estimatedDistance, tripDays)
-      
-      // Display breakdown components
-      setApproximateFuelCost(costBreakdown.fuel_cost)
-      setApproximatedVehicleCost(costBreakdown.total_fixed)
-      setApproximatedDriverCost(costBreakdown.total_variable - costBreakdown.fuel_cost)
-      
-      // Total = Rate Card Total + Goods in Transit Premium
-      const total = costBreakdown.total_transport + (parseFloat(goodsInTransitPremium) || 0)
-      setTotalVehicleCost(total)
-      
-      // CPK = total cost per kilometer
-      const cpk = estimatedDistance > 0 ? costBreakdown.total_transport / estimatedDistance : 0
-      setApproximatedCPK(cpk)
+      const costBreakdown = calculateTripCost(
+        selectedVehicleType, estimatedDistance, tripDays,
+        parseFloat(fuelPricePerLiter) || 0,
+        loadingCost, packingCost, tollCost, borderCost,
+        profitMargin,
+        0
+      )
+
+      setFuelLitres(costBreakdown.fuelLitres)
+      setApproximateFuelCost(costBreakdown.fuelCost)
+      setMaintenanceCost(costBreakdown.maintenanceCost)
+      setBreakdownCost(costBreakdown.breakdownCost)
+      setApproximatedDriverCost(costBreakdown.driverCost)
+      setFixedCost(costBreakdown.fixedCost)
+      setApproximatedVehicleCost(costBreakdown.fixedCost)
+      setTotalVehicleCost(costBreakdown.totalCost)
+      setApproximatedCPK(costBreakdown.cpk)
+      setSellingPrice(costBreakdown.sellingPrice)
+      setProfit(costBreakdown.profit)
     } else {
-      // Reset values when no vehicle type selected
+      setFuelLitres(0)
       setApproximateFuelCost(0)
-      setApproximatedVehicleCost(0)
+      setMaintenanceCost(0)
+      setBreakdownCost(0)
       setApproximatedDriverCost(0)
+      setFixedCost(0)
+      setApproximatedVehicleCost(0)
       setTotalVehicleCost(0)
       setApproximatedCPK(0)
+      setSellingPrice(0)
+      setProfit(0)
     }
-  }, [selectedVehicleType, estimatedDistance, tripDays, goodsInTransitPremium, fuelPricePerLiter, calculateRateCardCost])
-
-  // Note: Vehicle and driver costs are now handled by the rate card system
-  // Legacy cost calculations removed to prevent conflicts with rate card system
+  }, [selectedVehicleType, estimatedDistance, tripDays, fuelPricePerLiter, loadingCost, packingCost, tollCost, borderCost, profitMargin, calculateTripCost])
 
 
 
@@ -1137,111 +1114,138 @@ export default function LoadPlanPage() {
   }
 
   const handleClientSelect = async (clientData) => {
-    if (typeof clientData === 'object' && clientData.address) {
-      setSelectedClient(clientData)
-      setClient(clientData.name)
-      setManualClientName('') // Clear manual input
-      
-      // Always geocode client address as an additional option
-      if (clientData.address) {
-        try {
-          const googleKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_TOKEN
-          if (googleKey) {
-            const response = await fetch(
-              `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(clientData.address)}&key=${googleKey}&region=za`
-            )
-            const data = await response.json()
-            if (data.status === 'OK' && data.results?.[0]) {
-              const { lat, lng } = data.results[0].geometry.location
-              const geocodedClient = {
-                ...clientData,
-                geocoded_coordinates: `${lng},${lat}`,
-                geocoded_address: data.results[0].formatted_address
-              }
-              setSelectedClient(geocodedClient)
-              console.log(`✓ Geocoded client address: ${clientData.address} -> ${lng},${lat}`)
-            }
-          }
-        } catch (error) {
-          console.error('Error geocoding client address:', error)
-        }
-      }
-      
-      setShowAddressPopup(true)
-    } else if (typeof clientData === 'object' && clientData.coordinates) {
-      setSelectedClient(clientData)
-      setClient(clientData.name)
-      setManualClientName('') // Clear manual input
-      setShowAddressPopup(true)
-    } else {
+    if (typeof clientData !== 'object') {
       setClient(typeof clientData === 'string' ? clientData : clientData?.name || '')
       setSelectedClient(clientData)
-      setManualClientName('') // Clear manual input
+      setManualClientName('')
+      return
+    }
+
+    setSelectedClient(clientData)
+    setClient(clientData.name)
+    setManualClientName('')
+
+    if (addressDecisionRef.current?.clientId === clientData.id) {
+      const prev = addressDecisionRef.current
+      if (prev.decision === 'pickup' || prev.decision === 'dropoff') {
+        const coords = extractFirstCoord(clientData)
+        if (coords && !isNaN(coords.lat)) {
+          if (prev.decision === 'pickup') setLoadingLocation(clientData.address || `${coords.lat},${coords.lng}`)
+          else setDropOffPoint(clientData.address || `${coords.lat},${coords.lng}`)
+        }
+      }
+      return
+    }
+
+    if (doesClientHaveGeozone(clientData)) {
+      setShowAddressPopup(true)
+    } else if (clientData.address) {
+      setShowQuickGeozoneDialog(true)
     }
   }
 
-  const handleUseAsPickup = () => {
-    // Use stored coordinates first, fallback to geocoded address if no coordinates
-    if (selectedClient?.coordinates) {
-      try {
-        const coords = selectedClient.coordinates.split(' ')[0].split(',')
-        if (coords.length >= 2) {
-          const lng = parseFloat(coords[0])
-          const lat = parseFloat(coords[1])
-          if (!isNaN(lng) && !isNaN(lat)) {
-            fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_TOKEN}&region=za`)
-              .then(response => response.json())
-              .then(data => {
-                if (data.status === 'OK' && data.results?.[0]) {
-                  setLoadingLocation(data.results[0].formatted_address)
-                } else {
-                  setLoadingLocation(`${lat},${lng}`)
-                }
-              })
-              .catch(() => setLoadingLocation(`${lat},${lng}`))
-          }
-        }
-      } catch (error) {
-        console.error('Error parsing coordinates:', error)
+  const parseGeozonePolygon = (coordinates: any): number[][] | null => {
+    if (!coordinates) return null
+    try {
+      const parsed = JSON.parse(coordinates)
+      if (Array.isArray(parsed) && parsed.length >= 3) {
+        return parsed.map((c: any) => [Number(c[0]), Number(c[1])]).filter((c) => Number.isFinite(c[0]) && Number.isFinite(c[1]))
       }
+    } catch {}
+    try {
+      const parts = coordinates.split(' ').filter((c: string) => c.trim())
+      if (parts.length >= 3) {
+        return parts.map((p: string) => {
+          const [lng, lat] = p.split(',')
+          return [Number(lng), Number(lat)]
+        }).filter((c) => Number.isFinite(c[0]) && Number.isFinite(c[1]))
+      }
+    } catch {}
+    return null
+  }
+
+  const handleUseAsPickup = () => {
+    const polygon = parseGeozonePolygon(selectedClient?.coordinates)
+    if (polygon) {
+      setLoadingGeozoneCoords(polygon)
+    }
+    const coords = extractFirstCoord(selectedClient)
+    if (coords && !isNaN(coords.lat)) {
+      const lat = coords.lat.toFixed(6)
+      const lng = coords.lng.toFixed(6)
+      fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_TOKEN}&region=za`)
+        .then(response => response.json())
+        .then(data => {
+          if (data.status === 'OK' && data.results?.[0]) {
+            setLoadingLocation(data.results[0].formatted_address)
+          } else {
+            setLoadingLocation(`${lat},${lng}`)
+          }
+        })
+        .catch(() => setLoadingLocation(`${lat},${lng}`))
     } else if (selectedClient?.geocoded_address) {
       setLoadingLocation(selectedClient.geocoded_address)
+    } else if (selectedClient?.address) {
+      setLoadingLocation(selectedClient.address)
+    }
+    if (selectedClient) {
+      addressDecisionRef.current = { clientId: selectedClient.id, decision: 'pickup' }
     }
     setShowAddressPopup(false)
   }
 
   const handleUseAsDropoff = () => {
-    // Use stored coordinates first, fallback to geocoded address if no coordinates
-    if (selectedClient?.coordinates) {
-      try {
-        const coords = selectedClient.coordinates.split(' ')[0].split(',')
-        if (coords.length >= 2) {
-          const lng = parseFloat(coords[0])
-          const lat = parseFloat(coords[1])
-          if (!isNaN(lng) && !isNaN(lat)) {
-            fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_TOKEN}&region=za`)
-              .then(response => response.json())
-              .then(data => {
-                if (data.status === 'OK' && data.results?.[0]) {
-                  setDropOffPoint(data.results[0].formatted_address)
-                } else {
-                  setDropOffPoint(`${lat},${lng}`)
-                }
-              })
-              .catch(() => setDropOffPoint(`${lat},${lng}`))
+    const polygon = parseGeozonePolygon(selectedClient?.coordinates)
+    if (polygon) {
+      setDropoffGeozoneCoords(polygon)
+    }
+    const coords = extractFirstCoord(selectedClient)
+    if (coords && !isNaN(coords.lat)) {
+      const lat = coords.lat.toFixed(6)
+      const lng = coords.lng.toFixed(6)
+      fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_TOKEN}&region=za`)
+        .then(response => response.json())
+        .then(data => {
+          if (data.status === 'OK' && data.results?.[0]) {
+            setDropOffPoint(data.results[0].formatted_address)
+          } else {
+            setDropOffPoint(`${lat},${lng}`)
           }
-        }
-      } catch (error) {
-        console.error('Error parsing coordinates:', error)
-      }
+        })
+        .catch(() => setDropOffPoint(`${lat},${lng}`))
     } else if (selectedClient?.geocoded_address) {
       setDropOffPoint(selectedClient.geocoded_address)
+    } else if (selectedClient?.address) {
+      setDropOffPoint(selectedClient.address)
+    }
+    if (selectedClient) {
+      addressDecisionRef.current = { clientId: selectedClient.id, decision: 'dropoff' }
     }
     setShowAddressPopup(false)
   }
 
   const handleSkipAddress = () => {
+    if (selectedClient) {
+      addressDecisionRef.current = { clientId: selectedClient.id, decision: 'skip' }
+    }
     setShowAddressPopup(false)
+  }
+
+  const handleQuickGeozoneSaved = async (coordinatesJson: string) => {
+    if (!selectedClient?.id) return
+    try {
+      const { error } = await supabase
+        .from('eps_client_list')
+        .update({ coordinates: coordinatesJson })
+        .eq('id', selectedClient.id)
+      if (error) throw error
+      setSelectedClient((prev) => ({ ...prev, coordinates: coordinatesJson }))
+      setShowQuickGeozoneDialog(false)
+      setShowAddressPopup(true)
+    } catch (err) {
+      console.error('Error saving geozone:', err)
+      showToast('Failed to save geozone', 'error')
+    }
   }
 
 
@@ -1890,20 +1894,16 @@ export default function LoadPlanPage() {
                           } : undefined}
                           clientLocation={selectedClient?.coordinates ? (() => {
                             try {
-                              const coords = selectedClient.coordinates.split(' ')[0].split(',')
-                              if (coords.length >= 2) {
-                                const lng = parseFloat(coords[0])
-                                const lat = parseFloat(coords[1])
-                                if (!isNaN(lng) && !isNaN(lat)) {
-                                  return { lat, lng, name: selectedClient.name }
-                                }
-                              }
+                              const first = extractFirstCoord(selectedClient)
+                              if (first) return { lat: first.lat, lng: first.lng, name: selectedClient.name }
                             } catch (error) {
                               console.error('Error parsing client coordinates:', error)
                             }
                             return undefined
                           })() : undefined}
                           selectedClient={selectedClient}
+                          loadingGeozoneCoords={loadingGeozoneCoords}
+                          dropoffGeozoneCoords={dropoffGeozoneCoords}
                         />
                         
                         {/* Route Summary */}
@@ -2049,78 +2049,76 @@ export default function LoadPlanPage() {
                     {/* Left Half - Input Fields and Stats */}
                     <div className="h-full flex flex-col justify-between space-y-6">
                       <div className="space-y-6">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <Label htmlFor="fuelPrice" className="text-sm font-medium text-slate-700">Fuel Price per Liter</Label>
-                            <Input 
-                              value={fuelPricePerLiter} 
-                              onChange={(e) => setFuelPricePerLiter(e.target.value)} 
-                              placeholder="R 20.50" 
-                              type="number"
-                              step="0.01"
-                              className="border-slate-300 focus:border-slate-500"
-                            />
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                          <div className="space-y-1">
+                            <Label className="text-xs font-medium text-slate-700">Fuel Price (R/L)</Label>
+                            <Input value={fuelPricePerLiter} onChange={(e) => setFuelPricePerLiter(e.target.value)} type="number" step="0.01" className="border-slate-300" />
                           </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="rate" className="text-sm font-medium text-slate-700">Rate</Label>
-                            <Input 
-                              value={rate} 
-                              onChange={(e) => setRate(e.target.value)} 
-                              placeholder="R 0.00" 
-                              type="number"
-                              step="0.01"
-                              className="border-slate-300 focus:border-slate-500"
-                            />
+                          <div className="space-y-1">
+                            <Label className="text-xs font-medium text-slate-700">Trip Days</Label>
+                            <Input value={tripDays} onChange={(e) => setTripDays(parseFloat(e.target.value) || 1)} type="number" step="0.5" min="0.5" className="border-slate-300" />
                           </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="tripDays" className="text-sm font-medium text-slate-700">Trip Days</Label>
-                            <Input 
-                              value={tripDays} 
-                              onChange={(e) => setTripDays(parseFloat(e.target.value) || 1)} 
-                              placeholder="1" 
-                              type="number"
-                              step="0.5"
-                              min="0.5"
-                              className="border-slate-300 focus:border-slate-500"
-                            />
+                          <div className="space-y-1">
+                            <Label className="text-xs font-medium text-slate-700">Profit Margin</Label>
+                            <Input value={profitMargin} onChange={(e) => setProfitMargin(parseFloat(e.target.value) || 0)} type="number" step="0.01" min="0" className="border-slate-300" />
                           </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="goodsInTransit" className="text-sm font-medium text-slate-700">Goods In Transit Premium</Label>
-                            <Input 
-                              value={goodsInTransitPremium} 
-                              onChange={(e) => setGoodsInTransitPremium(e.target.value)} 
-                              placeholder="R 0.00" 
-                              type="number"
-                              step="0.01"
-                              className="border-slate-300 focus:border-slate-500"
-                            />
+                          <div className="space-y-1">
+                            <Label className="text-xs font-medium text-slate-700">Loading Cost</Label>
+                            <Input value={loadingCost} onChange={(e) => setLoadingCost(parseFloat(e.target.value) || 0)} type="number" step="10" className="border-slate-300" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs font-medium text-slate-700">Packing Cost</Label>
+                            <Input value={packingCost} onChange={(e) => setPackingCost(parseFloat(e.target.value) || 0)} type="number" step="10" className="border-slate-300" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs font-medium text-slate-700">Toll Cost</Label>
+                            <Input value={tollCost} onChange={(e) => setTollCost(parseFloat(e.target.value) || 0)} type="number" step="10" className="border-slate-300" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs font-medium text-slate-700">Border Cost</Label>
+                            <Input value={borderCost} onChange={(e) => setBorderCost(parseFloat(e.target.value) || 0)} type="number" step="50" className="border-slate-300" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs font-medium text-slate-700">Rate</Label>
+                            <Input value={rate} onChange={(e) => setRate(e.target.value)} type="number" step="0.01" className="border-slate-300" />
                           </div>
                         </div>
 
-                        {/* Cost Display Cards */}
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="p-4 bg-white rounded-lg border border-slate-200 shadow-sm">
-                            <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Distance</p>
-                            <p className="text-2xl font-bold text-slate-800 mt-2">{estimatedDistance}</p>
-                            <p className="text-xs text-slate-600">kilometers</p>
-                          </div>
-                          <div className="p-4 bg-white rounded-lg border border-slate-200 shadow-sm">
-                            <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">CPK</p>
-                            <p className="text-2xl font-bold text-slate-800 mt-2">R{approximatedCPK.toFixed(2)}</p>
-                            <p className="text-xs text-slate-600">per km</p>
-                          </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            { label: 'Distance', value: `${estimatedDistance} km` },
+                            { label: 'Stops', value: stopsCount },
+                            { label: 'CPK', value: `R${approximatedCPK.toFixed(2)}` },
+                            { label: 'Fuel Litres', value: fuelLitres.toFixed(1) },
+                            { label: 'Fuel', value: `R${approximateFuelCost.toLocaleString()}` },
+                            { label: 'Maintenance', value: `R${maintenanceCost.toLocaleString()}` },
+                            { label: 'Breakdown', value: `R${breakdownCost.toLocaleString()}` },
+                            { label: 'Driver', value: `R${approximatedDriverCost.toLocaleString()}` },
+                            { label: 'Fixed', value: `R${fixedCost.toLocaleString()}` },
+                            { label: 'Loading', value: `R${loadingCost.toLocaleString()}` },
+                            { label: 'Packing', value: `R${packingCost.toLocaleString()}` },
+                            { label: 'Tolls', value: `R${tollCost.toLocaleString()}` },
+                            { label: 'Border', value: `R${borderCost.toLocaleString()}` },
+                            { label: 'Selling Price', value: `R${sellingPrice.toLocaleString()}` },
+                            { label: 'Profit', value: `R${profit.toLocaleString()}` },
+                          ].map((item) => (
+                            <div key={item.label} className="p-2 bg-white rounded-lg border border-slate-200 shadow-sm">
+                              <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wide">{item.label}</p>
+                              <p className="text-sm font-bold text-slate-800 mt-0.5">{item.value}</p>
+                            </div>
+                          ))}
                         </div>
                       </div>
                       
-                      {/* Total Cost - Bottom Aligned */}
+                      {/* Total Cost */}
                       <div className="p-6 bg-gradient-to-r from-slate-600 to-slate-700 rounded-xl shadow-lg">
                         <p className="text-sm font-medium text-slate-200 uppercase tracking-wide">Total Estimated Cost</p>
                         <p className="text-3xl font-bold text-white mt-2">R{totalVehicleCost.toLocaleString()}</p>
-                        <p className="text-sm text-slate-300 mt-1">All expenses included</p>
+                        <p className="text-sm text-slate-300 mt-1">Selling Price: R{sellingPrice.toLocaleString()} | Profit: R{profit.toLocaleString()}</p>
                       </div>
                     </div>
 
-                    {/* Right Half - Stylish Bar Chart */}
+                    {/* Right Half - Bar Chart */}
                     <div className="h-full flex flex-col">
                       <div className="flex items-center gap-3 mb-4">
                         <div className="p-2 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg">
@@ -2133,9 +2131,14 @@ export default function LoadPlanPage() {
                           <BarChart
                             data={[
                               { name: 'Fuel', value: approximateFuelCost, fill: 'url(#fuelGradient)' },
-                              { name: 'Vehicle', value: approximatedVehicleCost, fill: 'url(#vehicleGradient)' },
+                              { name: 'Maintenance', value: maintenanceCost, fill: 'url(#vehicleGradient)' },
+                              { name: 'Breakdown', value: breakdownCost, fill: 'url(#breakdownGradient)' },
                               { name: 'Driver', value: approximatedDriverCost, fill: 'url(#driverGradient)' },
-                              ...(parseFloat(goodsInTransitPremium) > 0 ? [{ name: 'Premium', value: parseFloat(goodsInTransitPremium), fill: 'url(#premiumGradient)' }] : [])
+                              { name: 'Fixed', value: fixedCost, fill: 'url(#fixedGradient)' },
+                              { name: 'Loading', value: loadingCost, fill: 'url(#loadingGradient)' },
+                              { name: 'Packing', value: packingCost, fill: 'url(#packingGradient)' },
+                              { name: 'Tolls', value: tollCost, fill: 'url(#tollGradient)' },
+                              ...(borderCost > 0 ? [{ name: 'Border', value: borderCost, fill: 'url(#borderGradient)' }] : []),
                             ]}
                             margin={{ top: 20, right: 30, left: 40, bottom: 20 }}
                           >
@@ -2148,80 +2151,82 @@ export default function LoadPlanPage() {
                                 <stop offset="0%" stopColor="#34d399" stopOpacity={0.9}/>
                                 <stop offset="100%" stopColor="#10b981" stopOpacity={0.7}/>
                               </linearGradient>
+                              <linearGradient id="breakdownGradient" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#f87171" stopOpacity={0.9}/>
+                                <stop offset="100%" stopColor="#ef4444" stopOpacity={0.7}/>
+                              </linearGradient>
                               <linearGradient id="driverGradient" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="0%" stopColor="#fbbf24" stopOpacity={0.9}/>
                                 <stop offset="100%" stopColor="#f59e0b" stopOpacity={0.7}/>
                               </linearGradient>
-                              <linearGradient id="premiumGradient" x1="0" y1="0" x2="0" y2="1">
+                              <linearGradient id="fixedGradient" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="0%" stopColor="#a78bfa" stopOpacity={0.9}/>
                                 <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0.7}/>
                               </linearGradient>
+                              <linearGradient id="loadingGradient" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#f472b6" stopOpacity={0.9}/>
+                                <stop offset="100%" stopColor="#ec4899" stopOpacity={0.7}/>
+                              </linearGradient>
+                              <linearGradient id="packingGradient" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#fb923c" stopOpacity={0.9}/>
+                                <stop offset="100%" stopColor="#f97316" stopOpacity={0.7}/>
+                              </linearGradient>
+                              <linearGradient id="tollGradient" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#94a3b8" stopOpacity={0.9}/>
+                                <stop offset="100%" stopColor="#64748b" stopOpacity={0.7}/>
+                              </linearGradient>
+                              <linearGradient id="borderGradient" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#581c87" stopOpacity={0.9}/>
+                                <stop offset="100%" stopColor="#4c1d95" stopOpacity={0.7}/>
+                              </linearGradient>
                             </defs>
-                            <CartesianGrid 
-                              strokeDasharray="2 4" 
-                              stroke="#e2e8f0" 
-                              strokeOpacity={0.6}
-                              vertical={false}
-                            />
-                            <XAxis 
-                              dataKey="name" 
-                              tick={{ fontSize: 13, fill: '#475569', fontWeight: 500 }}
-                              axisLine={{ stroke: '#cbd5e1', strokeWidth: 2 }}
-                              tickLine={{ stroke: '#cbd5e1' }}
-                            />
-                            <YAxis 
-                              tick={{ fontSize: 12, fill: '#64748b', fontWeight: 500 }}
-                              axisLine={{ stroke: '#cbd5e1', strokeWidth: 2 }}
-                              tickLine={{ stroke: '#cbd5e1' }}
-                              tickFormatter={(value) => `R${value.toLocaleString()}`}
-                            />
-                            <Tooltip 
-                              formatter={(value, name) => [
-                                `R${value.toLocaleString()}`, 
-                                `${name} Cost`
-                              ]}
-                              labelStyle={{ 
-                                color: '#1e293b', 
-                                fontWeight: 600,
-                                fontSize: '14px'
-                              }}
-                              contentStyle={{ 
-                                backgroundColor: 'rgba(255, 255, 255, 0.95)', 
-                                border: 'none',
-                                borderRadius: '12px',
-                                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-                                backdropFilter: 'blur(10px)'
-                              }}
-                              cursor={{ fill: 'rgba(59, 130, 246, 0.05)' }}
-                            />
-                            <Bar 
-                              dataKey="value" 
-                              radius={[8, 8, 0, 0]}
-                              strokeWidth={2}
-                              stroke="rgba(255, 255, 255, 0.3)"
-                            />
+                            <CartesianGrid strokeDasharray="2 4" stroke="#e2e8f0" strokeOpacity={0.6} vertical={false} />
+                            <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} axisLine={{ stroke: '#cbd5e1', strokeWidth: 2 }} tickLine={{ stroke: '#cbd5e1' }} />
+                            <YAxis tick={{ fontSize: 12, fill: '#64748b', fontWeight: 500 }} axisLine={{ stroke: '#cbd5e1', strokeWidth: 2 }} tickLine={{ stroke: '#cbd5e1' }} tickFormatter={(value) => `R${value.toLocaleString()}`} />
+                            <Tooltip formatter={(value, name) => [`R${value.toLocaleString()}`, `${name} Cost`]} contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: 'none', borderRadius: '12px', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)' }} cursor={{ fill: 'rgba(59, 130, 246, 0.05)' }} />
+                            <Bar dataKey="value" radius={[6, 6, 0, 0]} strokeWidth={2} stroke="rgba(255, 255, 255, 0.3)" />
                           </BarChart>
                         </ResponsiveContainer>
                       </div>
                       
                       {/* Legend */}
-                      <div className="flex flex-wrap gap-3 justify-center">
-                        <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 rounded-full border border-blue-200">
-                          <div className="w-3 h-3 rounded-full bg-gradient-to-b from-blue-400 to-blue-600"></div>
-                          <span className="text-xs font-medium text-blue-700">Fuel</span>
+                      <div className="flex flex-wrap gap-2 justify-center mt-2">
+                        <div className="flex items-center gap-1 px-2 py-1 bg-blue-50 rounded-full border border-blue-200">
+                          <div className="w-2.5 h-2.5 rounded-full bg-blue-500"></div>
+                          <span className="text-[10px] font-medium text-blue-700">Fuel</span>
                         </div>
-                        <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 rounded-full border border-green-200">
-                          <div className="w-3 h-3 rounded-full bg-gradient-to-b from-green-400 to-green-600"></div>
-                          <span className="text-xs font-medium text-green-700">Vehicle</span>
+                        <div className="flex items-center gap-1 px-2 py-1 bg-green-50 rounded-full border border-green-200">
+                          <div className="w-2.5 h-2.5 rounded-full bg-green-500"></div>
+                          <span className="text-[10px] font-medium text-green-700">Maint</span>
                         </div>
-                        <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-50 rounded-full border border-yellow-200">
-                          <div className="w-3 h-3 rounded-full bg-gradient-to-b from-yellow-400 to-yellow-600"></div>
-                          <span className="text-xs font-medium text-yellow-700">Driver</span>
+                        <div className="flex items-center gap-1 px-2 py-1 bg-red-50 rounded-full border border-red-200">
+                          <div className="w-2.5 h-2.5 rounded-full bg-red-500"></div>
+                          <span className="text-[10px] font-medium text-red-700">Breakdown</span>
                         </div>
-                        {parseFloat(goodsInTransitPremium) > 0 && (
-                          <div className="flex items-center gap-2 px-3 py-1.5 bg-purple-50 rounded-full border border-purple-200">
-                            <div className="w-3 h-3 rounded-full bg-gradient-to-b from-purple-400 to-purple-600"></div>
-                            <span className="text-xs font-medium text-purple-700">Premium</span>
+                        <div className="flex items-center gap-1 px-2 py-1 bg-yellow-50 rounded-full border border-yellow-200">
+                          <div className="w-2.5 h-2.5 rounded-full bg-yellow-500"></div>
+                          <span className="text-[10px] font-medium text-yellow-700">Driver</span>
+                        </div>
+                        <div className="flex items-center gap-1 px-2 py-1 bg-purple-50 rounded-full border border-purple-200">
+                          <div className="w-2.5 h-2.5 rounded-full bg-purple-500"></div>
+                          <span className="text-[10px] font-medium text-purple-700">Fixed</span>
+                        </div>
+                        <div className="flex items-center gap-1 px-2 py-1 bg-pink-50 rounded-full border border-pink-200">
+                          <div className="w-2.5 h-2.5 rounded-full bg-pink-500"></div>
+                          <span className="text-[10px] font-medium text-pink-700">Loading</span>
+                        </div>
+                        <div className="flex items-center gap-1 px-2 py-1 bg-orange-50 rounded-full border border-orange-200">
+                          <div className="w-2.5 h-2.5 rounded-full bg-orange-500"></div>
+                          <span className="text-[10px] font-medium text-orange-700">Packing</span>
+                        </div>
+                        <div className="flex items-center gap-1 px-2 py-1 bg-slate-50 rounded-full border border-slate-200">
+                          <div className="w-2.5 h-2.5 rounded-full bg-slate-500"></div>
+                          <span className="text-[10px] font-medium text-slate-700">Tolls</span>
+                        </div>
+                        {borderCost > 0 && (
+                          <div className="flex items-center gap-1 px-2 py-1 bg-purple-50 rounded-full border border-purple-200">
+                            <div className="w-2.5 h-2.5 rounded-full bg-purple-900"></div>
+                            <span className="text-[10px] font-medium text-purple-700">Border</span>
                           </div>
                         )}
                       </div>
@@ -2437,6 +2442,14 @@ export default function LoadPlanPage() {
         onUseAsPickup={handleUseAsPickup}
         onUseAsDropoff={handleUseAsDropoff}
         onSkip={handleSkipAddress}
+        hasGeozone={true}
+      />
+      
+      <QuickGeozoneDialog
+        open={showQuickGeozoneDialog}
+        onOpenChange={setShowQuickGeozoneDialog}
+        client={selectedClient}
+        onSaved={handleQuickGeozoneSaved}
       />
       
       <RouteEditModal

@@ -11,9 +11,22 @@ export function ClientAddressPopup({
   client, 
   onUseAsPickup, 
   onUseAsDropoff, 
-  onSkip 
+  onSkip,
+  hasGeozone 
 }) {
   if (!client) return null
+
+  const doesClientHaveGeozone = (clientData) => {
+    if (!clientData?.coordinates) return false
+    try {
+      const parsed = JSON.parse(clientData.coordinates)
+      return Array.isArray(parsed) && parsed.length >= 3
+    } catch {
+      return false
+    }
+  }
+
+  const geozoneAvailable = hasGeozone !== undefined ? hasGeozone : doesClientHaveGeozone(client)
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -32,12 +45,19 @@ export function ClientAddressPopup({
               <div>
                 <p className="font-medium text-slate-900">{client.name}</p>
                 <p className="text-sm text-slate-600 mt-1">{client.address}</p>
+                {geozoneAvailable && (
+                  <span className="inline-flex items-center gap-1 mt-2 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-medium rounded-full">
+                    Geozone available
+                  </span>
+                )}
               </div>
             </div>
           </div>
           
           <p className="text-sm text-slate-600">
-            Would you like to use this client's address as a location for this trip?
+            {geozoneAvailable 
+              ? "This client has a geozone. Would you like to use it as a location for this trip?"
+              : "Would you like to use this client's address as a location for this trip?"}
           </p>
           
           <div className="flex flex-col gap-2">

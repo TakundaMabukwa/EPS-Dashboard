@@ -96,32 +96,23 @@ const vehicleDataCache = {
       });
     }
     
-    // Start new fetch
+    // Start new fetch with 4-second timeout
     this.isLoading = true;
     
     try {
-      const [epsResult, ctrackResult] = await Promise.allSettled([
+      const response = await Promise.race([
         fetch('/api/eps-vehicles'),
-        fetch('/api/ctrack-data')
+        new Promise<any>((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), 4000)
+        ),
       ]);
       
-      const vehicles: any[] = [];
+      let vehicles: any[] = [];
       
-      // Process EPS API
-      if (epsResult.status === 'fulfilled') {
-        try {
-          const epsData = await epsResult.value.json();
-          vehicles.push(...(epsData.data || []));
-        } catch (e) {}
-      }
-      
-      // Process CTrack API
-      if (ctrackResult.status === 'fulfilled') {
-        try {
-          const ctrackData = await ctrackResult.value.json();
-          vehicles.push(...(ctrackData.vehicles || []));
-        } catch (e) {}
-      }
+      try {
+        const data = await response.json();
+        vehicles = data.data || [];
+      } catch (e) {}
       
       this.data = vehicles;
       this.timestamp = now;
@@ -162,10 +153,7 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
   }, [trip.unauthorized_stops_count])
 
   useEffect(() => {
-    // Only fetch if this card is visible (not on another tab)
-    if (!isVisible) {
-      return;
-    }
+    if (!isVisible) return;
 
     async function fetchAssignmentInfo() {
       const assignments = trip.vehicleassignments || trip.vehicle_assignments || []
@@ -174,74 +162,62 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
         return
       }
 
-      setLoading(true)
-      try {
-        const supabase = createClient()
-        const assignment = assignments[0]
-        setAssignment(assignment)
-        
-        // Switch to second driver if status is handover and second driver exists
-        let driverToFetch = assignment.drivers?.[0]
-        if (trip.status?.toLowerCase() === 'handover' && assignment.drivers?.[1]) {
-          driverToFetch = assignment.drivers[1]
-        }
-        
-        // Fetch driver info by ID from database
-        if (driverToFetch?.id) {
-          const { data: driver } = await supabase
-            .from('drivers')
-            .select('*')
-            .eq('id', driverToFetch.id)
-            .single()
-          
-          if (driver) {
-            setDriverInfo(driver)
-            
-            // Try to find vehicle location using multiple strategies
-            await findVehicleLocation(driver, assignment)
-          } else {
-            // Fallback to assignment data if driver not found in DB
-            const driverInfo = {
-              id: driverToFetch.id,
-              first_name: driverToFetch.first_name || driverToFetch.name?.split(' ')[0] || '',
-              surname: driverToFetch.surname || driverToFetch.name || 'Unknown',
-              phone_number: driverToFetch.phone_number || '',
-              available: true
-            }
-            setDriverInfo(driverInfo)
-            await findVehicleLocation(driverInfo, assignment)
-          }
-        }
-        
-        // Set vehicle info from assignment
-        if (assignment.vehicle?.name) {
-          const vehicleInfo = {
-            id: assignment.vehicle.id,
-            registration_number: assignment.vehicle.name
-          }
-          setVehicleInfo(vehicleInfo)
-        }
-      } catch (err) {
-        console.error('Error fetching assignment info:', err)
-      }
-      setLoading(false)
-    }
+      const assignment = assignments[0]
+      setAssignment(assignment)
 
-    async function findVehicleLocation(driver: any, assignment: any) {
-      const vehiclePlate = assignment?.vehicle?.name
-      if (!vehiclePlate) return
-      
-      try {
-        // Use cached vehicle data
-        await vehicleDataCache.fetch();
-        const found = vehicleDataCache.findVehicle(vehiclePlate);
-        
-        if (found && found.latitude && found.longitude) {
-          setVehicleLocation(found);
-        }
-      } catch (e) {
-        console.error('Error finding vehicle location:', e);
+      // Set vehicle info from assignment immediately
+      if (assignment.vehicle?.name) {
+        setVehicleInfo({
+          id: assignment.vehicle.id,
+          registration_number: assignment.vehicle.name
+        })
       }
+
+      // Build initial driver info from assignment data (no await)
+      let driverToFetch = assignment.drivers?.[0]
+      if (trip.status?.toLowerCase() === 'handover' && assignment.drivers?.[1]) {
+        driverToFetch = assignment.drivers[1]
+      }
+
+      if (driverToFetch) {
+        setDriverInfo({
+          id: driverToFetch.id,
+          first_name: driverToFetch.first_name || driverToFetch.name?.split(' ')[0] || '',
+          surname: driverToFetch.surname || driverToFetch.name || 'Unknown',
+          phone_number: driverToFetch.phone_number || '',
+          available: true
+        })
+      }
+
+      // Render card now, fill in details later
+      setLoading(false)
+
+      // Fire driver details and vehicle location in parallel
+      const promises: Promise<any>[] = []
+
+      if (driverToFetch?.id) {
+        const supabase = createClient()
+        promises.push(
+          supabase.from('drivers').select('*').eq('id', driverToFetch.id).single()
+            .then(({ data: driver }) => {
+              if (driver) setDriverInfo(driver)
+            })
+            .catch(() => {})
+        )
+      }
+
+      if (assignment.vehicle?.name) {
+        promises.push(
+          vehicleDataCache.fetch()
+            .then(() => {
+              const found = vehicleDataCache.findVehicle(assignment.vehicle.name)
+              if (found?.latitude && found?.longitude) setVehicleLocation(found)
+            })
+            .catch(() => {})
+        )
+      }
+
+      await Promise.allSettled(promises)
     }
 
     fetchAssignmentInfo()
@@ -403,54 +379,28 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
             let stopPoints = [];
             let vehicleLocationData = vehicleLocation; // Use already fetched vehicle location
 
-            // If no vehicle location was found during initialization, try one more time
-            if (!vehicleLocationData && (vehicleInfo?.registration_number || driverName !== 'Unassigned')) {
+            // If no vehicle location was found during initialization, check cached data
+            if (!vehicleLocationData && vehicleInfo?.registration_number) {
               try {
-                let vehicleData = null;
+                await vehicleDataCache.fetch();
+                const found = vehicleDataCache.findVehicle(vehicleInfo.registration_number);
                 
-                // First try with vehicle plate
-                if (vehicleInfo?.registration_number) {
-                  console.log('Track button: Fetching vehicle location by plate:', vehicleInfo.registration_number);
-                  const plateResponse = await fetch(`/api/eps-vehicles?endpoint=by-plate&plate=${encodeURIComponent(vehicleInfo.registration_number)}`);
-                  if (plateResponse.ok) {
-                    vehicleData = await plateResponse.json();
-                    // Check if we got timeout/error response
-                    if (vehicleData.error === 'Connection timeout') {
-                      console.log('GPS service timeout - will show route only');
-                      vehicleData = null;
-                    }
-                  }
-                }
-                
-                // Fallback: try with driver name if plate fails
-                if (!vehicleData && driverName && driverName !== 'Unassigned') {
-                  console.log('Track button: Plate lookup failed, trying driver name:', driverName);
-                  const driverResponse = await fetch(`/api/eps-vehicles?endpoint=by-driver&driver=${encodeURIComponent(driverName)}`);
-                  if (driverResponse.ok) {
-                    const driverData = await driverResponse.json();
-                    if (driverData.error !== 'Connection timeout') {
-                      vehicleData = driverData;
-                    }
-                  }
-                }
-                
-                // Process vehicle data if found
-                if (vehicleData && vehicleData.latitude && vehicleData.longitude) {
+                if (found && found.latitude && found.longitude) {
                   vehicleLocationData = {
-                    latitude: parseFloat(vehicleData.latitude),
-                    longitude: parseFloat(vehicleData.longitude),
-                    plate: vehicleData.plate || vehicleInfo?.registration_number || 'Unknown',
-                    speed: vehicleData.speed || 0,
-                    address: vehicleData.address || 'GPS location available',
-                    loc_time: vehicleData.loc_time || new Date().toISOString(),
-                    mileage: vehicleData.mileage || 0,
-                    geozone: vehicleData.geozone,
-                    company: vehicleData.company || 'EPS'
+                    latitude: parseFloat(found.latitude),
+                    longitude: parseFloat(found.longitude),
+                    plate: found.plate || vehicleInfo.registration_number,
+                    speed: found.speed || 0,
+                    address: found.address || 'GPS location available',
+                    loc_time: found.loc_time || new Date().toISOString(),
+                    mileage: found.mileage || 0,
+                    geozone: found.geozone,
+                    company: found.company || 'EPS'
                   };
-                  console.log('Track button: Found external vehicle GPS data:', vehicleLocationData);
+                  console.log('Track button: Found vehicle GPS from cache:', vehicleLocationData);
                 }
               } catch (error) {
-                console.log('Track button: External GPS lookup failed:', error.message);
+                console.log('Track button: Vehicle cache lookup failed:', error.message);
               }
             }
 

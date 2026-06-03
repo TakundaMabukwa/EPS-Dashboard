@@ -105,11 +105,16 @@ function ClientFormContent({
         capacity: initialRecord.capacity || "",
         notes: initialRecord.notes || "",
       })
-      const parsedCoords = parsePoint(initialRecord.coords || initialRecord.location_coordinates)
-      if (parsedCoords) setCenterPoint(parsedCoords)
       const parsedPoly = parsePolygon(initialRecord.coordinates || initialRecord.geozone_coordinates)
-      if (parsedPoly.length > 0) setPolygonPoints(parsedPoly)
-      if (parsedPoly.length > 0 || parsedCoords) setDrawMode("polygon")
+      if (parsedPoly.length > 0) {
+        setPolygonPoints(parsedPoly)
+        const centroid = {
+          lng: parsedPoly.reduce((s, p) => s + p.lng, 0) / parsedPoly.length,
+          lat: parsedPoly.reduce((s, p) => s + p.lat, 0) / parsedPoly.length,
+        }
+        setCenterPoint(centroid)
+        setDrawMode("polygon")
+      }
     }
   }, [initialRecord])
 
@@ -217,7 +222,7 @@ function ClientFormContent({
       if (!trimmed) return null
       if (trimmed.startsWith("{") || trimmed.startsWith("[")) { try { return parsePoint(JSON.parse(trimmed)) } catch { return null } }
       const parts = trimmed.split(",").map((p) => Number.parseFloat(p.trim()))
-      if (parts.length === 2 && parts.every(Number.isFinite)) return { lat: parts[0], lng: parts[1] }
+      if (parts.length === 2 && parts.every(Number.isFinite)) return { lng: parts[0], lat: parts[1] }
       return null
     }
     if (Array.isArray(value)) {
@@ -253,7 +258,6 @@ function ClientFormContent({
         ...formState,
         credit_limit: formState.credit_limit || "0",
         coordinates: polygon.length >= 3 ? JSON.stringify(polygon) : null,
-        coords: centerPoint ? `${centerPoint.lat},${centerPoint.lng}` : null,
       }
       if (isEditing) body.id = initialRecord.id
 

@@ -48,12 +48,8 @@ import { toast } from 'sonner'
 import DriverDashboardClean from '@/components/driver-dashboard-clean'
 import { DashboardProvider } from '@/context/dashboard-context'
 import DriverPerformanceDashboard from '@/components/dashboard/DriverPerformanceDashboard'
-import ExecutiveDashboardEPS from '@/components/dashboard/ExecutiveDashboardEPS'
 import { MaterialCharts } from '@/components/material-charts'
 import { epsApi, BiWeeklyCategory, DailyStats } from '@/lib/eps-api'
-
-import ViolationsChart from '@/components/charts/ViolationsChart'
-import SpeedingViolationsChart from '@/components/charts/SpeedingViolationsChart'
 
 // NOTE: This file is self-contained for convenience. It uploads files to
 // the Supabase storage *bucket* named `files` and places them under:
@@ -195,13 +191,13 @@ export default function Drivers() {
 
   useEffect(() => {
     fetchDrivers()
-    if (activeTab === 'drivers-performance' || activeTab === 'executive-dashboard') {
+    if (activeTab === 'drivers-performance') {
       fetchDriverPerformanceData()
     }
   }, [activeTab])
 
   useEffect(() => {
-    // Fetch EPS charts data for executive dashboard
+    // Fetch EPS charts data
     let mounted = true
     const fetchCharts = async () => {
       try {
@@ -211,7 +207,7 @@ export default function Drivers() {
         setBiWeeklyData(Array.isArray(b) ? (b as BiWeeklyCategory[]) : [])
         setDailyStats(Array.isArray(d) ? (d as DailyStats[]) : [])
       } catch (err) {
-        console.error('Failed to fetch executive dashboard charts data', err)
+        console.error('Failed to fetch charts data', err)
       }
     }
 
@@ -233,14 +229,42 @@ export default function Drivers() {
         `/api/eps-rewards?endpoint=driver-performance/all&year=${year}&month=${month}`
       )
       const perfData = await perfResponse.json()
-      setDriverPerformanceData(perfData.scorecards || [])
+      const junkNames = new Set([
+        '08000001216BBB3B 08000001216BBB3B',
+        '08000001746A30BD 08000001746A30BD',
+        '0800000174A972CA 0800000174A972CA',
+        '0800000176515451 0800000176515451',
+        '08000001765433C5 08000001765433C5',
+        '08000001765C3DE8 08000001765C3DE8',
+        '0800000176D27EAD 0800000176D27EAD',
+        '0800000177C3E106 0800000177C3E106',
+        '090 090',
+        '1111 LT58HBGP DRIVER SPARE TAG MKHIZE',
+        '2116 SPARE TAG',
+        '37659 SPARE TAG',
+        '390083 390083',
+        '59722 SPARE TAG',
+        '29251 THOKOZANI MCHUNU',
+        '29308 SENZO WISEMAN',
+        '29348 VELAPHI JAGI THEMBA GAZU',
+        '29596 PHILASANDE ARTHUR MKHIZE',
+        '29621 ADORE LUNGILE NGOMA',
+        '29700 LUNGISANI ANDREAS DIDI',
+        '29704 FRANCIS MKHWANAZI',
+        '29810 INNOCENT MBATHA',
+        '29860-REUBEN ZWANE',
+        '29933 - SAKHILE ENGCOBO',
+        '29956 LUCKY MAKHUBELE',
+      ])
+      const scorecards = (perfData.scorecards || []).filter((d: any) => !junkNames.has(d.driver_name))
+      setDriverPerformanceData(scorecards)
 
       // Fetch top speeding drivers
       const speedResponse = await fetch(
         `/api/eps-rewards?endpoint=top-speeding-drivers&limit=10`
       )
       const speedData = await speedResponse.json()
-      setTopSpeedingDrivers(speedData.top_speeding_drivers || [])
+      setTopSpeedingDrivers((speedData.top_speeding_drivers || []).filter((d: any) => !junkNames.has(d.driver_name)))
     } catch (err) {
       console.error('Failed to fetch driver performance data', err)
       toast.error('Failed to load driver performance data')
@@ -258,7 +282,14 @@ export default function Drivers() {
         .order('created_at', { ascending: false })
 
       if (error) throw error
-      setDrivers((data ?? []) as Driver[])
+      const filtered = (data ?? []).filter((d: any) => {
+        const name = ((d.first_name || '') + ' ' + (d.surname || '')).toLowerCase()
+        if (name.includes('spare tag') || name.includes('spare')) return false
+        if (/^0800[0-9a-f]{12,}$/i.test(d.first_name)) return false
+        if (/^\d{2,3}$/.test(d.first_name) && /^\d{2,3}$/.test(d.surname)) return false
+        return true
+      })
+      setDrivers(filtered as Driver[])
     } catch (err) {
       console.error('fetchDrivers error', err)
       toast.error('Failed to fetch drivers')
@@ -525,18 +556,6 @@ export default function Drivers() {
               <span className="sm:hidden">Drivers</span>
             </button>
 
-            <button
-              onClick={() => setActiveTab('executive-dashboard')}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-medium transition-colors ${
-                activeTab === 'executive-dashboard'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-muted/80'
-              }`}
-            >
-              <BarChart3 className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Executive Dashboard</span>
-              <span className="sm:hidden">Executive</span>
-            </button>
             <button
               onClick={() => setActiveTab('drivers-performance')}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-medium transition-colors ${
@@ -1551,19 +1570,6 @@ export default function Drivers() {
                   )}
                 </SheetContent>
               </Sheet>
-            </div>
-          )}
-
-          {activeTab === 'executive-dashboard' && (
-            <div className="space-y-6">
-              {/* Chart Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <ViolationsChart />
-                <SpeedingViolationsChart />
-              </div>
-
-              {/* Full Executive Dashboard */}
-              <ExecutiveDashboardEPS />
             </div>
           )}
 

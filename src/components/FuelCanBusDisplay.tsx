@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { FuelGauge } from '@/components/ui/fuel-gauge'
 import { Button } from '@/components/ui/button'
 import { RefreshCw, Fuel } from 'lucide-react'
+import { toast } from '@/hooks/use-toast'
 
 interface FuelData {
   plate: string
@@ -18,6 +19,9 @@ export default function FuelCanBusDisplay() {
   const [vehicles, setVehicles] = useState<Map<string, FuelData>>(new Map())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const notifiedVehicles = useRef<Set<string>>(new Set())
+
+  const LOW_FUEL_THRESHOLD = 25
 
   const fetchFuelData = async () => {
     try {
@@ -46,29 +50,66 @@ export default function FuelCanBusDisplay() {
     fetchFuelData()
   }, [])
 
+  useEffect(() => {
+    if (vehicles.size === 0) return
+
+    const lowFuelVehicles: string[] = []
+
+    vehicles.forEach((vehicle) => {
+      const pct = vehicle.fuelPercentage || 0
+      if (pct > 0 && pct <= LOW_FUEL_THRESHOLD && !notifiedVehicles.current.has(vehicle.plate)) {
+        lowFuelVehicles.push(vehicle.plate)
+        notifiedVehicles.current.add(vehicle.plate)
+      }
+    })
+
+    if (lowFuelVehicles.length === 1) {
+      toast({
+        title: 'Low Fuel Alert',
+        description: `${lowFuelVehicles[0]} has ${vehicles.get(lowFuelVehicles[0])?.fuelPercentage}% fuel remaining`,
+        variant: 'destructive',
+      })
+    } else if (lowFuelVehicles.length > 1) {
+      toast({
+        title: 'Low Fuel Alert',
+        description: `${lowFuelVehicles.length} vehicles have fuel at or below ${LOW_FUEL_THRESHOLD}%`,
+        variant: 'destructive',
+      })
+    }
+  }, [vehicles])
+
   const getFuelGaugeData = () => {
     const gaugeData = Array.from(vehicles.values()).map((vehicle) => {
-      const fuelLevel = vehicle.fuelLevel || 0
-      const fuelPercent = vehicle.fuelPercentage || 0
+      const fuelVolLitres = vehicle.fuelLevel || 0
+      const fuelPct = vehicle.fuelPercentage || 0
       const engineTemp = vehicle.engineTemperature || 0
       const isEngineOn = engineTemp > 40
 
-      const displayPercent = fuelLevel > 0 ? fuelLevel : fuelPercent
+      const percentage = fuelPct > 0
+        ? fuelPct
+        : fuelVolLitres > 450
+          ? Math.round((fuelVolLitres / 500) * 100)
+          : fuelVolLitres > 0
+            ? Math.round((fuelVolLitres / 400) * 100)
+            : 0
 
       return {
         id: vehicle.plate,
         location: vehicle.plate,
-        fuelLevel: displayPercent,
+        plate: vehicle.plate,
+        fuelLevel: percentage,
+        fuelPercent: fuelPct,
         temperature: engineTemp,
-        volume: fuelLevel,
+        volume: fuelVolLitres,
         status: isEngineOn ? 'Active' : 'Engine Off',
       }
     })
 
     return gaugeData.sort((a, b) => {
-      if (a.volume === 0 && b.volume !== 0) return 1
-      if (a.volume !== 0 && b.volume === 0) return -1
-      return 0
+      const aPct = a.fuelPercent
+      const bPct = b.fuelPercent
+      if (aPct !== bPct) return aPct - bPct
+      return a.volume - b.volume
     })
   }
 
@@ -103,7 +144,7 @@ export default function FuelCanBusDisplay() {
     <div className="h-full bg-slate-50">
       <div className="p-4">
         {vehicles.size > 0 ? (
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
+          <div className="grid grid-cols-1 gap-2 sm:gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
             {getFuelGaugeData().map((data) => (
               <FuelGauge
                 key={data.id}

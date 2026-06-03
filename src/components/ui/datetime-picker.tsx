@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { TimePicker } from "@/components/ui/time-picker"
+import { Input } from "@/components/ui/input"
 
 interface DateTimePickerProps {
   value?: string
@@ -16,35 +16,12 @@ interface DateTimePickerProps {
 }
 
 export function DateTimePicker({ value, onChange, placeholder = "Pick a date and time" }: DateTimePickerProps) {
-  const [date, setDate] = React.useState<Date | undefined>(value ? new Date(value) : undefined)
-  const [time, setTime] = React.useState(value ? format(new Date(value), "HH:mm") : "")
   const [open, setOpen] = React.useState(false)
+  const [selectedDate, setSelectedDate] = React.useState<Date | undefined>(value ? new Date(value) : undefined)
+  const [selectedTime, setSelectedTime] = React.useState(value ? format(new Date(value), "HH:mm") : "")
 
-  const handleDateSelect = (selectedDate: Date | undefined) => {
-    setDate(selectedDate)
-    updateDateTime(selectedDate, time)
-  }
-
-  const handleTimeChange = (newTime: string) => {
-    setTime(newTime)
-    updateDateTime(date, newTime)
-  }
-
-  const updateDateTime = (selectedDate: Date | undefined, selectedTime: string) => {
-    if (selectedDate && selectedTime) {
-      const [hours, minutes] = selectedTime.split(':')
-      const newDate = new Date(selectedDate)
-      newDate.setHours(parseInt(hours), parseInt(minutes))
-      onChange(newDate.toISOString())
-    }
-  }
-
-  const handleConfirm = () => {
-    setOpen(false)
-  }
-
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  const displayDate = value ? new Date(value) : selectedDate
+  const displayTime = value ? format(new Date(value), "HH:mm") : selectedTime
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -53,12 +30,12 @@ export function DateTimePicker({ value, onChange, placeholder = "Pick a date and
           variant={"outline"}
           className={cn(
             "w-full justify-start text-left font-normal",
-            !date && "text-muted-foreground"
+            !displayDate && "text-muted-foreground"
           )}
         >
           <CalendarIcon className="mr-2 h-4 w-4" />
-          {date ? (
-            format(date, "PPP") + (time ? ` at ${time}` : "")
+          {displayDate ? (
+            format(displayDate, "PPP") + (displayTime ? ` at ${displayTime}` : "")
           ) : (
             <span>{placeholder}</span>
           )}
@@ -67,20 +44,34 @@ export function DateTimePicker({ value, onChange, placeholder = "Pick a date and
       <PopoverContent className="w-auto p-0" align="start" side="bottom" sideOffset={5}>
         <Calendar
           mode="single"
-          selected={date}
-          onSelect={handleDateSelect}
-          disabled={(date) => date < today}
+          selected={displayDate}
+          onSelect={(d) => {
+            if (d) {
+              setSelectedDate(d)
+              const t = selectedTime || "12:00"
+              const [hours, minutes] = t.split(':')
+              const newDate = new Date(d)
+              newDate.setHours(parseInt(hours), parseInt(minutes))
+              onChange(newDate.toISOString())
+            }
+          }}
           initialFocus
         />
         <div className="p-3 border-t space-y-3">
-          <TimePicker
-            value={time}
-            onChange={handleTimeChange}
-            placeholder="Select time"
+          <label className="text-sm font-medium">Time</label>
+          <Input
+            type="time"
+            value={displayTime}
+            onChange={(e) => {
+              setSelectedTime(e.target.value)
+              const d = displayDate || new Date()
+              const [hours, minutes] = e.target.value.split(':')
+              const newDate = new Date(d)
+              newDate.setHours(parseInt(hours), parseInt(minutes))
+              onChange(newDate.toISOString())
+            }}
+            className="w-full"
           />
-          <Button onClick={handleConfirm} className="w-full">
-            Confirm
-          </Button>
         </div>
       </PopoverContent>
     </Popover>

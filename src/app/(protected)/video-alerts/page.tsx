@@ -236,9 +236,9 @@ export default function VideoAlertsPage() {
       <div className="mb-6">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-3xl font-bold text-slate-900">Video Alerts</h1>
+            <h1 className="text-3xl font-bold text-slate-900">Notifications</h1>
             <p className="text-slate-600 mt-1">
-              Real-time monitoring and alert management system
+              Trip changes and approval requests
             </p>
           </div>
           <div className="flex items-center gap-3">

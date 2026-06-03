@@ -28,9 +28,11 @@ interface RoutePreviewMapProps {
   selectedClient?: any;
   tripId?: string;
   preserveOrder?: boolean;
+  loadingGeozoneCoords?: number[][];
+  dropoffGeozoneCoords?: number[][];
 }
 
-export function RoutePreviewMap({ origin, destination, routeData, stopPoints = [], getStopPointsData, driverLocation, clientLocation, selectedClient, tripId, preserveOrder = false }: RoutePreviewMapProps) {
+export function RoutePreviewMap({ origin, destination, routeData, stopPoints = [], getStopPointsData, driverLocation, clientLocation, selectedClient, tripId, preserveOrder = false, loadingGeozoneCoords, dropoffGeozoneCoords }: RoutePreviewMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<any>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -115,18 +117,66 @@ export function RoutePreviewMap({ origin, destination, routeData, stopPoints = [
           ])
         }
 
+        // Draw loading geozone polygon
+        if (loadingGeozoneCoords && loadingGeozoneCoords.length >= 3) {
+          const path = loadingGeozoneCoords.map(c => ({ lat: c[1], lng: c[0] }))
+          const polygon = new gm.Polygon({
+            paths: path,
+            map: map.current,
+            fillColor: '#22c55e',
+            fillOpacity: 0.2,
+            strokeColor: '#16a34a',
+            strokeWeight: 2,
+          })
+          overlaysRef.current.push(polygon)
+        }
+
+        // Draw dropoff geozone polygon
+        if (dropoffGeozoneCoords && dropoffGeozoneCoords.length >= 3) {
+          const path = dropoffGeozoneCoords.map(c => ({ lat: c[1], lng: c[0] }))
+          const polygon = new gm.Polygon({
+            paths: path,
+            map: map.current,
+            fillColor: '#3b82f6',
+            fillOpacity: 0.2,
+            strokeColor: '#2563eb',
+            strokeWeight: 2,
+          })
+          overlaysRef.current.push(polygon)
+        }
+
         // Add client route if available
         if (selectedClient?.coordinates) {
           try {
-            const coords = selectedClient.coordinates.split(' ')
-              .filter(coord => coord.trim())
-              .map(coord => {
-                const [lng, lat, alt] = coord.split(',')
-                return [parseFloat(lng), parseFloat(lat)]
+            let coords: number[][] = []
+            if (typeof selectedClient.coordinates === 'string') {
+              try {
+                const parsed = JSON.parse(selectedClient.coordinates)
+                if (Array.isArray(parsed)) {
+                  coords = parsed.map((c: any) => [Number(c[0]), Number(c[1])]).filter((c) => Number.isFinite(c[0]) && Number.isFinite(c[1]))
+                }
+              } catch {
+                coords = selectedClient.coordinates.split(' ')
+                  .filter((coord: string) => coord.trim())
+                  .map((coord: string) => {
+                    const [lng, lat] = coord.split(',')
+                    return [parseFloat(lng), parseFloat(lat)]
+                  })
+                  .filter((coord: number[]) => !isNaN(coord[0]) && !isNaN(coord[1]))
+              }
+            }
+            if (coords.length >= 3) {
+              const path = coords.map(c => ({ lat: c[1], lng: c[0] }))
+              const polygon = new gm.Polygon({
+                paths: path,
+                map: map.current,
+                fillColor: '#8b5cf6',
+                fillOpacity: 0.15,
+                strokeColor: '#7c3aed',
+                strokeWeight: 2,
               })
-              .filter(coord => !isNaN(coord[0]) && !isNaN(coord[1]))
-
-            if (coords.length > 1) {
+              overlaysRef.current.push(polygon)
+            } else if (coords.length > 1) {
               const path = coords.map(c => ({ lat: c[1], lng: c[0] }))
               const polyline = new gm.Polyline({
                 path,
@@ -339,14 +389,23 @@ export function RoutePreviewMap({ origin, destination, routeData, stopPoints = [
 
           map.current.fitBounds(bounds, 50)
         } else if (selectedClient?.coordinates) {
-          const coords = selectedClient.coordinates.split(' ')
-            .filter((coord: string) => coord.trim())
-            .map((coord: string) => {
-              const [lng, lat, alt] = coord.split(',')
-              return [parseFloat(lng), parseFloat(lat)]
-            })
-            .filter((coord: number[]) => !isNaN(coord[0]) && !isNaN(coord[1]))
-
+          let coords: number[][] = []
+          if (typeof selectedClient.coordinates === 'string') {
+            try {
+              const parsed = JSON.parse(selectedClient.coordinates)
+              if (Array.isArray(parsed)) {
+                coords = parsed.map((c: any) => [Number(c[0]), Number(c[1])]).filter((c) => Number.isFinite(c[0]) && Number.isFinite(c[1]))
+              }
+            } catch {
+              coords = selectedClient.coordinates.split(' ')
+                .filter((coord: string) => coord.trim())
+                .map((coord: string) => {
+                  const [lng, lat] = coord.split(',')
+                  return [parseFloat(lng), parseFloat(lat)]
+                })
+                .filter((coord: number[]) => !isNaN(coord[0]) && !isNaN(coord[1]))
+            }
+          }
           if (coords.length > 0) {
             const bounds = new gm.LatLngBounds()
             coords.forEach((c: number[]) => bounds.extend({ lat: c[1], lng: c[0] }))
@@ -560,7 +619,19 @@ export function RoutePreviewMap({ origin, destination, routeData, stopPoints = [
             {selectedClient && (
               <div className="flex items-center gap-1">
                 <div className="w-3 h-3 bg-purple-500 rounded-full"></div>
-                <span>Client Route: {selectedClient.name}</span>
+                <span>Client Geozone: {selectedClient.name}</span>
+              </div>
+            )}
+            {loadingGeozoneCoords && (
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                <span>Loading Geozone</span>
+              </div>
+            )}
+            {dropoffGeozoneCoords && (
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+                <span>Drop-off Geozone</span>
               </div>
             )}
             {driverLocation && (

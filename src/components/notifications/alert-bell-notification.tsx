@@ -1,8 +1,6 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { useVideoAlerts } from "@/context/video-alerts-context/context";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -14,104 +12,182 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
   Bell,
-  AlertTriangle,
-  AlertCircle,
-  Info,
-  Clock,
-  Eye,
-  CheckCircle2,
-  X,
+  Edit,
+  CheckCircle,
+  XCircle,
+  ArrowRight,
+  ClipboardList,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { format, formatDistanceToNow } from "date-fns";
+import { createClient } from "@/lib/supabase/client";
+
+interface TripChange {
+  id: string;
+  trip_id: string;
+  change_type: string;
+  previous_data: any;
+  new_data: any;
+  created_at: string;
+  trip?: {
+    ordernumber?: string;
+    selectedclient?: string;
+    cargo?: string;
+  };
+}
+
+const fieldLabels: Record<string, string> = {
+  rate: "Rate",
+  cargo: "Commodity",
+  origin: "Origin",
+  destination: "Destination",
+  notes: "Notes",
+  selected_vehicle_type: "Vehicle Type",
+  estimated_distance: "Distance",
+  total_vehicle_cost: "Total Cost",
+  pickuplocations: "Pickup Locations",
+  dropofflocations: "Dropoff Locations",
+};
+
+function getChanges(previous: any, current: any) {
+  const changes: { field: string; from: string; to: string }[] = [];
+  Object.keys(fieldLabels).forEach((key) => {
+    const prev = previous?.[key];
+    const next = current?.[key];
+    if (prev !== next) {
+      changes.push({
+        field: fieldLabels[key],
+        from: prev != null && prev !== "" ? String(prev) : "(empty)",
+        to: next != null && next !== "" ? String(next) : "(empty)",
+      });
+    }
+  });
+  return changes;
+}
 
 export default function AlertBellNotification() {
-  const router = useRouter();
-  const { alerts, unreadCount, fetchUnreadCount, acknowledgeAlert, fetchAlerts } = useVideoAlerts();
+  const supabase = createClient();
   const [open, setOpen] = useState(false);
-  const [currentUser] = useState({ id: "user-1", name: "Current User" });
+  const [notifications, setNotifications] = useState<TripChange[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Fetch unread count on mount
-  useEffect(() => {
-    fetchUnreadCount(currentUser.id);
-  }, []);
+  const fetchNotifications = async () => {
+    try {
+      setLoading(true);
 
-  // Auto-refresh unread count every 10 seconds
+      const [historyResult, pendingResult] = await Promise.allSettled([
+        supabase
+          .from("trip_history")
+          .select("*, trip:trips!inner(ordernumber, selectedclient, cargo)")
+          .in("change_type", ["edit", "approve", "decline"])
+          .order("created_at", { ascending: false })
+          .limit(20),
+        supabase
+          .from("trips")
+          .select("id, ordernumber, selectedclient, cargo, elevate, updated_at")
+          .eq("elevate", true)
+          .order("updated_at", { ascending: false })
+          .limit(20),
+      ]);
+
+      const entries: any[] = [];
+
+      if (historyResult.status === "fulfilled" && historyResult.value.data) {
+        entries.push(
+          ...historyResult.value.data.map((h: any) => ({
+            ...h,
+            _source: "history" as const,
+          }))
+        );
+      }
+
+      if (pendingResult.status === "fulfilled" && pendingResult.value.data) {
+        entries.push(
+          ...pendingResult.value.data.map((t: any) => ({
+            id: `pending-${t.id}`,
+            trip_id: t.id,
+            change_type: "edit",
+            previous_data: null,
+            new_data: null,
+            created_at: t.updated_at,
+            _source: "pending" as const,
+            trip: { ordernumber: t.ordernumber, selectedclient: t.selectedclient, cargo: t.cargo },
+          }))
+        );
+      }
+
+      entries.sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+
+      setNotifications(entries.slice(0, 20));
+    } catch (err) {
+      console.error("Error fetching notifications:", err);
+      setNotifications([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const interval = setInterval(() => {
-      fetchUnreadCount(currentUser.id);
-    }, 10000);
+    if (open) {
+      fetchNotifications();
+    }
+  }, [open]);
+
+  // Auto-refresh every 15 seconds when open
+  useEffect(() => {
+    if (!open) return;
+    const interval = setInterval(fetchNotifications, 15000);
     return () => clearInterval(interval);
-  }, []);
+  }, [open]);
 
-  // Get recent alerts (new, acknowledged, or escalated)
-  const recentAlerts = alerts
-    .filter((alert) => 
-      alert.status === "new" || 
-      alert.status === "acknowledged" || 
-      alert.status === "escalated"
-    )
-    .slice(0, 10);
+  const unreadCount = notifications.filter(
+    (n) => n.change_type === "edit"
+  ).length;
 
-  const getSeverityConfig = (severity) => {
-    const config = {
-      critical: {
-        icon: AlertTriangle,
-        color: "text-red-600",
-        bgColor: "bg-red-100",
-      },
-      high: {
-        icon: AlertCircle,
-        color: "text-orange-600",
-        bgColor: "bg-orange-100",
-      },
-      medium: {
-        icon: Info,
-        color: "text-yellow-600",
-        bgColor: "bg-yellow-100",
-      },
-      low: {
-        icon: Info,
-        color: "text-blue-600",
-        bgColor: "bg-blue-100",
-      },
-      info: {
-        icon: Info,
-        color: "text-gray-600",
-        bgColor: "bg-gray-100",
-      },
-    };
-    return config[severity] || config.info;
-  };
-
-  const handleViewAlert = (alertId) => {
-    setOpen(false);
-    router.push(`/video-alerts/${alertId}`);
-  };
-
-  const handleViewAll = () => {
-    setOpen(false);
-    router.push("/video-alerts");
-  };
-
-  const handleAcknowledge = async (alertId, e) => {
-    e.stopPropagation();
-    await acknowledgeAlert(alertId, currentUser.id);
-    fetchUnreadCount(currentUser.id);
+  const getChangeConfig = (changeType: string) => {
+    switch (changeType) {
+      case "edit":
+        return {
+          icon: Edit,
+          color: "text-blue-600",
+          bgColor: "bg-blue-100",
+          label: "Needs Approval",
+        };
+      case "approve":
+        return {
+          icon: CheckCircle,
+          color: "text-emerald-600",
+          bgColor: "bg-emerald-100",
+          label: "Approved",
+        };
+      case "decline":
+        return {
+          icon: XCircle,
+          color: "text-red-600",
+          bgColor: "bg-red-100",
+          label: "Declined",
+        };
+      default:
+        return {
+          icon: ClipboardList,
+          color: "text-slate-600",
+          bgColor: "bg-slate-100",
+          label: "Updated",
+        };
+    }
   };
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="relative"
-        >
-          <Bell className={cn(
-            "h-5 w-5",
-            unreadCount > 0 && "animate-pulse text-red-600"
-          )} />
+        <Button variant="ghost" size="icon" className="relative">
+          <Bell
+            className={cn(
+              "h-5 w-5",
+              unreadCount > 0 && "animate-pulse text-red-600"
+            )}
+          />
           {unreadCount > 0 && (
             <Badge
               variant="destructive"
@@ -122,120 +198,108 @@ export default function AlertBellNotification() {
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent
-        align="end"
-        className="w-[400px] p-0"
-      >
+      <PopoverContent align="end" className="w-[420px] p-0">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b">
           <div>
-            <h3 className="font-semibold text-slate-900">Video Alerts</h3>
+            <h3 className="font-semibold text-slate-900">Notifications</h3>
             <p className="text-xs text-slate-600 mt-0.5">
-              {unreadCount} new alert{unreadCount !== 1 ? "s" : ""}
+              {unreadCount} pending approval{unreadCount !== 1 ? "s" : ""}
             </p>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleViewAll}
-          >
-            View All
-          </Button>
         </div>
 
-        {/* Alerts List */}
+        {/* List */}
         <ScrollArea className="h-[400px]">
-          {recentAlerts.length === 0 ? (
+          {loading && notifications.length === 0 ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-6 w-6 border-2 border-slate-300 border-t-slate-600"></div>
+            </div>
+          ) : notifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 px-4">
-              <CheckCircle2 className="w-12 h-12 text-green-500 mb-3" />
+              <CheckCircle className="w-12 h-12 text-green-500 mb-3" />
               <p className="text-sm font-medium text-slate-900">All caught up!</p>
-              <p className="text-xs text-slate-600 mt-1">No new alerts at the moment</p>
+              <p className="text-xs text-slate-600 mt-1">No pending changes</p>
             </div>
           ) : (
             <div className="divide-y">
-              {recentAlerts.map((alert) => {
-                const severityConfig = getSeverityConfig(alert.severity);
-                const SeverityIcon = severityConfig.icon;
-                const isNew = alert.status === "new";
+              {notifications.map((entry) => {
+                const cfg = getChangeConfig(entry.change_type);
+                const Icon = cfg.icon;
+                const changes = getChanges(
+                  entry.previous_data,
+                  entry.new_data
+                );
+                const orderNo =
+                  entry.trip?.ordernumber || `#${String(entry.trip_id || '').slice(0, 8)}`;
+                const client = entry.trip?.selectedclient || "";
 
                 return (
                   <div
-                    key={alert.id}
+                    key={entry.id}
                     className={cn(
-                      "p-4 hover:bg-slate-50 cursor-pointer transition-colors relative",
-                      isNew && "bg-purple-50/50"
+                      "p-4 transition-colors",
+                      entry.change_type === "edit" && "bg-blue-50/40"
                     )}
-                    onClick={() => handleViewAlert(alert.id)}
                   >
-                    {/* New indicator dot */}
-                    {isNew && (
-                      <div className="absolute top-4 right-4">
-                        <span className="flex h-2 w-2">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500"></span>
-                        </span>
+                    <div className="flex items-start gap-3">
+                      <div
+                        className={cn(
+                          "flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center",
+                          cfg.bgColor
+                        )}
+                      >
+                        <Icon className={cn("w-4 h-4", cfg.color)} />
                       </div>
-                    )}
-
-                    <div className="flex gap-3">
-                      {/* Icon */}
-                      <div className={cn(
-                        "flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center",
-                        severityConfig.bgColor
-                      )}>
-                        <SeverityIcon className={cn("w-5 h-5", severityConfig.color)} />
-                      </div>
-
-                      {/* Content */}
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2 mb-1">
-                          <h4 className="font-medium text-sm text-slate-900 line-clamp-1">
-                            {alert.title}
-                          </h4>
-                          {alert.escalated && (
-                            <Badge
-                              variant="outline"
-                              className="bg-red-100 text-red-800 border-red-300 text-xs"
-                            >
-                              Escalated
-                            </Badge>
-                          )}
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-sm font-medium text-slate-900">
+                            {cfg.label}
+                          </span>
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] px-1.5 py-0"
+                          >
+                            {orderNo}
+                          </Badge>
                         </div>
+                        {client && (
+                          <p className="text-xs text-slate-600 mb-2">
+                            {client}
+                          </p>
+                        )}
 
-                        <p className="text-xs text-slate-600 mb-2 line-clamp-1">
-                          {alert.vehicle_registration && `${alert.vehicle_registration} • `}
-                          {alert.driver_name || "No driver assigned"}
-                        </p>
-
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1 text-xs text-slate-500">
-                            <Clock className="w-3 h-3" />
-                            {formatDistanceToNow(new Date(alert.timestamp), { addSuffix: true })}
-                          </div>
-
-                          {/* Action buttons */}
-                          <div className="flex items-center gap-1">
-                            {isNew && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => handleAcknowledge(alert.id, e)}
-                                className="h-7 px-2 text-xs"
+                        {entry._source === "pending" ? (
+                          <p className="text-xs text-orange-600 font-medium">
+                            Requires management approval
+                          </p>
+                        ) : changes.length > 0 && (
+                          <div className="space-y-1">
+                            {changes.slice(0, 3).map((c, i) => (
+                              <div
+                                key={i}
+                                className="flex items-center gap-1.5 text-xs"
                               >
-                                <CheckCircle2 className="w-3 h-3 mr-1" />
-                                Ack
-                              </Button>
+                                <span className="font-medium text-slate-700 w-20 truncate">
+                                  {c.field}:
+                                </span>
+                                <span className="text-red-600 truncate max-w-[80px]">
+                                  {c.from}
+                                </span>
+                                <ArrowRight className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                                <span className="text-emerald-600 truncate max-w-[80px]">
+                                  {c.to}
+                                </span>
+                              </div>
+                            ))}
+                            {changes.length > 3 && (
+                              <span className="text-[10px] text-slate-500">
+                                +{changes.length - 3} more change
+                                {changes.length - 3 !== 1 ? "s" : ""}
+                              </span>
                             )}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 px-2 text-xs"
-                            >
-                              <Eye className="w-3 h-3 mr-1" />
-                              View
-                            </Button>
                           </div>
-                        </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -246,18 +310,13 @@ export default function AlertBellNotification() {
         </ScrollArea>
 
         {/* Footer */}
-        {recentAlerts.length > 0 && (
+        {notifications.length > 0 && (
           <>
             <Separator />
-            <div className="p-3 bg-slate-50">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleViewAll}
-                className="w-full"
-              >
-                View All Alerts
-              </Button>
+            <div className="p-3 bg-slate-50 text-center">
+              <span className="text-xs text-slate-500">
+                {notifications.length} change{notifications.length !== 1 ? "s" : ""} recorded
+              </span>
             </div>
           </>
         )}
@@ -265,3 +324,5 @@ export default function AlertBellNotification() {
     </Popover>
   );
 }
+
+
