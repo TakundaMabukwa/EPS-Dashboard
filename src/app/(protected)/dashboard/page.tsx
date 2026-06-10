@@ -755,7 +755,7 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
     async function fetchTrips() {
       try {
         const supabase = createClient()
-        const { data, error } = await supabase.from('trips').select('*')
+        const { data, error } = await supabase.from('trips').select('*, vehicle_assignments(*, drivers(*))')
         if (error) throw error
         setTrips(data || [])
         
@@ -908,16 +908,6 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
     return <div className="text-center py-8">Loading trips...</div>
   }
 
-  if (tripsList.length === 0) {
-    return (
-      <div className="space-y-4">
-        <div className="text-center py-8 text-muted-foreground">
-          No trips available in database
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="space-y-4">
       <div className="relative">
@@ -942,6 +932,11 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
           {tripsList.length} trip{tripsList.length !== 1 ? 's' : ''} found
         </div>
       )}
+      {tripsList.length === 0 ? (
+        <div className="text-center py-8 text-muted-foreground">
+          {tripSearch ? 'No trips match your search' : 'No trips available in database'}
+        </div>
+      ) : (
       <div className="space-y-6">
       {tripsList.map((trip: any) => {
         const waypoints = getWaypointsWithStops(trip)
@@ -1319,6 +1314,7 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
         )
       })}
       </div>
+      )}
     </div>
   )
 }
