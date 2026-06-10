@@ -40,6 +40,7 @@ export default function ExecutiveReportTab() {
   const [revenue, setRevenue] = useState<RevenueData>({ months: [], total: 0 });
   const [activeTrips, setActiveTrips] = useState<any[]>([]);
   const [etaVehicles, setEtaVehicles] = useState<any[]>([]);
+  const [acceptance, setAcceptance] = useState({ total: 0, accepted: 0, notAccepted: 0, rate: 0 });
   const [loading, setLoading] = useState(true);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
@@ -49,12 +50,13 @@ export default function ExecutiveReportTab() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const [driversRes, revenueRes, trucksRes, tripsRes, etaRes] = await Promise.all([
+        const [driversRes, revenueRes, trucksRes, tripsRes, etaRes, acceptanceRes] = await Promise.all([
           fetch('/api/executive/drivers-count'),
           fetch('/api/executive/revenue'),
           fetch('/api/executive/trucks-count'),
           fetch('/api/executive/active-trips'),
           fetch('/api/executive/eta'),
+          fetch('/api/executive/acceptance-rate'),
         ]);
 
         if (driversRes.ok) {
@@ -80,6 +82,11 @@ export default function ExecutiveReportTab() {
         if (etaRes.ok) {
           const e = await etaRes.json();
           setEtaVehicles(e);
+        }
+
+        if (acceptanceRes.ok) {
+          const a = await acceptanceRes.json();
+          setAcceptance(a);
         }
       } catch (err) {
         console.error('Failed to fetch executive data:', err);
@@ -262,7 +269,6 @@ export default function ExecutiveReportTab() {
         <div className="rounded-xl border border-gray-200 bg-white p-4">
           <div className="mb-2 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <DollarSign className="h-4 w-4 text-gray-500" />
               <span className="text-sm font-medium text-gray-700">Total Value of Goods</span>
             </div>
             <TrendingUp className="h-4 w-4 text-gray-400" />
@@ -396,7 +402,7 @@ export default function ExecutiveReportTab() {
       </div>
 
       {/* Bottom Row */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-4 gap-4">
         {/* Fuel Management */}
         <div className="rounded-xl border border-gray-200 bg-white p-4">
           <div className="mb-3 flex items-center gap-2">
@@ -449,9 +455,56 @@ export default function ExecutiveReportTab() {
               </div>
               <div className="h-2 w-full rounded-full bg-gray-200">
                 <div className="h-2 rounded-full bg-red-500" style={{ width: "92%" }} />
-              </div>
+          </div>
+        </div>
+
+        {/* Driver Acceptance Rate */}
+        <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <CheckCircle className="h-4 w-4 text-gray-500" />
+            <span className="text-sm font-medium text-gray-700">Driver Acceptance Rate</span>
+          </div>
+          <div className="mb-3">
+            <span className="text-4xl font-bold text-gray-900">
+              {loading ? '--' : `${acceptance.rate}%`}
+            </span>
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-2 text-sm text-gray-600">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                Accepted
+              </span>
+              <span className="text-sm font-semibold text-gray-900">
+                {loading ? '--' : acceptance.accepted}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-2 text-sm text-gray-600">
+                <span className="h-2 w-2 rounded-full bg-red-500" />
+                Not Accepted
+              </span>
+              <span className="text-sm font-semibold text-gray-900">
+                {loading ? '--' : acceptance.notAccepted}
+              </span>
             </div>
           </div>
+          <div className="mt-3">
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="text-xs text-gray-500">Total Trips</span>
+              <span className="text-xs font-medium text-gray-700">
+                {loading ? '--' : acceptance.total}
+              </span>
+            </div>
+            <div className="h-2 w-full rounded-full bg-gray-200">
+              <div
+                className="h-2 rounded-full bg-emerald-500"
+                style={{ width: `${acceptance.rate}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
           <div className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
             ⚠ Warning: Operational costs are 6.1% above projections this period
           </div>
