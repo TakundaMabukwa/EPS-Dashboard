@@ -1455,7 +1455,6 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
 function TripReportsSection() {
   const [completedTrips, setCompletedTrips] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [expandedTrip, setExpandedTrip] = useState<string | null>(null)
 
   useEffect(() => {
     async function fetchCompletedTrips() {
@@ -1466,7 +1465,6 @@ function TripReportsSection() {
           .select('*')
           .not('status', 'eq', 'pending')
           .order('updated_at', { ascending: false })
-        
         if (error) throw error
         setCompletedTrips(data || [])
       } catch (err) {
@@ -1474,6 +1472,325 @@ function TripReportsSection() {
       } finally {
         setLoading(false)
       }
+    }
+    fetchCompletedTrips()
+  }, [])
+
+  const WORKFLOW = [
+    { label: 'Pending', value: 'pending' },
+    { label: 'Accept', value: 'accepted' },
+    { label: 'Arrived', value: 'arrived-at-loading' },
+    { label: 'Staging', value: 'staging-area' },
+    { label: 'Loading', value: 'loading' },
+    { label: 'On Trip', value: 'on-trip' },
+    { label: 'Offloading', value: 'offloading' },
+    { label: 'Weighing', value: 'weighing' },
+    { label: 'Depo', value: 'depo' },
+    { label: 'Handover', value: 'handover' },
+    { label: 'Delivered', value: 'delivered' },
+  ]
+
+  const formatElapsed = (seconds: number | null | undefined) => {
+    if (!seconds || seconds <= 0) return '0m'
+    if (seconds < 60) return `${seconds}s`
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
+    const h = Math.floor(seconds / 3600)
+    const m = Math.floor((seconds % 3600) / 60)
+    return m > 0 ? `${h}h ${m}m` : `${h}h`
+  }
+
+  // Compute aggregate stats from all trips
+  const stats = useMemo(() => {
+    if (completedTrips.length === 0) return null
+
+    // Collect elapsed times per status
+    const elapsedByStatus: Record<string, number[]> = {}
+    completedTrips.forEach(trip => {
+      const stopsData = trip.stops_data || []
+      stopsData.forEach((entry: any) => {
+        const s = entry.status?.toLowerCase()
+        if (s && typeof entry.elapsed_seconds === 'number' && entry.elapsed_seconds > 0) {
+          if (!elapsedByStatus[s]) elapsedByStatus[s] = []
+          elapsedByStatus[s].push(entry.elapsed_seconds)
+        }
+      })
+    })
+
+    const avg = (arr: number[]) => arr.length > 0 ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : 0
+    const avgAcceptTime = avg(elapsedByStatus['accepted'] || [])
+    const avgLoadingTime = avg(elapsedByStatus['loading'] || [])
+
+    // On-time delivery: trips where actual_end <= scheduled + 15min
+    let onTimeCount = 0
+    let deliveredCount = 0
+    completedTrips.forEach(trip => {
+      if (trip.status === 'delivered' || trip.status === 'completed') {
+        deliveredCount++
+        const scheduled = trip.dropoff_locations?.[0]?.scheduled_time || trip.dropofflocations?.[0]?.scheduled_time
+        const actual = trip.actual_end_time
+        if (scheduled && actual) {
+          const diff = (new Date(actual).getTime() - new Date(scheduled).getTime()) / (1000 * 60)
+          if (diff <= 15) onTimeCount++
+        } else {
+          onTimeCount++
+        }
+      }
+    })
+    const onTimePercent = deliveredCount > 0 ? Math.round((onTimeCount / deliveredCount) * 100) : 0
+
+    // Total cargo
+    const totalCargo = completedTrips.reduce((sum, t) => sum + (parseFloat(t.cargo_weight) || 0), 0)
+
+    // Route compliance
+    const compliantTrips = completedTrips.filter(t => (t.unauthorized_stops_count || 0) === 0).length
+    const compliancePercent = completedTrips.length > 0 ? Math.round((compliantTrips / completedTrips.length) * 100) : 0
+
+    // Funnel: avg elapsed for each workflow stage
+    const funnel = WORKFLOW.map((stage, i) => {
+      const times = elapsedByStatus[stage.value] || []
+      const avgTime = avg(times)
+      return { ...stage, avgTime, count: times.length }
+    })
+
+    // Find bottleneck (stage with highest avg time, excluding pending)
+    const bottleneckIdx = funnel.slice(1).reduce((maxIdx, stage, i) =>
+      stage.avgTime > funnel[maxIdx].avgTime ? i + 1 : maxIdx, 1)
+
+    return { avgAcceptTime, avgLoadingTime, onTimePercent, deliveredCount, totalCargo, compliancePercent, funnel, bottleneckIdx }
+  }, [completedTrips])
+
+  if (loading) return <div className="text-center py-8">Loading trip reports...</div>
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight">Trip Performance Executive Summary</h2>
+        <p className="text-sm text-muted-foreground">Real-time optimization metrics across the fleet network</p>
+      </div>
+
+      {stats && (
+        <>
+          {/* Stats Row */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Avg Accept Time */}
+            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
+                  <Clock className="w-4 h-4 text-blue-600" />
+                </div>
+                <span className="text-xs font-medium text-slate-500">Avg. Accept Time</span>
+              </div>
+              <div className="flex items-baseline gap-2 mt-2">
+                <span className="text-3xl font-bold text-slate-900">{formatElapsed(stats.avgAcceptTime)}</span>
+              </div>
+              <div className="mt-2 h-1 w-full bg-slate-100 rounded-full">
+                <div className="h-1 bg-blue-500 rounded-full" style={{ width: `${Math.min((stats.avgAcceptTime / 1800) * 100, 100)}%` }} />
+              </div>
+            </div>
+
+            {/* Avg Loading Time */}
+            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-8 h-8 rounded-lg bg-orange-50 flex items-center justify-center">
+                  <Truck className="w-4 h-4 text-orange-600" />
+                </div>
+                <span className="text-xs font-medium text-slate-500">Avg. Loading Time</span>
+              </div>
+              <div className="flex items-baseline gap-2 mt-2">
+                <span className="text-3xl font-bold text-slate-900">{formatElapsed(stats.avgLoadingTime)}</span>
+              </div>
+              <div className="mt-2 h-1 w-full bg-slate-100 rounded-full">
+                <div className="h-1 bg-orange-500 rounded-full" style={{ width: `${Math.min((stats.avgLoadingTime / 3600) * 100, 100)}%` }} />
+              </div>
+            </div>
+
+            {/* On-Time Delivery */}
+            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
+                  <CheckCircle className="w-4 h-4 text-emerald-600" />
+                </div>
+                <span className="text-xs font-medium text-slate-500">On-Time Delivery</span>
+                {stats.onTimePercent >= 90 ? (
+                  <span className="ml-auto text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">Optimal</span>
+                ) : stats.onTimePercent >= 70 ? (
+                  <span className="ml-auto text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">Fair</span>
+                ) : (
+                  <span className="ml-auto text-[10px] font-semibold text-red-700 bg-red-50 px-1.5 py-0.5 rounded">Poor</span>
+                )}
+              </div>
+              <div className="flex items-baseline gap-2 mt-2">
+                <span className="text-3xl font-bold text-slate-900">{stats.onTimePercent}%</span>
+              </div>
+              <div className="mt-2 h-1 w-full bg-slate-100 rounded-full">
+                <div className={cn("h-1 rounded-full", stats.onTimePercent >= 90 ? 'bg-emerald-500' : stats.onTimePercent >= 70 ? 'bg-amber-500' : 'bg-red-500')} style={{ width: `${stats.onTimePercent}%` }} />
+              </div>
+            </div>
+
+            {/* Total Cargo */}
+            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center">
+                  <TrendingUp className="w-4 h-4 text-violet-600" />
+                </div>
+                <span className="text-xs font-medium text-slate-500">Total Cargo</span>
+              </div>
+              <div className="flex items-baseline gap-2 mt-2">
+                <span className="text-3xl font-bold text-slate-900">{stats.totalCargo.toLocaleString()}</span>
+                <span className="text-sm text-slate-500">kg</span>
+              </div>
+              <div className="mt-2 text-xs text-slate-400">{stats.deliveredCount} deliveries completed</div>
+            </div>
+          </div>
+
+          {/* Funnel */}
+          <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900">Horizontal Trip Progress Funnel</h3>
+                <p className="text-xs text-slate-500">Stage transitions and identified latency bottlenecks</p>
+              </div>
+              {stats.funnel[stats.bottleneckIdx]?.avgTime > 0 && (
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-red-600 bg-red-50 px-2 py-1 rounded">
+                  <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                  Bottleneck: {stats.funnel[stats.bottleneckIdx].label}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-between overflow-x-auto pb-4">
+              {stats.funnel.map((stage, i) => {
+                const isBottleneck = i === stats.bottleneckIdx && stage.avgTime > 0
+                const hasData = stage.count > 0
+                return (
+                  <React.Fragment key={stage.value}>
+                    <div className="flex flex-col items-center min-w-[70px]">
+                      <div className={cn(
+                        "w-10 h-10 rounded-xl flex items-center justify-center text-xs font-bold border-2 transition-all",
+                        isBottleneck ? "bg-red-500 border-red-600 text-white shadow-lg shadow-red-200" :
+                        hasData ? "bg-blue-50 border-blue-300 text-blue-700" :
+                        "bg-slate-50 border-slate-200 text-slate-400"
+                      )}>
+                        {i + 1}
+                      </div>
+                      <span className={cn(
+                        "text-[11px] mt-2 font-medium text-center",
+                        isBottleneck ? "text-red-600" : hasData ? "text-slate-700" : "text-slate-400"
+                      )}>
+                        {stage.label}
+                      </span>
+                      {hasData && (
+                        <span className={cn(
+                          "text-[10px] mt-0.5 font-semibold",
+                          isBottleneck ? "text-red-500" : "text-slate-400"
+                        )}>
+                          {formatElapsed(stage.avgTime)}
+                        </span>
+                      )}
+                    </div>
+                    {i < stats.funnel.length - 1 && (
+                      <div className="flex-1 flex items-center min-w-[30px] mx-1">
+                        <div className={cn(
+                          "h-0.5 w-full rounded",
+                          isBottleneck ? "bg-red-300" : "bg-slate-200"
+                        )} />
+                        {stage.avgTime > 0 && stats.funnel[i + 1]?.avgTime > 0 && (
+                          <span className="absolute text-[9px] text-slate-400 whitespace-nowrap mt-[-12px]">
+                            {formatElapsed(stage.avgTime)}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </React.Fragment>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Bottom Row: Timing + Compliance */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* Timing Performance Chart */}
+            <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold text-slate-900">Timing Performance</h3>
+                <div className="flex items-center gap-3 text-[10px]">
+                  <div className="flex items-center gap-1"><div className="w-2 h-2 rounded bg-blue-400" /> Scheduled</div>
+                  <div className="flex items-center gap-1"><div className="w-2 h-2 rounded bg-emerald-500" /> Actual</div>
+                </div>
+              </div>
+              <div className="h-[220px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={completedTrips.slice(0, 8).map(trip => {
+                    const scheduled = trip.pickup_locations?.[0]?.scheduled_time || trip.pickuplocations?.[0]?.scheduled_time
+                    const dropoff = trip.dropoff_locations?.[0]?.scheduled_time || trip.dropofflocations?.[0]?.scheduled_time
+                    const actual = trip.actual_start_time
+                    const actualEnd = trip.actual_end_time
+                    const name = (trip.trip_id || trip.id || '').slice(-8)
+                    return {
+                      name,
+                      Scheduled: scheduled && dropoff ? Math.round((new Date(dropoff).getTime() - new Date(scheduled).getTime()) / (1000 * 60)) : 0,
+                      Actual: actual && actualEnd ? Math.round((new Date(actualEnd).getTime() - new Date(actual).getTime()) / (1000 * 60)) : 0,
+                    }
+                  })}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis dataKey="name" tick={{ fontSize: 10 }} stroke="#94a3b8" />
+                    <YAxis tick={{ fontSize: 10 }} stroke="#94a3b8" label={{ value: 'minutes', angle: -90, position: 'insideLeft', style: { fontSize: 10 } }} />
+                    <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} formatter={(value: number) => [`${value}m`]} />
+                    <Bar dataKey="Scheduled" fill="#93c5fd" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="Actual" fill="#10b981" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Route Compliance */}
+            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+              <h3 className="text-sm font-semibold text-slate-900 mb-4">Route Compliance</h3>
+              <div className="flex flex-col items-center">
+                <div className="relative w-36 h-36">
+                  <svg className="w-full h-full -rotate-90" viewBox="0 0 120 120">
+                    <circle cx="60" cy="60" r="52" fill="none" stroke="#f1f5f9" strokeWidth="10" />
+                    <circle
+                      cx="60" cy="60" r="52" fill="none"
+                      stroke={stats.compliancePercent >= 90 ? '#10b981' : stats.compliancePercent >= 70 ? '#f59e0b' : '#ef4444'}
+                      strokeWidth="10"
+                      strokeLinecap="round"
+                      strokeDasharray={`${(stats.compliancePercent / 100) * 326.7} 326.7`}
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className={cn("text-3xl font-bold", stats.compliancePercent >= 90 ? 'text-emerald-600' : stats.compliancePercent >= 70 ? 'text-amber-600' : 'text-red-600')}>
+                      {stats.compliancePercent}%
+                    </span>
+                    <span className="text-[10px] text-slate-500">On Track</span>
+                  </div>
+                </div>
+                <div className="mt-4 w-full space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-emerald-500" /><span className="text-slate-600">Compliant</span></div>
+                    <span className="font-semibold text-emerald-700">{completedTrips.filter(t => (t.unauthorized_stops_count || 0) === 0).length}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-red-500" /><span className="text-slate-600">Violations</span></div>
+                    <span className="font-semibold text-red-700">{completedTrips.filter(t => (t.unauthorized_stops_count || 0) > 0).length}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {!stats && !loading && (
+        <div className="text-center py-12 text-slate-500">
+          <Truck className="w-12 h-12 mx-auto mb-4 opacity-50" />
+          <p className="text-lg font-medium mb-2">No trip data available</p>
+          <p className="text-sm">Reports will appear once trips have status data</p>
+        </div>
+      )}
+    </div>
+  )
+}
     }
     
     fetchCompletedTrips()
