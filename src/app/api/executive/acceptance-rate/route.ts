@@ -7,23 +7,29 @@ export async function GET() {
   try {
     const supabase = await createClient()
 
-    // Count all trips
-    const { count: total } = await supabase
+    // Get all trips with stops_data
+    const { data: trips, error } = await supabase
       .from('trips')
-      .select('id', { count: 'exact', head: true })
+      .select('stops_data')
 
-    // Count trips with accepted_at (driver accepted)
-    const { count: accepted } = await supabase
-      .from('trips')
-      .select('id', { count: 'exact', head: true })
-      .not('accepted_at', 'is', null)
+    if (error) throw error
 
-    const totalTrips = total || 0
-    const acceptedTrips = accepted || 0
-    const notAccepted = totalTrips - acceptedTrips
-    const rate = totalTrips > 0 ? Math.round((acceptedTrips / totalTrips) * 100) : 0
+    let withData = 0
+    let accepted = 0
 
-    return NextResponse.json({ total: totalTrips, accepted: acceptedTrips, notAccepted, rate })
+    trips.forEach((trip: any) => {
+      if (!trip.stops_data) return
+      const arr = Array.isArray(trip.stops_data) ? trip.stops_data : JSON.parse(trip.stops_data)
+      if (!Array.isArray(arr) || arr.length === 0) return
+
+      withData += 1
+      const hasAccepted = arr.some((s: any) => s.status === 'accepted')
+      if (hasAccepted) accepted += 1
+    })
+
+    const rate = withData > 0 ? Math.round((accepted / withData) * 100) : 0
+
+    return NextResponse.json({ total: withData, accepted, notAccepted: withData - accepted, rate })
   } catch (error) {
     console.error('Acceptance rate error:', error)
     return NextResponse.json({ total: 0, accepted: 0, notAccepted: 0, rate: 0 }, { status: 500 })
