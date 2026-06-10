@@ -1602,22 +1602,23 @@ function TripReportsSection() {
                     const currentIdx = WORKFLOW.findIndex(s => s.value === trip.status?.toLowerCase())
                     const totalTime = stopsData.reduce((sum: number, e: any) => sum + (e.elapsed_seconds || 0), 0)
                     const stepsCompleted = stopsData.length
+                    const progress = currentIdx >= 0 ? ((currentIdx + 1) / WORKFLOW.length) * 100 : 0
                     const fmtElapsed = (secs: number | null | undefined) => {
-                      if (!secs || secs <= 0) return null
+                      if (!secs || secs <= 0) return 'No data'
                       if (secs < 60) return `${secs}s`
                       if (secs < 3600) { const m = Math.floor(secs / 60); const s = secs % 60; return s > 0 ? `${m}m ${s}s` : `${m}m` }
                       const h = Math.floor(secs / 3600); const m = Math.floor((secs % 3600) / 60); return m > 0 ? `${h}h ${m}m` : `${h}h`
                     }
                     const segColor = (secs: number) => secs > 1800 ? '#ef4444' : secs > 900 ? '#f97316' : '#10b981'
                     const segLabel = (secs: number) => secs > 1800 ? 'Overdue' : secs > 900 ? 'Delayed' : 'On Time'
-                    // Build waypoints from WORKFLOW, only those present in stops_data
+                    // Always show ALL 11 stops
                     const wpData = WORKFLOW.map((w, i) => ({
                       ...w,
                       completed: currentIdx > i,
                       current: currentIdx === i,
                       elapsed: elapsedMap[w.value] ?? null,
                       timestamp: timestampMap[w.value] ?? null,
-                    })).filter(w => w.completed || w.current || w.elapsed !== null)
+                    }))
                     return (
                     <div className="bg-white rounded-xl border border-slate-200 p-5 mb-4">
                       {/* Header */}
@@ -1637,7 +1638,7 @@ function TripReportsSection() {
                       <div className="grid grid-cols-4 gap-3 mb-5">
                         <div className="bg-slate-50 rounded-lg p-3 text-center">
                           <p className="text-[10px] uppercase text-slate-500 font-medium mb-1">Total Time</p>
-                          <p className="text-xl font-bold text-slate-900">{fmtElapsed(totalTime) || '—'}</p>
+                          <p className="text-xl font-bold text-slate-900">{fmtElapsed(totalTime)}</p>
                         </div>
                         <div className="bg-slate-50 rounded-lg p-3 text-center">
                           <p className="text-[10px] uppercase text-slate-500 font-medium mb-1">Steps Done</p>
@@ -1654,19 +1655,19 @@ function TripReportsSection() {
                           </p>
                         </div>
                       </div>
-                      {/* Progress Bar */}
+                      {/* Trip Progress Bar — same style as routing tab */}
                       <div className="mb-5">
-                        <div className="flex items-center justify-between mb-3">
-                          <h4 className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Trip Progress</h4>
-                          <span className="text-xs text-slate-500">{Math.round(currentIdx >= 0 ? ((currentIdx + 1) / WORKFLOW.length) * 100 : 0)}% Complete</span>
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="text-xs font-semibold text-black">Trip Progress</h4>
+                          <span className="text-xs text-gray-700">{Math.round(progress)}% Complete</span>
                         </div>
-                        <div className="relative">
-                          {/* Waypoint circles */}
-                          <div className="flex justify-between items-center">
+                        <div className="relative pt-1">
+                          {/* Waypoint circles — positioned on the bar line */}
+                          <div className="flex justify-between items-center relative z-10">
                             {wpData.map((wp, i) => (
-                              <div key={i} className="flex flex-col items-center relative z-10">
+                              <div key={i} className="flex flex-col items-center">
                                 <div className={cn(
-                                  "w-7 h-7 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all",
+                                  "w-7 h-7 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all duration-300",
                                   wp.current ? (
                                     (wp.elapsed || 0) > 1800 ? "bg-red-500 border-red-600 text-white" :
                                     (wp.elapsed || 0) > 900 ? "bg-orange-500 border-orange-600 text-white" :
@@ -1677,62 +1678,75 @@ function TripReportsSection() {
                                     (wp.elapsed || 0) > 900 ? "bg-orange-500 border-orange-600 text-white" :
                                     "bg-emerald-600 border-emerald-700 text-white"
                                   ) :
-                                  "bg-slate-100 border-slate-200 text-slate-500"
+                                  "bg-slate-100 border-slate-200 text-slate-600"
                                 )}>
-                                  {wp.completed ? <CheckCircle className="w-3 h-3" /> : wp.current ? <div className="w-2 h-2 bg-white rounded-full animate-pulse" /> : i + 1}
+                                  {wp.completed ? <CheckCircle className="w-3 h-3" /> :
+                                   wp.current ? <div className="w-2 h-2 bg-white rounded-full animate-pulse" /> :
+                                   <span className="text-[9px]">{i + 1}</span>}
                                 </div>
-                                <span className={cn("text-[10px] mt-1 text-center max-w-[52px] leading-tight font-medium",
+                                <span className={cn(
+                                  "text-[10px] mt-1 text-center max-w-[52px] leading-tight",
                                   wp.current ? (
-                                    (wp.elapsed || 0) > 1800 ? "text-red-600" : (wp.elapsed || 0) > 900 ? "text-orange-600" : "text-blue-600"
+                                    (wp.elapsed || 0) > 1800 ? "text-red-600 font-semibold" :
+                                    (wp.elapsed || 0) > 900 ? "text-orange-600 font-semibold" :
+                                    "text-blue-600 font-semibold"
                                   ) :
                                   wp.completed ? (
-                                    (wp.elapsed || 0) > 1800 ? "text-red-600" : (wp.elapsed || 0) > 900 ? "text-orange-600" : "text-emerald-700"
-                                  ) : "text-slate-400"
+                                    (wp.elapsed || 0) > 1800 ? "text-red-600 font-medium" :
+                                    (wp.elapsed || 0) > 900 ? "text-orange-600 font-medium" :
+                                    "text-emerald-700 font-medium"
+                                  ) : "text-gray-500"
                                 )}>{wp.label}</span>
-                                {wp.elapsed !== null && wp.elapsed > 0 && (
-                                  <span className="text-[9px] text-slate-400 mt-0.5 whitespace-nowrap font-medium">{fmtElapsed(wp.elapsed)}</span>
-                                )}
-                                {wp.current && wp.elapsed !== null && wp.elapsed > 0 && (
-                                  <span className={cn("text-[9px] mt-0.5 whitespace-nowrap font-semibold",
-                                    wp.elapsed > 1800 ? "text-red-500" : wp.elapsed > 900 ? "text-orange-500" : "text-blue-500"
-                                  )}>{fmtElapsed(wp.elapsed)}</span>
-                                )}
+                                <span className={cn(
+                                  "text-[9px] mt-0.5 whitespace-nowrap",
+                                  wp.elapsed !== null && wp.elapsed > 0 ? (
+                                    wp.elapsed > 1800 ? "text-red-500 font-semibold" :
+                                    wp.elapsed > 900 ? "text-orange-500 font-semibold" :
+                                    "text-gray-500 font-medium"
+                                  ) : "text-gray-400"
+                                )}>{wp.elapsed !== null && wp.elapsed > 0 ? fmtElapsed(wp.elapsed) : 'No data'}</span>
                               </div>
                             ))}
                           </div>
-                          {/* Segmented bar */}
-                          <div className="absolute top-3.5 left-3.5 right-3.5 h-1.5 bg-slate-100 -z-0 rounded flex">
-                            {(() => {
-                              const completedWps = wpData.filter(w => (w.completed || w.current) && w.elapsed !== null && w.elapsed > 0)
-                              const totalElapsed = completedWps.reduce((s, w) => s + (w.elapsed || 0), 0)
-                              const pctPerWp = 100 / wpData.length
-                              const segs: { w: number; c: string }[] = []
-                              completedWps.forEach(wp => {
-                                segs.push({ w: totalElapsed > 0 ? ((wp.elapsed || 0) / totalElapsed) * (currentIdx + 1) / wpData.length * 100 : pctPerWp, c: segColor(wp.elapsed || 0) })
-                              })
-                              return segs.map((s, i) => <div key={i} className="h-full transition-all duration-500" style={{ width: `${Math.min(s.w, 100 - segs.slice(0, i).reduce((a, b) => a + b.w, 0))}%`, backgroundColor: s.c }} />)
-                            })()}
+                          {/* Bar line behind the circles */}
+                          <div className="absolute top-3.5 left-[14px] right-[14px] h-1.5 bg-slate-200 -z-0 rounded">
+                            <div
+                              className="h-full rounded bg-gradient-to-r from-emerald-500 via-blue-500 to-blue-400 transition-all duration-500"
+                              style={{ width: `${Math.min(progress, 100)}%` }}
+                            />
                           </div>
                         </div>
                       </div>
                       {/* Timing Breakdown */}
                       <div>
-                        <h4 className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-3">Timing Breakdown</h4>
+                        <h4 className="text-xs font-semibold text-black uppercase tracking-wide mb-3">Timing Breakdown</h4>
                         <div className="space-y-2">
-                          {wpData.filter(w => w.elapsed !== null && w.elapsed > 0).map((wp, i) => (
+                          {wpData.map((wp, i) => (
                             <div key={i} className="flex items-center gap-3">
-                              <div className={cn("w-2.5 h-2.5 rounded-full flex-shrink-0", `bg-[${segColor(wp.elapsed || 0)}]`)} style={{ backgroundColor: segColor(wp.elapsed || 0) }} />
-                              <span className="text-xs font-medium text-slate-700 w-24">{wp.label}</span>
+                              <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: wp.elapsed !== null && wp.elapsed > 0 ? segColor(wp.elapsed) : '#cbd5e1' }} />
+                              <span className="text-xs font-medium text-slate-700 w-20">{wp.label}</span>
                               <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                <div className="h-full rounded-full transition-all duration-500" style={{ width: `${totalTime > 0 ? ((wp.elapsed || 0) / totalTime) * 100 : 0}%`, backgroundColor: segColor(wp.elapsed || 0) }} />
+                                <div
+                                  className="h-full rounded-full transition-all duration-500"
+                                  style={{
+                                    width: wp.elapsed !== null && wp.elapsed > 0 && totalTime > 0 ? `${(wp.elapsed / totalTime) * 100}%` : '0%',
+                                    backgroundColor: wp.elapsed !== null && wp.elapsed > 0 ? segColor(wp.elapsed) : '#e2e8f0'
+                                  }}
+                                />
                               </div>
-                              <span className="text-xs font-semibold text-slate-900 w-12 text-right">{fmtElapsed(wp.elapsed)}</span>
-                              <span className={cn("text-[10px] font-medium px-1.5 py-0.5 rounded", wp.elapsed > 1800 ? 'bg-red-50 text-red-600' : wp.elapsed > 900 ? 'bg-orange-50 text-orange-600' : 'bg-emerald-50 text-emerald-600')}>{segLabel(wp.elapsed)}</span>
+                              <span className={cn("text-xs font-semibold w-16 text-right", wp.elapsed !== null && wp.elapsed > 0 ? "text-slate-900" : "text-slate-400")}>
+                                {fmtElapsed(wp.elapsed)}
+                              </span>
+                              <span className={cn(
+                                "text-[10px] font-medium px-1.5 py-0.5 rounded min-w-[60px] text-center",
+                                wp.elapsed !== null && wp.elapsed > 0 ? (
+                                  wp.elapsed > 1800 ? 'bg-red-50 text-red-600' :
+                                  wp.elapsed > 900 ? 'bg-orange-50 text-orange-600' :
+                                  'bg-emerald-50 text-emerald-600'
+                                ) : 'bg-slate-50 text-slate-400'
+                              )}>{wp.elapsed !== null && wp.elapsed > 0 ? segLabel(wp.elapsed) : 'No data'}</span>
                             </div>
                           ))}
-                          {wpData.filter(w => w.elapsed !== null && w.elapsed > 0).length === 0 && (
-                            <p className="text-xs text-slate-400">No timing data recorded yet</p>
-                          )}
                         </div>
                       </div>
                       {/* Notes */}
