@@ -861,12 +861,22 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
 
   const getWaypointsWithStops = (trip: any) => {
     const currentStatusIndex = WORKFLOW_STATUSES.findIndex(s => s.value === trip.status?.toLowerCase())
+    const stopsData = trip.stops_data || []
+    // Build elapsed map: status -> elapsed_seconds from the previous status
+    const elapsedMap: Record<string, number> = {}
+    for (const entry of stopsData) {
+      const s = entry.status?.toLowerCase()
+      if (s && typeof entry.elapsed_seconds === 'number') {
+        elapsedMap[s] = entry.elapsed_seconds
+      }
+    }
     const baseWaypoints = WORKFLOW_STATUSES.map((status, index) => ({
       position: (index / (WORKFLOW_STATUSES.length - 1)) * 100,
       label: status.label,
       completed: currentStatusIndex > index,
       current: currentStatusIndex === index,
-      isStop: false
+      isStop: false,
+      elapsedSeconds: index > 0 ? (elapsedMap[status.value] ?? null) : null
     }))
 
     // Insert stops between Loading (index 4) and On Trip (index 5)
@@ -903,6 +913,38 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
     const statusIndex = WORKFLOW_STATUSES.findIndex(s => s.value === status?.toLowerCase())
     if (statusIndex === -1) return 0
     return ((statusIndex + 1) / WORKFLOW_STATUSES.length) * 100
+  }
+
+  const formatElapsed = (seconds: number | null | undefined) => {
+    if (!seconds || seconds <= 0) return null
+    if (seconds < 60) return `${seconds}s`
+    if (seconds < 3600) {
+      const m = Math.floor(seconds / 60)
+      const s = seconds % 60
+      return s > 0 ? `${m}m ${s}s` : `${m}m`
+    }
+    const h = Math.floor(seconds / 3600)
+    const m = Math.floor((seconds % 3600) / 60)
+    return m > 0 ? `${h}h ${m}m` : `${h}h`
+  }
+
+  const getAcceptanceWarning = (trip: any) => {
+    const status = trip.status?.toLowerCase()
+    if (status !== 'pending' && status !== 'accepted') return null
+    const stopsData = trip.stops_data || []
+    const acceptedEntry = stopsData.find((s: any) => s.status === 'accepted')
+    let elapsedSeconds: number
+    if (acceptedEntry) {
+      elapsedSeconds = acceptedEntry.elapsed_seconds || 0
+    } else {
+      const createdAt = trip.created_at ? new Date(trip.created_at).getTime() : Date.now()
+      elapsedSeconds = (Date.now() - createdAt) / 1000
+    }
+    const duration = formatElapsed(elapsedSeconds)
+    if (!duration) return null
+    if (elapsedSeconds > 1800) return { level: 'red', bg: 'bg-red-50 border-red-200', text: 'text-red-700', icon: 'text-red-500', label: 'Overdue', message: `Not accepted for ${duration}` }
+    if (elapsedSeconds > 900) return { level: 'orange', bg: 'bg-orange-50 border-orange-200', text: 'text-orange-700', icon: 'text-orange-500', label: 'Delayed', message: `Awaiting acceptance for ${duration}` }
+    return null
   }
 
   if (loading) {
@@ -1001,6 +1043,20 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
                   </Button>
                 </div>
               )}
+
+              {/* Acceptance Time Warning */}
+              {(() => {
+                const warn = getAcceptanceWarning(trip)
+                if (!warn) return null
+                return (
+                  <div className={`flex items-center gap-2 p-2 mb-3 text-xs ${warn.bg} border ${warn.text} rounded-lg`}>
+                    <Clock className={`w-3 h-3 ${warn.icon} flex-shrink-0`} />
+                    <span className={`font-semibold ${warn.text} uppercase tracking-wide`}>{warn.label}</span>
+                    <span className={warn.text}>•</span>
+                    <span className={warn.text}>{warn.message}</span>
+                  </div>
+                )
+              })()}
 
               {/* Alert Banner */}
               {(() => {
@@ -1148,6 +1204,12 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
               )}>
               {waypoint.label.split(' ')[0]}
               </span>
+              {/* Elapsed time label between waypoints */}
+              {waypoint.completed && waypoint.elapsedSeconds !== null && waypoint.elapsedSeconds > 0 && (
+                <span className="text-[9px] text-gray-400 mt-0.5 whitespace-nowrap">
+                  {formatElapsed(waypoint.elapsedSeconds)}
+                </span>
+              )}
               {waypoint.isStop && (
               <div className="absolute bottom-full mb-1 px-2 py-1 bg-white border rounded text-xs text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-20">
                 {typeof waypoint.stopId === 'object' ? waypoint.stopId.name : waypoint.stopId}
@@ -1156,11 +1218,27 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
               </div>
               ))}
               </div>
-              <div className="absolute top-3 left-3 right-3 h-1 bg-slate-100 -z-0 rounded">
-              <div 
-              className="h-full rounded bg-gradient-to-r from-blue-500 via-sky-500 to-blue-400 transition-all duration-500 ease-out"
-              style={{ width: `${progress}%` }}
-              />
+              {/* Segmented progress bar proportional to elapsed time */}
+              <div className="absolute top-3 left-3 right-3 h-1.5 bg-slate-100 -z-0 rounded flex overflow-hidden">
+                {(() => {
+                  const completedWithTime = waypoints.filter(w => w.completed && w.elapsedSeconds !== null && w.elapsedSeconds > 0)
+                  const totalTime = completedWithTime.reduce((s, w) => s + (w.elapsedSeconds || 0), 0)
+                  const completedPct = waypoints.filter(w => w.completed).length / WORKFLOW_STATUSES.length * 100
+                  const segments: { width: number; color: string }[] = []
+                  if (totalTime > 0) {
+                    completedWithTime.forEach((w, i) => {
+                      const pct = ((w.elapsedSeconds || 0) / totalTime) * completedPct
+                      const intensity = Math.min(0.3 + (i / completedWithTime.length) * 0.7, 1)
+                      segments.push({ width: pct, color: `rgba(16,185,129,${intensity})` })
+                    })
+                  }
+                  // Current segment
+                  const currentSegWidth = Math.max(0, progress - completedPct)
+                  if (currentSegWidth > 0) segments.push({ width: currentSegWidth, color: 'rgba(59,130,246,0.6)' })
+                  return segments.map((seg, i) => (
+                    <div key={i} className="h-full transition-all duration-500" style={{ width: `${seg.width}%`, backgroundColor: seg.color }} />
+                  ))
+                })()}
               </div>
               </div>
               </div>

@@ -83,9 +83,11 @@ export default function LoadPlanPage() {
   // Address & ETA section
   const [etaPickup, setEtaPickup] = useState('')
   const [loadingLocation, setLoadingLocation] = useState('')
+  const [loadingLocationCoords, setLoadingLocationCoords] = useState<{ lat: number; lng: number } | null>(null)
   const [loadingGeozoneCoords, setLoadingGeozoneCoords] = useState(null)
   const [etaDropoff, setEtaDropoff] = useState('')
   const [dropOffPoint, setDropOffPoint] = useState('')
+  const [dropoffLocationCoords, setDropoffLocationCoords] = useState<{ lat: number; lng: number } | null>(null)
   const [dropoffGeozoneCoords, setDropoffGeozoneCoords] = useState(null)
   const [showSecondSection, setShowSecondSection] = useState(false)
   const secondRef = useRef<HTMLDivElement | null>(null)
