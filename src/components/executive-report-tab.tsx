@@ -5,7 +5,7 @@ import {
   Truck,
   Users,
   DollarSign,
-  Map,
+  Map as MapIcon,
   Clock,
   Fuel,
   BarChart3,
@@ -198,7 +198,7 @@ export default function ExecutiveReportTab() {
         <div className="col-span-2 overflow-hidden rounded-xl border border-gray-200 bg-white">
           <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5">
             <div className="flex items-center gap-2">
-              <Map className="h-4 w-4 text-gray-500" />
+              <MapIcon className="h-4 w-4 text-gray-500" />
               <span className="text-sm font-medium text-gray-700">En-route Status</span>
             </div>
             <div className="flex gap-1">
