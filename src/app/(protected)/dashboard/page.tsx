@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Card,
@@ -1455,6 +1455,7 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
 function TripReportsSection() {
   const [completedTrips, setCompletedTrips] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [expandedTrip, setExpandedTrip] = useState<string | null>(null)
 
   useEffect(() => {
     async function fetchCompletedTrips() {
@@ -1465,6 +1466,7 @@ function TripReportsSection() {
           .select('*')
           .not('status', 'eq', 'pending')
           .order('updated_at', { ascending: false })
+        
         if (error) throw error
         setCompletedTrips(data || [])
       } catch (err) {
@@ -1473,321 +1475,290 @@ function TripReportsSection() {
         setLoading(false)
       }
     }
+    
     fetchCompletedTrips()
   }, [])
 
-  const WORKFLOW = [
-    { label: 'Pending', value: 'pending' },
-    { label: 'Accept', value: 'accepted' },
-    { label: 'Arrived', value: 'arrived-at-loading' },
-    { label: 'Staging', value: 'staging-area' },
-    { label: 'Loading', value: 'loading' },
-    { label: 'On Trip', value: 'on-trip' },
-    { label: 'Offloading', value: 'offloading' },
-    { label: 'Weighing', value: 'weighing' },
-    { label: 'Depo', value: 'depo' },
-    { label: 'Handover', value: 'handover' },
-    { label: 'Delivered', value: 'delivered' },
-  ]
-
-  const formatElapsed = (seconds: number | null | undefined) => {
-    if (!seconds || seconds <= 0) return '0m'
-    if (seconds < 60) return `${seconds}s`
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
-    const h = Math.floor(seconds / 3600)
-    const m = Math.floor((seconds % 3600) / 60)
-    return m > 0 ? `${h}h ${m}m` : `${h}h`
+  const getTimingStatus = (scheduledTime: string, actualTime: string) => {
+    if (!scheduledTime || !actualTime) return 'Unknown'
+    
+    const scheduled = new Date(scheduledTime)
+    const actual = new Date(actualTime)
+    const diffMinutes = (actual.getTime() - scheduled.getTime()) / (1000 * 60)
+    
+    if (diffMinutes <= -15) return 'Early'
+    if (diffMinutes >= 15) return 'Late'
+    return 'On Time'
   }
 
-  // Compute aggregate stats from all trips
-  const stats = useMemo(() => {
-    if (completedTrips.length === 0) return null
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'Early': return 'text-blue-700 bg-blue-50'
+      case 'Late': return 'text-red-700 bg-red-50'
+      case 'On Time': return 'text-green-700 bg-green-50'
+      default: return 'text-gray-700 bg-gray-50'
+    }
+  }
 
-    // Collect elapsed times per status
-    const elapsedByStatus: Record<string, number[]> = {}
-    completedTrips.forEach(trip => {
-      const stopsData = trip.stops_data || []
-      stopsData.forEach((entry: any) => {
-        const s = entry.status?.toLowerCase()
-        if (s && typeof entry.elapsed_seconds === 'number' && entry.elapsed_seconds > 0) {
-          if (!elapsedByStatus[s]) elapsedByStatus[s] = []
-          elapsedByStatus[s].push(entry.elapsed_seconds)
-        }
-      })
-    })
-
-    const avg = (arr: number[]) => arr.length > 0 ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : 0
-    const avgAcceptTime = avg(elapsedByStatus['accepted'] || [])
-    const avgLoadingTime = avg(elapsedByStatus['loading'] || [])
-
-    // On-time delivery: trips where actual_end <= scheduled + 15min
-    let onTimeCount = 0
-    let deliveredCount = 0
-    completedTrips.forEach(trip => {
-      if (trip.status === 'delivered' || trip.status === 'completed') {
-        deliveredCount++
-        const scheduled = trip.dropoff_locations?.[0]?.scheduled_time || trip.dropofflocations?.[0]?.scheduled_time
-        const actual = trip.actual_end_time
-        if (scheduled && actual) {
-          const diff = (new Date(actual).getTime() - new Date(scheduled).getTime()) / (1000 * 60)
-          if (diff <= 15) onTimeCount++
-        } else {
-          onTimeCount++
-        }
-      }
-    })
-    const onTimePercent = deliveredCount > 0 ? Math.round((onTimeCount / deliveredCount) * 100) : 0
-
-    // Total cargo
-    const totalCargo = completedTrips.reduce((sum, t) => sum + (parseFloat(t.cargo_weight) || 0), 0)
-
-    // Route compliance
-    const compliantTrips = completedTrips.filter(t => (t.unauthorized_stops_count || 0) === 0).length
-    const compliancePercent = completedTrips.length > 0 ? Math.round((compliantTrips / completedTrips.length) * 100) : 0
-
-    // Funnel: avg elapsed for each workflow stage
-    const funnel = WORKFLOW.map((stage, i) => {
-      const times = elapsedByStatus[stage.value] || []
-      const avgTime = avg(times)
-      return { ...stage, avgTime, count: times.length }
-    })
-
-    // Find bottleneck (stage with highest avg time, excluding pending)
-    const bottleneckIdx = funnel.slice(1).reduce((maxIdx, stage, i) =>
-      stage.avgTime > funnel[maxIdx].avgTime ? i + 1 : maxIdx, 1)
-
-    return { avgAcceptTime, avgLoadingTime, onTimePercent, deliveredCount, totalCargo, compliancePercent, funnel, bottleneckIdx }
-  }, [completedTrips])
-
-  if (loading) return <div className="text-center py-8">Loading trip reports...</div>
+  if (loading) {
+    return <div className="text-center py-8">Loading trip reports...</div>
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">Trip Performance Executive Summary</h2>
-        <p className="text-sm text-muted-foreground">Real-time optimization metrics across the fleet network</p>
+    <div className="space-y-4">
+      <div className="mb-4">
+        <h2 className="text-3xl font-bold tracking-tight">Trip Reports</h2>
+        <p className="text-muted-foreground">Performance analysis for active, completed and delivered trips</p>
       </div>
 
-      {stats && (
-        <>
-          {/* Stats Row */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Avg Accept Time */}
-            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-              <div className="flex items-center gap-2 mb-1">
-                <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
-                  <Clock className="w-4 h-4 text-blue-600" />
+      <div className="space-y-3">
+        {completedTrips.map((trip) => {
+          const clientDetails = typeof trip.clientdetails === 'string' ? JSON.parse(trip.clientdetails) : trip.clientdetails
+          const pickupLocations = trip.pickup_locations || trip.pickuplocations || []
+          const dropoffLocations = trip.dropoff_locations || trip.dropofflocations || []
+          
+          const scheduledPickup = pickupLocations[0]?.scheduled_time
+          const scheduledDropoff = dropoffLocations[0]?.scheduled_time
+          const actualStart = trip.actual_start_time
+          const actualEnd = trip.actual_end_time
+          
+          const startStatus = getTimingStatus(scheduledPickup, actualStart)
+          const arrivalStatus = getTimingStatus(scheduledDropoff, actualEnd)
+          
+          // Check if trip is late based on estimated arrival
+          const estimatedArrival = trip.dropoff_locations?.[0]?.scheduled_time || trip.dropofflocations?.[0]?.scheduled_time
+          const isLate = estimatedArrival && !actualEnd && new Date() > new Date(estimatedArrival)
+          const displayArrivalStatus = isLate ? 'Late' : arrivalStatus
+          
+          // Check for unauthorized stops in alert_message
+          let unauthorizedStops = trip.unauthorized_stops_count || 0
+          if (trip.alert_message && Array.isArray(trip.alert_message)) {
+            const unauthorizedAlerts = trip.alert_message.filter(alert => 
+              typeof alert === 'object' && alert.type && 
+              alert.type.toLowerCase().includes('unauthorized')
+            )
+            unauthorizedStops = Math.max(unauthorizedStops, unauthorizedAlerts.length)
+          }
+          
+          const isExpanded = expandedTrip === trip.id
+          
+          return (
+            <Card key={trip.id} className="border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+              <CardHeader 
+                className="cursor-pointer hover:bg-slate-50 transition-colors"
+                onClick={() => setExpandedTrip(isExpanded ? null : trip.id)}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center">
+                      <Truck className="w-5 h-5 text-slate-600" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-lg font-semibold text-slate-900">
+                        {clientDetails?.name || 'Unknown Client'} - Trip #{trip.trip_id || trip.id}
+                      </CardTitle>
+                      <p className="text-sm text-slate-600">
+                        {trip.origin} → {trip.destination}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge className={cn('px-2 py-1 text-xs font-medium', 
+                      trip.status === 'delivered' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                    )}>
+                      {trip.status}
+                    </Badge>
+                    {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 w-4" />}
+                  </div>
                 </div>
-                <span className="text-xs font-medium text-slate-500">Avg. Accept Time</span>
-              </div>
-              <div className="flex items-baseline gap-2 mt-2">
-                <span className="text-3xl font-bold text-slate-900">{formatElapsed(stats.avgAcceptTime)}</span>
-              </div>
-              <div className="mt-2 h-1 w-full bg-slate-100 rounded-full">
-                <div className="h-1 bg-blue-500 rounded-full" style={{ width: `${Math.min((stats.avgAcceptTime / 1800) * 100, 100)}%` }} />
-              </div>
-            </div>
-
-            {/* Avg Loading Time */}
-            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-              <div className="flex items-center gap-2 mb-1">
-                <div className="w-8 h-8 rounded-lg bg-orange-50 flex items-center justify-center">
-                  <Truck className="w-4 h-4 text-orange-600" />
-                </div>
-                <span className="text-xs font-medium text-slate-500">Avg. Loading Time</span>
-              </div>
-              <div className="flex items-baseline gap-2 mt-2">
-                <span className="text-3xl font-bold text-slate-900">{formatElapsed(stats.avgLoadingTime)}</span>
-              </div>
-              <div className="mt-2 h-1 w-full bg-slate-100 rounded-full">
-                <div className="h-1 bg-orange-500 rounded-full" style={{ width: `${Math.min((stats.avgLoadingTime / 3600) * 100, 100)}%` }} />
-              </div>
-            </div>
-
-            {/* On-Time Delivery */}
-            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-              <div className="flex items-center gap-2 mb-1">
-                <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
-                  <CheckCircle className="w-4 h-4 text-emerald-600" />
-                </div>
-                <span className="text-xs font-medium text-slate-500">On-Time Delivery</span>
-                {stats.onTimePercent >= 90 ? (
-                  <span className="ml-auto text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">Optimal</span>
-                ) : stats.onTimePercent >= 70 ? (
-                  <span className="ml-auto text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">Fair</span>
-                ) : (
-                  <span className="ml-auto text-[10px] font-semibold text-red-700 bg-red-50 px-1.5 py-0.5 rounded">Poor</span>
-                )}
-              </div>
-              <div className="flex items-baseline gap-2 mt-2">
-                <span className="text-3xl font-bold text-slate-900">{stats.onTimePercent}%</span>
-              </div>
-              <div className="mt-2 h-1 w-full bg-slate-100 rounded-full">
-                <div className={cn("h-1 rounded-full", stats.onTimePercent >= 90 ? 'bg-emerald-500' : stats.onTimePercent >= 70 ? 'bg-amber-500' : 'bg-red-500')} style={{ width: `${stats.onTimePercent}%` }} />
-              </div>
-            </div>
-
-            {/* Total Cargo */}
-            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-              <div className="flex items-center gap-2 mb-1">
-                <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center">
-                  <TrendingUp className="w-4 h-4 text-violet-600" />
-                </div>
-                <span className="text-xs font-medium text-slate-500">Total Cargo</span>
-              </div>
-              <div className="flex items-baseline gap-2 mt-2">
-                <span className="text-3xl font-bold text-slate-900">{stats.totalCargo.toLocaleString()}</span>
-                <span className="text-sm text-slate-500">kg</span>
-              </div>
-              <div className="mt-2 text-xs text-slate-400">{stats.deliveredCount} deliveries completed</div>
-            </div>
-          </div>
-
-          {/* Funnel */}
-          <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h3 className="text-sm font-semibold text-slate-900">Horizontal Trip Progress Funnel</h3>
-                <p className="text-xs text-slate-500">Stage transitions and identified latency bottlenecks</p>
-              </div>
-              {stats.funnel[stats.bottleneckIdx]?.avgTime > 0 && (
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-red-600 bg-red-50 px-2 py-1 rounded">
-                  <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                  Bottleneck: {stats.funnel[stats.bottleneckIdx].label}
-                </div>
-              )}
-            </div>
-            <div className="flex items-center justify-between overflow-x-auto pb-4">
-              {stats.funnel.map((stage, i) => {
-                const isBottleneck = i === stats.bottleneckIdx && stage.avgTime > 0
-                const hasData = stage.count > 0
-                return (
-                  <React.Fragment key={stage.value}>
-                    <div className="flex flex-col items-center min-w-[70px]">
-                      <div className={cn(
-                        "w-10 h-10 rounded-xl flex items-center justify-center text-xs font-bold border-2 transition-all",
-                        isBottleneck ? "bg-red-500 border-red-600 text-white shadow-lg shadow-red-200" :
-                        hasData ? "bg-blue-50 border-blue-300 text-blue-700" :
-                        "bg-slate-50 border-slate-200 text-slate-400"
-                      )}>
-                        {i + 1}
+              </CardHeader>
+              
+              {isExpanded && (
+                <CardContent className="pt-0">
+                  {(() => {
+                    const stopsData = trip.stops_data || []
+                    const WORKFLOW = [
+                      { label: "Pending", value: "pending" },
+                      { label: "Accept", value: "accepted" },
+                      { label: "Arrived", value: "arrived-at-loading" },
+                      { label: "Staging", value: "staging-area" },
+                      { label: "Loading", value: "loading" },
+                      { label: "On Trip", value: "on-trip" },
+                      { label: "Offloading", value: "offloading" },
+                      { label: "Weighing", value: "weighing" },
+                      { label: "Depo", value: "depo" },
+                      { label: "Handover", value: "handover" },
+                      { label: "Delivered", value: "delivered" }
+                    ]
+                    const elapsedMap: Record<string, number> = {}
+                    const timestampMap: Record<string, string> = {}
+                    for (const entry of stopsData) {
+                      const s = entry.status?.toLowerCase()
+                      if (s) {
+                        if (typeof entry.elapsed_seconds === 'number') elapsedMap[s] = entry.elapsed_seconds
+                        if (entry.timestamp) timestampMap[s] = entry.timestamp
+                      }
+                    }
+                    const currentIdx = WORKFLOW.findIndex(s => s.value === trip.status?.toLowerCase())
+                    const totalTime = stopsData.reduce((sum: number, e: any) => sum + (e.elapsed_seconds || 0), 0)
+                    const stepsCompleted = stopsData.length
+                    const fmtElapsed = (secs: number | null | undefined) => {
+                      if (!secs || secs <= 0) return null
+                      if (secs < 60) return `${secs}s`
+                      if (secs < 3600) { const m = Math.floor(secs / 60); const s = secs % 60; return s > 0 ? `${m}m ${s}s` : `${m}m` }
+                      const h = Math.floor(secs / 3600); const m = Math.floor((secs % 3600) / 60); return m > 0 ? `${h}h ${m}m` : `${h}h`
+                    }
+                    const segColor = (secs: number) => secs > 1800 ? '#ef4444' : secs > 900 ? '#f97316' : '#10b981'
+                    const segLabel = (secs: number) => secs > 1800 ? 'Overdue' : secs > 900 ? 'Delayed' : 'On Time'
+                    // Build waypoints from WORKFLOW, only those present in stops_data
+                    const wpData = WORKFLOW.map((w, i) => ({
+                      ...w,
+                      completed: currentIdx > i,
+                      current: currentIdx === i,
+                      elapsed: elapsedMap[w.value] ?? null,
+                      timestamp: timestampMap[w.value] ?? null,
+                    })).filter(w => w.completed || w.current || w.elapsed !== null)
+                    return (
+                    <div className="bg-white rounded-xl border border-slate-200 p-5 mb-4">
+                      {/* Header */}
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <h3 className="text-lg font-bold text-slate-900">{clientDetails?.name || 'Unknown Client'}</h3>
+                          <p className="text-sm text-slate-500">{trip.origin} → {trip.destination}</p>
+                        </div>
+                        <Badge className={cn('px-3 py-1 text-xs font-semibold',
+                          trip.status === 'delivered' ? 'bg-emerald-100 text-emerald-800' :
+                          trip.status === 'on-trip' ? 'bg-blue-100 text-blue-800' :
+                          trip.status === 'pending' ? 'bg-amber-100 text-amber-800' :
+                          'bg-slate-100 text-slate-800'
+                        )}>{trip.status}</Badge>
                       </div>
-                      <span className={cn(
-                        "text-[11px] mt-2 font-medium text-center",
-                        isBottleneck ? "text-red-600" : hasData ? "text-slate-700" : "text-slate-400"
-                      )}>
-                        {stage.label}
-                      </span>
-                      {hasData && (
-                        <span className={cn(
-                          "text-[10px] mt-0.5 font-semibold",
-                          isBottleneck ? "text-red-500" : "text-slate-400"
-                        )}>
-                          {formatElapsed(stage.avgTime)}
-                        </span>
+                      {/* Summary Metrics */}
+                      <div className="grid grid-cols-4 gap-3 mb-5">
+                        <div className="bg-slate-50 rounded-lg p-3 text-center">
+                          <p className="text-[10px] uppercase text-slate-500 font-medium mb-1">Total Time</p>
+                          <p className="text-xl font-bold text-slate-900">{fmtElapsed(totalTime) || '—'}</p>
+                        </div>
+                        <div className="bg-slate-50 rounded-lg p-3 text-center">
+                          <p className="text-[10px] uppercase text-slate-500 font-medium mb-1">Steps Done</p>
+                          <p className="text-xl font-bold text-slate-900">{stepsCompleted}<span className="text-sm text-slate-400">/{WORKFLOW.length}</span></p>
+                        </div>
+                        <div className="bg-slate-50 rounded-lg p-3 text-center">
+                          <p className="text-[10px] uppercase text-slate-500 font-medium mb-1">Distance</p>
+                          <p className="text-xl font-bold text-slate-900">{trip.estimated_distance ? `${Math.round(trip.estimated_distance)}km` : '—'}</p>
+                        </div>
+                        <div className="bg-slate-50 rounded-lg p-3 text-center">
+                          <p className="text-[10px] uppercase text-slate-500 font-medium mb-1">Compliance</p>
+                          <p className={cn("text-xl font-bold", (trip.unauthorized_stops_count || 0) === 0 ? 'text-emerald-600' : 'text-red-600')}>
+                            {(trip.unauthorized_stops_count || 0) === 0 ? '100%' : '0%'}
+                          </p>
+                        </div>
+                      </div>
+                      {/* Progress Bar */}
+                      <div className="mb-5">
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Trip Progress</h4>
+                          <span className="text-xs text-slate-500">{Math.round(currentIdx >= 0 ? ((currentIdx + 1) / WORKFLOW.length) * 100 : 0)}% Complete</span>
+                        </div>
+                        <div className="relative">
+                          {/* Waypoint circles */}
+                          <div className="flex justify-between items-center">
+                            {wpData.map((wp, i) => (
+                              <div key={i} className="flex flex-col items-center relative z-10">
+                                <div className={cn(
+                                  "w-7 h-7 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all",
+                                  wp.current ? (
+                                    (wp.elapsed || 0) > 1800 ? "bg-red-500 border-red-600 text-white" :
+                                    (wp.elapsed || 0) > 900 ? "bg-orange-500 border-orange-600 text-white" :
+                                    "bg-blue-500 border-blue-700 text-white"
+                                  ) :
+                                  wp.completed ? (
+                                    (wp.elapsed || 0) > 1800 ? "bg-red-500 border-red-600 text-white" :
+                                    (wp.elapsed || 0) > 900 ? "bg-orange-500 border-orange-600 text-white" :
+                                    "bg-emerald-600 border-emerald-700 text-white"
+                                  ) :
+                                  "bg-slate-100 border-slate-200 text-slate-500"
+                                )}>
+                                  {wp.completed ? <CheckCircle className="w-3 h-3" /> : wp.current ? <div className="w-2 h-2 bg-white rounded-full animate-pulse" /> : i + 1}
+                                </div>
+                                <span className={cn("text-[10px] mt-1 text-center max-w-[52px] leading-tight font-medium",
+                                  wp.current ? (
+                                    (wp.elapsed || 0) > 1800 ? "text-red-600" : (wp.elapsed || 0) > 900 ? "text-orange-600" : "text-blue-600"
+                                  ) :
+                                  wp.completed ? (
+                                    (wp.elapsed || 0) > 1800 ? "text-red-600" : (wp.elapsed || 0) > 900 ? "text-orange-600" : "text-emerald-700"
+                                  ) : "text-slate-400"
+                                )}>{wp.label}</span>
+                                {wp.elapsed !== null && wp.elapsed > 0 && (
+                                  <span className="text-[9px] text-slate-400 mt-0.5 whitespace-nowrap font-medium">{fmtElapsed(wp.elapsed)}</span>
+                                )}
+                                {wp.current && wp.elapsed !== null && wp.elapsed > 0 && (
+                                  <span className={cn("text-[9px] mt-0.5 whitespace-nowrap font-semibold",
+                                    wp.elapsed > 1800 ? "text-red-500" : wp.elapsed > 900 ? "text-orange-500" : "text-blue-500"
+                                  )}>{fmtElapsed(wp.elapsed)}</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                          {/* Segmented bar */}
+                          <div className="absolute top-3.5 left-3.5 right-3.5 h-1.5 bg-slate-100 -z-0 rounded flex">
+                            {(() => {
+                              const completedWps = wpData.filter(w => (w.completed || w.current) && w.elapsed !== null && w.elapsed > 0)
+                              const totalElapsed = completedWps.reduce((s, w) => s + (w.elapsed || 0), 0)
+                              const pctPerWp = 100 / wpData.length
+                              const segs: { w: number; c: string }[] = []
+                              completedWps.forEach(wp => {
+                                segs.push({ w: totalElapsed > 0 ? ((wp.elapsed || 0) / totalElapsed) * (currentIdx + 1) / wpData.length * 100 : pctPerWp, c: segColor(wp.elapsed || 0) })
+                              })
+                              return segs.map((s, i) => <div key={i} className="h-full transition-all duration-500" style={{ width: `${Math.min(s.w, 100 - segs.slice(0, i).reduce((a, b) => a + b.w, 0))}%`, backgroundColor: s.c }} />)
+                            })()}
+                          </div>
+                        </div>
+                      </div>
+                      {/* Timing Breakdown */}
+                      <div>
+                        <h4 className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-3">Timing Breakdown</h4>
+                        <div className="space-y-2">
+                          {wpData.filter(w => w.elapsed !== null && w.elapsed > 0).map((wp, i) => (
+                            <div key={i} className="flex items-center gap-3">
+                              <div className={cn("w-2.5 h-2.5 rounded-full flex-shrink-0", `bg-[${segColor(wp.elapsed || 0)}]`)} style={{ backgroundColor: segColor(wp.elapsed || 0) }} />
+                              <span className="text-xs font-medium text-slate-700 w-24">{wp.label}</span>
+                              <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                <div className="h-full rounded-full transition-all duration-500" style={{ width: `${totalTime > 0 ? ((wp.elapsed || 0) / totalTime) * 100 : 0}%`, backgroundColor: segColor(wp.elapsed || 0) }} />
+                              </div>
+                              <span className="text-xs font-semibold text-slate-900 w-12 text-right">{fmtElapsed(wp.elapsed)}</span>
+                              <span className={cn("text-[10px] font-medium px-1.5 py-0.5 rounded", wp.elapsed > 1800 ? 'bg-red-50 text-red-600' : wp.elapsed > 900 ? 'bg-orange-50 text-orange-600' : 'bg-emerald-50 text-emerald-600')}>{segLabel(wp.elapsed)}</span>
+                            </div>
+                          ))}
+                          {wpData.filter(w => w.elapsed !== null && w.elapsed > 0).length === 0 && (
+                            <p className="text-xs text-slate-400">No timing data recorded yet</p>
+                          )}
+                        </div>
+                      </div>
+                      {/* Notes */}
+                      {trip.notes && (
+                        <div className="mt-4 p-3 bg-slate-50 rounded-lg border border-slate-100">
+                          <h5 className="text-[10px] uppercase text-slate-500 font-medium mb-1">Notes</h5>
+                          <p className="text-xs text-slate-700">{trip.notes}</p>
+                        </div>
                       )}
                     </div>
-                    {i < stats.funnel.length - 1 && (
-                      <div className="flex-1 flex items-center min-w-[30px] mx-1">
-                        <div className={cn(
-                          "h-0.5 w-full rounded",
-                          isBottleneck ? "bg-red-300" : "bg-slate-200"
-                        )} />
-                        {stage.avgTime > 0 && stats.funnel[i + 1]?.avgTime > 0 && (
-                          <span className="absolute text-[9px] text-slate-400 whitespace-nowrap mt-[-12px]">
-                            {formatElapsed(stage.avgTime)}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </React.Fragment>
-                )
-              })}
-            </div>
+                    )
+                  })()}
+                </CardContent>
+              )}
+            </Card>
+          )
+        })}
+        
+        {completedTrips.length === 0 && (
+          <div className="text-center py-12 text-slate-500">
+            <Truck className="w-12 h-12 mx-auto mb-4 opacity-50" />
+            <p className="text-lg font-medium mb-2">No trips found</p>
+            <p className="text-sm">Trip reports will appear here for active and completed trips</p>
           </div>
-
-          {/* Bottom Row: Timing + Compliance */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {/* Timing Performance Chart */}
-            <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-slate-900">Timing Performance</h3>
-                <div className="flex items-center gap-3 text-[10px]">
-                  <div className="flex items-center gap-1"><div className="w-2 h-2 rounded bg-blue-400" /> Scheduled</div>
-                  <div className="flex items-center gap-1"><div className="w-2 h-2 rounded bg-emerald-500" /> Actual</div>
-                </div>
-              </div>
-              <div className="h-[220px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={completedTrips.slice(0, 8).map(trip => {
-                    const scheduled = trip.pickup_locations?.[0]?.scheduled_time || trip.pickuplocations?.[0]?.scheduled_time
-                    const dropoff = trip.dropoff_locations?.[0]?.scheduled_time || trip.dropofflocations?.[0]?.scheduled_time
-                    const actual = trip.actual_start_time
-                    const actualEnd = trip.actual_end_time
-                    const name = (trip.trip_id || trip.id || '').slice(-8)
-                    return {
-                      name,
-                      Scheduled: scheduled && dropoff ? Math.round((new Date(dropoff).getTime() - new Date(scheduled).getTime()) / (1000 * 60)) : 0,
-                      Actual: actual && actualEnd ? Math.round((new Date(actualEnd).getTime() - new Date(actual).getTime()) / (1000 * 60)) : 0,
-                    }
-                  })}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="name" tick={{ fontSize: 10 }} stroke="#94a3b8" />
-                    <YAxis tick={{ fontSize: 10 }} stroke="#94a3b8" label={{ value: 'minutes', angle: -90, position: 'insideLeft', style: { fontSize: 10 } }} />
-                    <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} formatter={(value: number) => [`${value}m`]} />
-                    <Bar dataKey="Scheduled" fill="#93c5fd" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="Actual" fill="#10b981" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* Route Compliance */}
-            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-              <h3 className="text-sm font-semibold text-slate-900 mb-4">Route Compliance</h3>
-              <div className="flex flex-col items-center">
-                <div className="relative w-36 h-36">
-                  <svg className="w-full h-full -rotate-90" viewBox="0 0 120 120">
-                    <circle cx="60" cy="60" r="52" fill="none" stroke="#f1f5f9" strokeWidth="10" />
-                    <circle
-                      cx="60" cy="60" r="52" fill="none"
-                      stroke={stats.compliancePercent >= 90 ? '#10b981' : stats.compliancePercent >= 70 ? '#f59e0b' : '#ef4444'}
-                      strokeWidth="10"
-                      strokeLinecap="round"
-                      strokeDasharray={`${(stats.compliancePercent / 100) * 326.7} 326.7`}
-                    />
-                  </svg>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className={cn("text-3xl font-bold", stats.compliancePercent >= 90 ? 'text-emerald-600' : stats.compliancePercent >= 70 ? 'text-amber-600' : 'text-red-600')}>
-                      {stats.compliancePercent}%
-                    </span>
-                    <span className="text-[10px] text-slate-500">On Track</span>
-                  </div>
-                </div>
-                <div className="mt-4 w-full space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-emerald-500" /><span className="text-slate-600">Compliant</span></div>
-                    <span className="font-semibold text-emerald-700">{completedTrips.filter(t => (t.unauthorized_stops_count || 0) === 0).length}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-red-500" /><span className="text-slate-600">Violations</span></div>
-                    <span className="font-semibold text-red-700">{completedTrips.filter(t => (t.unauthorized_stops_count || 0) > 0).length}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
-
-      {!stats && !loading && (
-        <div className="text-center py-12 text-slate-500">
-          <Truck className="w-12 h-12 mx-auto mb-4 opacity-50" />
-          <p className="text-lg font-medium mb-2">No trip data available</p>
-          <p className="text-sm">Reports will appear once trips have status data</p>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }
