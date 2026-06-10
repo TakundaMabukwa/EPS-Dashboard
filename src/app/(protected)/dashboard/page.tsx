@@ -750,12 +750,13 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
   const [trips, setTrips] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [tripSearch, setTripSearch] = useState('')
+  const [driverLookup, setDriverLookup] = useState<Record<string, string>>({})
 
   useEffect(() => {
     async function fetchTrips() {
       try {
         const supabase = createClient()
-        const { data, error } = await supabase.from('trips').select('*, vehicle_assignments(*, drivers(*))')
+        const { data, error } = await supabase.from('trips').select('*')
         if (error) throw error
         setTrips(data || [])
         
@@ -767,6 +768,23 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
         if (recentUnauthorized && !currentUnauthorizedTrip) {
           setCurrentUnauthorizedTrip(recentUnauthorized)
           // Removed automatic modal opening
+        }
+
+        // Build driver lookup map for search
+        try {
+          const { data: assignments } = await supabase
+            .from('vehicle_assignments')
+            .select('trip_id, drivers(first_name, surname)')
+          if (assignments) {
+            const lookup: Record<string, string> = {}
+            for (const a of assignments) {
+              const name = a.drivers ? `${a.drivers.first_name || ''} ${a.drivers.surname || ''}`.trim() : ''
+              if (name && a.trip_id) lookup[a.trip_id] = name
+            }
+            setDriverLookup(lookup)
+          }
+        } catch {
+          // driver search won't work but trips still load
         }
       } catch (err) {
         console.error('Error fetching trips:', err)
@@ -799,11 +817,7 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
     .filter(trip => {
       if (!tripSearch.trim()) return true
       const q = tripSearch.toLowerCase()
-      const assignments = trip.vehicleassignments || trip.vehicle_assignments || []
-      const driverName = assignments?.[0]?.drivers
-        ? `${assignments[0].drivers.first_name || ''} ${assignments[0].drivers.surname || ''}`.trim()
-        : ''
-      const vehiclePlate = assignments?.[0]?.vehicle?.registration_number || assignments?.[0]?.vehicle?.name || ''
+      const driverName = driverLookup[trip.id] || driverLookup[trip.trip_id] || ''
       const pickupAddr = trip.pickup_locations?.[0]?.address || trip.pickuplocations?.[0]?.address || ''
       const dropoffAddr = trip.dropoff_locations?.[0]?.address || trip.dropofflocations?.[0]?.address || ''
       const clientDetails = typeof trip.clientdetails === 'string' ? JSON.parse(trip.clientdetails) : trip.clientdetails
@@ -812,7 +826,7 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
         trip.trip_id, trip.id, trip.ordernumber, trip.route,
         trip.origin, trip.destination, trip.cargo, trip.cargo_weight,
         trip.vehicle_type, trip.status,
-        driverName, vehiclePlate, pickupAddr, dropoffAddr, clientName
+        driverName, pickupAddr, dropoffAddr, clientName
       ].filter(Boolean).join(' ').toLowerCase()
       return searchable.includes(q)
     })
