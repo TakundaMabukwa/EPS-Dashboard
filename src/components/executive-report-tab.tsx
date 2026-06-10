@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Truck,
   Users,
@@ -15,6 +15,7 @@ import {
   ArrowRight,
   Calendar,
 } from "lucide-react";
+import { useGoogleMaps } from "@/hooks/use-google-maps";
 
 interface DriversCount {
   total: number;
@@ -37,15 +38,21 @@ export default function ExecutiveReportTab() {
   const [drivers, setDrivers] = useState<DriversCount>({ total: 0, available: 0, unavailable: 0 });
   const [trucks, setTrucks] = useState<TrucksCount>({ total: 0, booked: 0, available: 0 });
   const [revenue, setRevenue] = useState<RevenueData>({ months: [], total: 0 });
+  const [activeTrips, setActiveTrips] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<any>(null);
+  const markersRef = useRef<any[]>([]);
+  const { loaded: mapsLoaded } = useGoogleMaps();
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const [driversRes, revenueRes, trucksRes] = await Promise.all([
+        const [driversRes, revenueRes, trucksRes, tripsRes] = await Promise.all([
           fetch('/api/executive/drivers-count'),
           fetch('/api/executive/revenue'),
           fetch('/api/executive/trucks-count'),
+          fetch('/api/executive/active-trips'),
         ]);
 
         if (driversRes.ok) {
@@ -62,6 +69,11 @@ export default function ExecutiveReportTab() {
           const t = await trucksRes.json();
           setTrucks(t);
         }
+
+        if (tripsRes.ok) {
+          const t = await tripsRes.json();
+          setActiveTrips(t);
+        }
       } catch (err) {
         console.error('Failed to fetch executive data:', err);
       } finally {
@@ -71,6 +83,75 @@ export default function ExecutiveReportTab() {
 
     fetchData();
   }, []);
+
+  // Initialize Google Map
+  useEffect(() => {
+    if (!mapsLoaded || !mapContainerRef.current || mapRef.current) return;
+
+    const gm = (window as any).google.maps;
+    const map = new gm.Map(mapContainerRef.current, {
+      center: { lat: -30.5595, lng: 22.9375 },
+      zoom: 6,
+      mapTypeId: gm.MapTypeId.ROADMAP,
+      disableDefaultUI: true,
+      zoomControl: true,
+      mapTypeControl: false,
+      streetViewControl: false,
+    });
+    mapRef.current = map;
+  }, [mapsLoaded]);
+
+  // Add vehicle markers when trips load
+  useEffect(() => {
+    if (!mapRef.current || !activeTrips.length) return;
+    const gm = (window as any).google.maps;
+
+    // Clear existing markers
+    markersRef.current.forEach((m) => m.setMap(null));
+    markersRef.current = [];
+
+    const bounds = new gm.LatLngBounds();
+    let hasValidPosition = false;
+
+    activeTrips.forEach((trip) => {
+      const lat = parseFloat(trip.current_latitude);
+      const lng = parseFloat(trip.current_longitude);
+      if (isNaN(lat) || isNaN(lng)) return;
+
+      hasValidPosition = true;
+      const latLng = new gm.LatLng(lat, lng);
+      bounds.extend(latLng);
+
+      const marker = new gm.Marker({
+        position: latLng,
+        map: mapRef.current,
+        icon: {
+          path: gm.SymbolPath.CIRCLE,
+          scale: 8,
+          fillColor: "#2563eb",
+          fillOpacity: 1,
+          strokeColor: "#ffffff",
+          strokeWeight: 2,
+        },
+        title: trip.trip_id,
+      });
+
+      const info = new gm.InfoWindow({
+        content: `<div style="font-size:12px;padding:4px">
+          <strong>${trip.trip_id}</strong><br/>
+          ${trip.origin || ''} → ${trip.destination || ''}<br/>
+          <span style="color:#666">${trip.status}</span>
+        </div>`,
+      });
+
+      marker.addListener("click", () => info.open(mapRef.current, marker));
+      markersRef.current.push(marker);
+    });
+
+    if (hasValidPosition) {
+      mapRef.current.fitBounds(bounds, 50);
+    }
+  }, [activeTrips]);
 
   // Build monthly revenue bars for the chart
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -229,34 +310,17 @@ export default function ExecutiveReportTab() {
               </button>
             </div>
           </div>
-          <div className="relative h-52 bg-[#e8ecf1]">
-            <div className="absolute inset-0 opacity-20">
-              <svg width="100%" height="100%">
-                <defs>
-                  <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#94a3b8" strokeWidth="0.5" />
-                  </pattern>
-                </defs>
-                <rect width="100%" height="100%" fill="url(#grid)" />
-              </svg>
-            </div>
-            <div className="absolute left-[20%] top-[30%] h-3 w-3 rounded-full bg-blue-500 ring-2 ring-white" />
-            <div className="absolute left-[35%] top-[45%] h-3 w-3 rounded-full bg-blue-500 ring-2 ring-white" />
-            <div className="absolute left-[50%] top-[25%] h-3 w-3 rounded-full bg-blue-500 ring-2 ring-white" />
-            <div className="absolute left-[65%] top-[55%] h-3 w-3 rounded-full bg-blue-500 ring-2 ring-white" />
-            <div className="absolute left-[45%] top-[60%] h-4 w-4 rounded-full bg-blue-600 ring-2 ring-white" />
-            <div className="absolute left-[55%] top-[40%] h-3 w-3 rounded-full bg-blue-500 ring-2 ring-white" />
-            <div className="absolute left-[30%] top-[65%] h-3 w-3 rounded-full bg-blue-500 ring-2 ring-white" />
-            <div className="absolute left-3 top-3 rounded-lg bg-white/95 p-2.5 shadow-md">
-              <p className="mb-1.5 text-xs font-semibold text-gray-700">Active Alerts (2)</p>
-              <div className="flex items-center gap-1.5 text-xs text-gray-600">
-                <AlertTriangle className="h-3 w-3 text-amber-500" />
-                <span>Truck #452 - Engine Malfunction</span>
-              </div>
-              <div className="flex items-center gap-1.5 text-xs text-gray-600">
-                <AlertTriangle className="h-3 w-3 text-amber-500" />
-                <span>Truck #180 - Weather Delay</span>
-              </div>
+          <div className="relative h-52">
+            <div ref={mapContainerRef} className="absolute inset-0" />
+            {/* Alerts overlay */}
+            <div className="absolute left-3 top-3 z-10 rounded-lg bg-white/95 p-2.5 shadow-md">
+              <p className="mb-1.5 text-xs font-semibold text-gray-700">Active Vehicles ({activeTrips.length})</p>
+              {activeTrips.slice(0, 3).map((trip, i) => (
+                <div key={i} className="flex items-center gap-1.5 text-xs text-gray-600">
+                  <span className="h-2 w-2 rounded-full bg-blue-500" />
+                  <span>{trip.trip_id} - {trip.status}</span>
+                </div>
+              ))}
             </div>
           </div>
         </div>
