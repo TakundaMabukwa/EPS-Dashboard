@@ -17,6 +17,7 @@ import {
   CheckCircle,
 } from "lucide-react";
 import { useGoogleMaps } from "@/hooks/use-google-maps";
+import { RollingNumber } from "@/components/ui/rolling-number";
 
 interface DriversCount {
   total: number;
@@ -211,7 +212,7 @@ export default function ExecutiveReportTab() {
       </div>
 
       {/* Top Row - Stats */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-4 gap-4">
         {/* Trucks - live */}
         <div className="rounded-xl border border-gray-200 bg-white p-4">
           <div className="mb-3 flex items-center gap-2">
@@ -222,7 +223,7 @@ export default function ExecutiveReportTab() {
             <div className="flex items-center justify-between">
               <span className="text-sm text-gray-600">Total Fleet</span>
               <span className="text-sm font-semibold text-gray-900">
-                {loading ? '--' : trucks.total}
+                {loading ? '--' : <RollingNumber value={trucks.total} />}
               </span>
             </div>
             <div className="flex items-center justify-between">
@@ -231,7 +232,7 @@ export default function ExecutiveReportTab() {
                 Booked
               </span>
               <span className="text-sm font-semibold text-gray-900">
-                {loading ? '--' : trucks.booked}
+                {loading ? '--' : <RollingNumber value={trucks.booked} />}
               </span>
             </div>
             <div className="flex items-center justify-between">
@@ -240,7 +241,7 @@ export default function ExecutiveReportTab() {
                 Available
               </span>
               <span className="text-sm font-semibold text-gray-900">
-                {loading ? '--' : trucks.available}
+                {loading ? '--' : <RollingNumber value={trucks.available} />}
               </span>
             </div>
           </div>
@@ -254,7 +255,7 @@ export default function ExecutiveReportTab() {
           </div>
           <div className="mb-3">
             <span className="text-4xl font-bold text-gray-900">
-              {loading ? '--' : drivers.available}
+              {loading ? '--' : <RollingNumber value={drivers.available} />}
             </span>
             <span className="ml-2 text-sm text-gray-500">Available Today</span>
           </div>
@@ -263,6 +264,47 @@ export default function ExecutiveReportTab() {
             <span>
               {loading ? '--' : drivers.unavailable} Drivers Unavailable (On Leave/Sick)
             </span>
+          </div>
+        </div>
+
+        {/* Driver Acceptance Rate */}
+        <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <CheckCircle className="h-4 w-4 text-gray-500" />
+            <span className="text-sm font-medium text-gray-700">Driver Acceptance Rate</span>
+          </div>
+          <div className="mb-3">
+            <span className="text-4xl font-bold text-gray-900">
+              {loading ? '--' : <RollingNumber value={acceptance.rate} suffix="%" />}
+            </span>
+          </div>
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5 text-xs text-gray-600">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                Accepted
+              </span>
+              <span className="text-xs font-semibold text-gray-900">
+                {loading ? '--' : <RollingNumber value={acceptance.accepted} />}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5 text-xs text-gray-600">
+                <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                Not Accepted
+              </span>
+              <span className="text-xs font-semibold text-gray-900">
+                {loading ? '--' : <RollingNumber value={acceptance.notAccepted} />}
+              </span>
+            </div>
+          </div>
+          <div className="mt-2">
+            <div className="h-1.5 w-full rounded-full bg-gray-200">
+              <div
+                className="h-1.5 rounded-full bg-emerald-500 transition-all duration-1000"
+                style={{ width: `${acceptance.rate}%` }}
+              />
+            </div>
           </div>
         </div>
 
@@ -276,7 +318,7 @@ export default function ExecutiveReportTab() {
           </div>
           <div className="mb-1">
             <span className="text-3xl font-bold text-gray-900">
-              {loading ? '--' : `R${fmt(revenue.total)}`}
+              {loading ? '--' : <><span className="text-lg">R</span><RollingNumber value={revenue.total} /></>}
             </span>
           </div>
           <div className="mb-3 flex items-center gap-1 text-xs text-emerald-600">
@@ -403,7 +445,7 @@ export default function ExecutiveReportTab() {
       </div>
 
       {/* Bottom Row */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-3 gap-4">
         {/* Fuel Management */}
         <div className="rounded-xl border border-gray-200 bg-white p-4">
           <div className="mb-3 flex items-center gap-2">
@@ -456,53 +498,6 @@ export default function ExecutiveReportTab() {
               </div>
               <div className="h-2 w-full rounded-full bg-gray-200">
                 <div className="h-2 rounded-full bg-red-500" style={{ width: "92%" }} />
-          </div>
-        </div>
-
-        {/* Driver Acceptance Rate */}
-        <div className="rounded-xl border border-gray-200 bg-white p-4">
-          <div className="mb-3 flex items-center gap-2">
-            <CheckCircle className="h-4 w-4 text-gray-500" />
-            <span className="text-sm font-medium text-gray-700">Driver Acceptance Rate</span>
-          </div>
-          <div className="mb-3">
-            <span className="text-4xl font-bold text-gray-900">
-              {loading ? '--' : `${acceptance.rate}%`}
-            </span>
-          </div>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2 text-sm text-gray-600">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                Accepted
-              </span>
-              <span className="text-sm font-semibold text-gray-900">
-                {loading ? '--' : acceptance.accepted}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2 text-sm text-gray-600">
-                <span className="h-2 w-2 rounded-full bg-red-500" />
-                Not Accepted
-              </span>
-              <span className="text-sm font-semibold text-gray-900">
-                {loading ? '--' : acceptance.notAccepted}
-              </span>
-            </div>
-          </div>
-          <div className="mt-3">
-            <div className="mb-1.5 flex items-center justify-between">
-              <span className="text-xs text-gray-500">Total Trips</span>
-              <span className="text-xs font-medium text-gray-700">
-                {loading ? '--' : acceptance.total}
-              </span>
-            </div>
-            <div className="h-2 w-full rounded-full bg-gray-200">
-              <div
-                className="h-2 rounded-full bg-emerald-500"
-                style={{ width: `${acceptance.rate}%` }}
-              />
-            </div>
           </div>
         </div>
       </div>
