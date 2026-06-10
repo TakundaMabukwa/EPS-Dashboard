@@ -14,6 +14,7 @@ import {
   TrendingUp,
   ArrowRight,
   Calendar,
+  CheckCircle,
 } from "lucide-react";
 import { useGoogleMaps } from "@/hooks/use-google-maps";
 
