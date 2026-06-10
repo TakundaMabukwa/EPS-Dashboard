@@ -1244,7 +1244,7 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
                   return segments.map((seg, i) => (
                     <div key={i} className="h-full transition-all duration-500 relative group" style={{ width: `${seg.width}%`, backgroundColor: seg.color }}>
                       {seg.elapsed > 0 && (
-                        <span className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-[9px] text-gray-400 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
+                        <span className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-[9px] text-gray-400 whitespace-nowrap">
                           {formatElapsed(seg.elapsed)}
                         </span>
                       )}
