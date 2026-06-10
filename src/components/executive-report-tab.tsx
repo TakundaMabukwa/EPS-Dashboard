@@ -157,7 +157,7 @@ export default function ExecutiveReportTab() {
           </div>
           <div className="mb-1">
             <span className="text-3xl font-bold text-gray-900">
-              {loading ? '--' : `$${fmt(revenue.total)}`}
+              {loading ? '--' : `R${fmt(revenue.total)}`}
             </span>
           </div>
           <div className="mb-3 flex items-center gap-1 text-xs text-emerald-600">
@@ -176,7 +176,7 @@ export default function ExecutiveReportTab() {
                     style={{ height: `${h}px` }}
                   />
                   <div className="pointer-events-none absolute bottom-full left-1/2 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-1.5 py-0.5 text-[10px] text-white group-hover:block">
-                    ${fmt(val)}
+                    R{fmt(val)}
                   </div>
                 </div>
               );
@@ -317,7 +317,7 @@ export default function ExecutiveReportTab() {
             <div>
               <div className="mb-1.5 flex items-center justify-between">
                 <span className="text-xs text-gray-500">Planned CPK</span>
-                <span className="text-sm font-semibold text-gray-900">$1.15</span>
+                <span className="text-sm font-semibold text-gray-900">R1.15</span>
               </div>
               <div className="h-2 w-full rounded-full bg-gray-200">
                 <div className="h-2 rounded-full bg-gray-700" style={{ width: "85%" }} />
@@ -326,7 +326,7 @@ export default function ExecutiveReportTab() {
             <div>
               <div className="mb-1.5 flex items-center justify-between">
                 <span className="text-xs text-gray-500">Actual CPK</span>
-                <span className="text-sm font-semibold text-gray-900">$1.22</span>
+                <span className="text-sm font-semibold text-gray-900">R1.22</span>
               </div>
               <div className="h-2 w-full rounded-full bg-gray-200">
                 <div className="h-2 rounded-full bg-red-500" style={{ width: "92%" }} />
