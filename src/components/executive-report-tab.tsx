@@ -22,6 +22,12 @@ interface DriversCount {
   unavailable: number;
 }
 
+interface TrucksCount {
+  total: number;
+  booked: number;
+  available: number;
+}
+
 interface RevenueData {
   months: { month: string; total_revenue: number; trip_count: number }[];
   total: number;
@@ -29,15 +35,17 @@ interface RevenueData {
 
 export default function ExecutiveReportTab() {
   const [drivers, setDrivers] = useState<DriversCount>({ total: 0, available: 0, unavailable: 0 });
+  const [trucks, setTrucks] = useState<TrucksCount>({ total: 0, booked: 0, available: 0 });
   const [revenue, setRevenue] = useState<RevenueData>({ months: [], total: 0 });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const [driversRes, revenueRes] = await Promise.all([
+        const [driversRes, revenueRes, trucksRes] = await Promise.all([
           fetch('/api/executive/drivers-count'),
           fetch('/api/executive/revenue'),
+          fetch('/api/executive/trucks-count'),
         ]);
 
         if (driversRes.ok) {
@@ -48,6 +56,11 @@ export default function ExecutiveReportTab() {
         if (revenueRes.ok) {
           const r = await revenueRes.json();
           setRevenue(r);
+        }
+
+        if (trucksRes.ok) {
+          const t = await trucksRes.json();
+          setTrucks(t);
         }
       } catch (err) {
         console.error('Failed to fetch executive data:', err);
@@ -98,7 +111,7 @@ export default function ExecutiveReportTab() {
 
       {/* Top Row - Stats */}
       <div className="grid grid-cols-3 gap-4">
-        {/* Trucks - placeholder for now */}
+        {/* Trucks - live */}
         <div className="rounded-xl border border-gray-200 bg-white p-4">
           <div className="mb-3 flex items-center gap-2">
             <Truck className="h-4 w-4 text-gray-500" />
@@ -107,21 +120,27 @@ export default function ExecutiveReportTab() {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-sm text-gray-600">Total Fleet</span>
-              <span className="text-sm font-semibold text-gray-900">--</span>
+              <span className="text-sm font-semibold text-gray-900">
+                {loading ? '--' : trucks.total}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-2 text-sm text-gray-600">
+                <span className="h-2 w-2 rounded-full bg-blue-500" />
+                Booked
+              </span>
+              <span className="text-sm font-semibold text-gray-900">
+                {loading ? '--' : trucks.booked}
+              </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-2 text-sm text-gray-600">
                 <span className="h-2 w-2 rounded-full bg-emerald-500" />
                 Available
               </span>
-              <span className="text-sm font-semibold text-gray-900">--</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2 text-sm text-gray-600">
-                <span className="h-2 w-2 rounded-full bg-red-500" />
-                Unavailable
+              <span className="text-sm font-semibold text-gray-900">
+                {loading ? '--' : trucks.available}
               </span>
-              <span className="text-sm font-semibold text-gray-900">--</span>
             </div>
           </div>
         </div>
