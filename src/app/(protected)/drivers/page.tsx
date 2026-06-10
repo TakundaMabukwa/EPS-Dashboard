@@ -48,6 +48,7 @@ import { toast } from 'sonner'
 import DriverDashboardClean from '@/components/driver-dashboard-clean'
 import { DashboardProvider } from '@/context/dashboard-context'
 import DriverPerformanceDashboard from '@/components/dashboard/DriverPerformanceDashboard'
+import ExecDashTab from '@/components/exec-dash-tab'
 import { MaterialCharts } from '@/components/material-charts'
 import { epsApi, BiWeeklyCategory, DailyStats } from '@/lib/eps-api'
 
@@ -579,6 +580,18 @@ export default function Drivers() {
               <Settings className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Monitoring Config</span>
               <span className="sm:hidden">Config</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('exec-dash')}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-medium transition-colors ${
+                activeTab === 'exec-dash'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-muted/80'
+              }`}
+            >
+              <BarChart3 className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Exec Dash</span>
+              <span className="sm:hidden">Exec</span>
             </button>
           </div>
         </div>
@@ -2559,6 +2572,10 @@ export default function Drivers() {
                 </table>
               </div>
             </div>
+          )}
+
+          {activeTab === 'exec-dash' && (
+            <ExecDashTab />
           )}
       </main>
     </div>
