@@ -29,6 +29,7 @@ import {
   Bell,
   Sun,
   Moon,
+  BarChart3,
 } from "lucide-react";
 import GlobalProvider from "@/context/global-context/provider";
 import { PAGES, Permission, hasPermission } from "@/lib/permissions/permissions";
@@ -87,6 +88,7 @@ function DateTimeDisplay() {
 const roleNavigation = {
   admin: [
     { name: "Dashboard", href: "/dashboard", Icon: <ChartBar /> },
+    { name: "Executive Report", href: "/executive-report", Icon: <BarChart3 /> },
     { name: "Notifications", href: "/video-alerts", Icon: <Bell /> },
     { name: "Fleet Jobs", href: "/jobsFleet", Icon: <Briefcase /> },
     { name: "Load Plan", href: "/load-plan", Icon: <Route /> },
@@ -214,6 +216,7 @@ export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
     if (userPermissions.length > 0) {
       const pageToNavMap = {
         dashboard: { name: "Dashboard", href: "/dashboard", Icon: <ChartBar /> },
+        executiveReport: { name: "Executive Report", href: "/executive-report", Icon: <BarChart3 /> },
         fleetJobs: { name: "Fleet Jobs", href: "/jobsFleet", Icon: <Briefcase /> },
         loadPlan: { name: "Load Plan", href: "/load-plan", Icon: <Route /> },
         clients: { name: "Clients", href: "/clients", Icon: <Building2 /> },

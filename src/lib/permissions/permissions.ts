@@ -1,6 +1,7 @@
 // Permission system configuration
 export const PAGES = {
   dashboard: { name: 'Dashboard', path: '/dashboard', description: 'Main overview page with trip management and routing' },
+  executiveReport: { name: 'Executive Report', path: '/executive-report', description: 'Fleet control overview and operational status' },
   fleetJobs: { name: 'Fleet Jobs', path: '/jobsFleet', description: 'Manage and approve fleet job requests' },
   loadPlan: { name: 'Load Plan', path: '/load-plan', description: 'Plan and schedule vehicle loads and routes' },
   fuel: { name: 'Fuel Can Bus', path: '/fuel', description: 'Monitor fuel consumption and can bus data' },
@@ -33,6 +34,7 @@ export interface Permission {
 export const DEFAULT_ROLE_PERMISSIONS: Record<string, Permission[]> = {
   admin: [
     { page: 'dashboard', actions: ['view', 'create', 'edit', 'delete'] },
+    { page: 'executiveReport', actions: ['view', 'create', 'edit', 'delete'] },
     { page: 'fleetJobs', actions: ['view', 'create', 'edit', 'delete'] },
     { page: 'loadPlan', actions: ['view', 'create', 'edit', 'delete'] },
     { page: 'fuel', actions: ['view', 'create', 'edit', 'delete'] },
