@@ -99,6 +99,11 @@ export default function ExecutiveReportTab() {
       streetViewControl: false,
     });
     mapRef.current = map;
+
+    // Trigger resize after init
+    setTimeout(() => {
+      gm.event.trigger(map, 'resize');
+    }, 100);
   }, [mapsLoaded]);
 
   // Add vehicle markers when trips load
@@ -310,8 +315,13 @@ export default function ExecutiveReportTab() {
               </button>
             </div>
           </div>
-          <div className="relative h-52">
-            <div ref={mapContainerRef} className="absolute inset-0" />
+          <div className="relative" style={{ height: '320px' }}>
+            {!mapsLoaded && (
+              <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
+                <p className="text-sm text-gray-500">Loading map...</p>
+              </div>
+            )}
+            <div ref={mapContainerRef} className="absolute inset-0" style={{ height: '100%', width: '100%' }} />
             {/* Alerts overlay */}
             <div className="absolute left-3 top-3 z-10 rounded-lg bg-white/95 p-2.5 shadow-md">
               <p className="mb-1.5 text-xs font-semibold text-gray-700">Active Vehicles ({activeTrips.length})</p>
