@@ -119,9 +119,9 @@ export default function ExecutiveReportTab() {
     let hasValidPosition = false;
 
     activeTrips.forEach((trip) => {
-      const lat = parseFloat(trip.current_latitude);
-      const lng = parseFloat(trip.current_longitude);
-      if (isNaN(lat) || isNaN(lng)) return;
+      const lat = trip.latitude;
+      const lng = trip.longitude;
+      if (!lat || !lng || isNaN(lat) || isNaN(lng)) return;
 
       hasValidPosition = true;
       const latLng = new gm.LatLng(lat, lng);
@@ -143,9 +143,9 @@ export default function ExecutiveReportTab() {
 
       const info = new gm.InfoWindow({
         content: `<div style="font-size:12px;padding:4px">
-          <strong>${trip.trip_id}</strong><br/>
-          ${trip.origin || ''} → ${trip.destination || ''}<br/>
-          <span style="color:#666">${trip.status}</span>
+          <strong>${trip.registration}</strong><br/>
+          ${trip.origin?.split(',')[0] || ''} → ${trip.destination?.split(',')[0] || ''}<br/>
+          <span style="color:#666">${trip.driver_name || 'No driver'} • ${trip.speed > 0 ? Math.round(trip.speed) + ' km/h' : 'Idle'}</span>
         </div>`,
       });
 
@@ -327,8 +327,8 @@ export default function ExecutiveReportTab() {
               <p className="mb-1.5 text-xs font-semibold text-gray-700">Active Vehicles ({activeTrips.length})</p>
               {activeTrips.slice(0, 3).map((trip, i) => (
                 <div key={i} className="flex items-center gap-1.5 text-xs text-gray-600">
-                  <span className="h-2 w-2 rounded-full bg-blue-500" />
-                  <span>{trip.trip_id} - {trip.status}</span>
+                  <span className={`h-2 w-2 rounded-full ${(trip.speed || 0) > 0 ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                  <span>{trip.registration} - {trip.speed > 0 ? `${Math.round(trip.speed)} km/h` : 'Idle'}</span>
                 </div>
               ))}
             </div>
@@ -342,24 +342,48 @@ export default function ExecutiveReportTab() {
               <Clock className="h-4 w-4 text-gray-500" />
               <span className="text-sm font-medium text-gray-700">Availability Forecast</span>
             </div>
-            <p className="mt-0.5 text-xs text-gray-500">Fleet freeing up within next 5 hours</p>
+            <p className="mt-0.5 text-xs text-gray-500">Vehicles sorted by nearest to destination</p>
           </div>
-          <div className="flex-1 space-y-3 p-4">
-            {[
-              { route: "Route AX-901", vehicle: "Trailer / Freightliner", driver: "Driver S. Miller", time: "45m" },
-              { route: "Route BD-214", vehicle: "Trailer / Refrigerated", driver: "Driver J. Doe", time: "2h 15m" },
-              { route: "Route ZX-102", vehicle: "Trailer / Flatbed", driver: "Driver B. Chan", time: "4h 50m" },
-            ].map((item, i) => (
-              <div key={i} className="flex items-center justify-between">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-900">{item.route}</p>
-                  <p className="truncate text-xs text-gray-500">{item.vehicle} • {item.driver}</p>
-                </div>
-                <span className="ml-2 shrink-0 rounded bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
-                  {item.time}
-                </span>
-              </div>
-            ))}
+          <div className="flex-1 space-y-3 p-4 overflow-y-auto" style={{ maxHeight: '240px' }}>
+            {activeTrips
+              .filter((t) => t.latitude && t.longitude)
+              .sort((a, b) => {
+                // Sort by speed (moving vehicles first), then by gps_time (most recent first)
+                if (a.speed > 0 && b.speed === 0) return -1;
+                if (a.speed === 0 && b.speed > 0) return 1;
+                return new Date(b.gps_time).getTime() - new Date(a.gps_time).getTime();
+              })
+              .slice(0, 5)
+              .map((trip, i) => {
+                const speed = trip.speed || 0;
+                const isMoving = speed > 0;
+                const timeSinceUpdate = trip.gps_time
+                  ? Math.round((Date.now() - new Date(trip.gps_time).getTime()) / 60000)
+                  : null;
+                return (
+                  <div key={i} className="flex items-center justify-between">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900">{trip.registration}</p>
+                      <p className="truncate text-xs text-gray-500">
+                        {trip.origin?.split(',')[0] || ''} → {trip.destination?.split(',')[0] || ''}
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        {trip.driver_name || 'No driver'} • {isMoving ? `${Math.round(speed)} km/h` : 'Stationary'}
+                      </p>
+                    </div>
+                    <span className={`ml-2 shrink-0 rounded px-2 py-0.5 text-xs font-medium ${
+                      isMoving
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : 'bg-amber-50 text-amber-700'
+                    }`}>
+                      {isMoving ? 'En route' : timeSinceUpdate !== null ? `${timeSinceUpdate}m ago` : 'Idle'}
+                    </span>
+                  </div>
+                );
+              })}
+            {activeTrips.filter((t) => t.latitude && t.longitude).length === 0 && (
+              <p className="text-sm text-gray-400">No vehicles with live position data</p>
+            )}
           </div>
           <div className="border-t border-gray-100 px-4 py-2.5">
             <button className="flex items-center gap-1 text-xs font-medium text-gray-600 hover:text-gray-900">
