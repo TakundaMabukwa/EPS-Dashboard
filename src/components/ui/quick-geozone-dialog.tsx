@@ -105,6 +105,27 @@ export function QuickGeozoneDialog({ open, onOpenChange, client, onSaved }: Quic
     return cleanupMap
   }, [open, mapsLoaded, client])
 
+  // Auto-fill client address when dialog opens and geocode to center map
+  useEffect(() => {
+    if (!open || !mapsLoaded || !client?.address) return
+    if (centerPoint) return
+    if (!geocoderRef.current) geocoderRef.current = new google.maps.Geocoder()
+    const timer = setTimeout(async () => {
+      setLocationQuery(client.address)
+      try {
+        const result = await geocoderRef.current!.geocode({ address: client.address, region: 'za' })
+        const res = result.results[0]
+        if (res) {
+          const lat = Number(res.geometry.location.lat().toFixed(6))
+          const lng = Number(res.geometry.location.lng().toFixed(6))
+          setCenterPoint({ lng, lat })
+          setDrawMode("polygon")
+        }
+      } catch { /* silent */ }
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [open, mapsLoaded, client?.address])
+
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapsLoaded) return
