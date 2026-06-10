@@ -750,8 +750,6 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
   const [trips, setTrips] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [tripSearch, setTripSearch] = useState('')
-  const [driverLookup, setDriverLookup] = useState<Record<string, string>>({})
-  const [vehicleLookup, setVehicleLookup] = useState<Record<string, string>>({})
 
   useEffect(() => {
     async function fetchTrips() {
@@ -769,29 +767,6 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
         if (recentUnauthorized && !currentUnauthorizedTrip) {
           setCurrentUnauthorizedTrip(recentUnauthorized)
           // Removed automatic modal opening
-        }
-
-        // Build driver and vehicle lookup maps for search
-        try {
-          const { data: assignments } = await supabase
-            .from('vehicle_assignments')
-            .select('trip_id, drivers(first_name, surname), vehicle(registration_number, name)')
-          if (assignments) {
-            const driverLookup: Record<string, string> = {}
-            const vehicleLookup: Record<string, string> = {}
-            for (const a of assignments) {
-              const driverArr = a.drivers
-              const driver = Array.isArray(driverArr) ? driverArr[0] : driverArr
-              const driverName = driver ? `${driver.first_name || ''} ${driver.surname || ''}`.trim() : ''
-              if (driverName && a.trip_id) driverLookup[a.trip_id] = driverName
-              const vehiclePlate = a.vehicle?.registration_number || a.vehicle?.name || ''
-              if (vehiclePlate && a.trip_id) vehicleLookup[a.trip_id] = vehiclePlate
-            }
-            setDriverLookup(driverLookup)
-            setVehicleLookup(vehicleLookup)
-          }
-        } catch {
-          // search won't work but trips still load
         }
       } catch (err) {
         console.error('Error fetching trips:', err)
@@ -824,8 +799,12 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
     .filter(trip => {
       if (!tripSearch.trim()) return true
       const q = tripSearch.toLowerCase()
-      const driverName = driverLookup[trip.id] || driverLookup[trip.trip_id] || ''
-      const vehiclePlate = vehicleLookup[trip.id] || vehicleLookup[trip.trip_id] || ''
+      const assignments = trip.vehicleassignments || trip.vehicle_assignments || []
+      const firstAssignment = Array.isArray(assignments) ? assignments[0] : assignments
+      const driverArr = firstAssignment?.drivers
+      const driver = Array.isArray(driverArr) ? driverArr[0] : driverArr
+      const driverName = driver ? `${driver.first_name || ''} ${driver.surname || ''}`.trim() : ''
+      const vehiclePlate = firstAssignment?.vehicle?.name || firstAssignment?.vehicle?.registration_number || ''
       const pickupAddr = trip.pickup_locations?.[0]?.address || trip.pickuplocations?.[0]?.address || ''
       const dropoffAddr = trip.dropoff_locations?.[0]?.address || trip.dropofflocations?.[0]?.address || ''
       const clientDetails = typeof trip.clientdetails === 'string' ? JSON.parse(trip.clientdetails) : trip.clientdetails
