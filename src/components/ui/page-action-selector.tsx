@@ -60,9 +60,12 @@ export function PageActionSelector({ initialPermissions = [], onChange, readOnly
 
   const updatePagePermissions = (page: PageKey, actions: ActionKey[]) => {
     if (readOnly) return
-    const newPermissions = permissions.filter(p => p.page !== page)
-    if (actions.length > 0) {
-      newPermissions.push({ page, actions })
+    const exists = permissions.some(p => p.page === page)
+    let newPermissions
+    if (exists) {
+      newPermissions = permissions.map(p => p.page === page ? { ...p, actions } : p).filter(p => p.actions.length > 0)
+    } else {
+      newPermissions = [...permissions, { page, actions }]
     }
     setPermissions(newPermissions)
     onChange?.(newPermissions)

@@ -10,6 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { SecureButton } from "@/components/SecureButton";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -39,6 +40,7 @@ import {
   Video,
   Moon,
   Sun,
+  Search,
 } from "lucide-react";
 import { getDashboardStats } from "@/lib/stats/dashboard";
 import { createClient } from "@/lib/supabase/client";
@@ -747,6 +749,7 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
 function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNoteText, setNoteOpen, setAvailableDrivers, setCurrentTripForChange, setChangeDriverOpen, refreshTrigger, setRefreshTrigger, setPickupTimeOpen, setDropoffTimeOpen, setCurrentTripForTime, setTimeType, setSelectedTime, currentUnauthorizedTrip, setCurrentUnauthorizedTrip, setUnauthorizedStopModalOpen, loadingPhotos, setLoadingPhotos, setCurrentTripPhotos, setPhotosModalOpen, setCurrentTripAlerts, setAlertsModalOpen, setCurrentTripForClose, setCloseReason, setCloseTripOpen, setCurrentTripForEdit, setEditTripOpen, setCurrentTripForApproval, setApprovalModalOpen, isVisible = true }: any) {
   const [trips, setTrips] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [tripSearch, setTripSearch] = useState('')
 
   useEffect(() => {
     async function fetchTrips() {
@@ -793,6 +796,26 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
   // Sort trips to put unauthorized stops at the top
   const tripsList = trips
     .filter(trip => trip.status?.toLowerCase() !== 'delivered' && trip.status?.toLowerCase() !== 'completed')
+    .filter(trip => {
+      if (!tripSearch.trim()) return true
+      const q = tripSearch.toLowerCase()
+      const assignments = trip.vehicleassignments || trip.vehicle_assignments || []
+      const driverName = assignments?.[0]?.drivers
+        ? `${assignments[0].drivers.first_name || ''} ${assignments[0].drivers.surname || ''}`.trim()
+        : ''
+      const vehiclePlate = assignments?.[0]?.vehicle?.registration_number || assignments?.[0]?.vehicle?.name || ''
+      const pickupAddr = trip.pickup_locations?.[0]?.address || trip.pickuplocations?.[0]?.address || ''
+      const dropoffAddr = trip.dropoff_locations?.[0]?.address || trip.dropofflocations?.[0]?.address || ''
+      const clientDetails = typeof trip.clientdetails === 'string' ? JSON.parse(trip.clientdetails) : trip.clientdetails
+      const clientName = clientDetails?.name || trip.selectedclient || trip.selected_client || ''
+      const searchable = [
+        trip.trip_id, trip.id, trip.ordernumber, trip.route,
+        trip.origin, trip.destination, trip.cargo, trip.cargo_weight,
+        trip.vehicle_type, trip.status,
+        driverName, vehiclePlate, pickupAddr, dropoffAddr, clientName
+      ].filter(Boolean).join(' ').toLowerCase()
+      return searchable.includes(q)
+    })
     .sort((a, b) => {
       // First sort by unauthorized stops (descending)
       const aUnauthorized = a.unauthorized_stops_count || 0
@@ -896,7 +919,30 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search by trip ID, order, driver, vehicle, destination, client..."
+          value={tripSearch}
+          onChange={(e) => setTripSearch(e.target.value)}
+          className="pl-10 h-10"
+        />
+        {tripSearch && (
+          <button
+            onClick={() => setTripSearch('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+      {tripSearch && (
+        <div className="text-sm text-muted-foreground">
+          {tripsList.length} trip{tripsList.length !== 1 ? 's' : ''} found
+        </div>
+      )}
+      <div className="space-y-6">
       {tripsList.map((trip: any) => {
         const waypoints = getWaypointsWithStops(trip)
         const progress = getTripProgress(trip.status)
@@ -1272,6 +1318,7 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
           </div>
         )
       })}
+      </div>
     </div>
   )
 }

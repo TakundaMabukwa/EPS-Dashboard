@@ -88,6 +88,7 @@ export default function SettingsPage() {
     const [isCreatingUser, setIsCreatingUser] = useState(false);
     const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
     const [confirmDialog, setConfirmDialog] = useState<{title: string, message: string, onConfirm: () => void} | null>(null);
+    const [isSavingPermissions, setIsSavingPermissions] = useState(false);
     
     // Add user form states
     const [newUserEmail, setNewUserEmail] = useState("");
@@ -1178,6 +1179,7 @@ export default function SettingsPage() {
                                 <Button 
                                     onClick={async () => {
                                         if (!editingUser) return;
+                                        setIsSavingPermissions(true);
                                         try {
                                             const { error } = await supabase
                                                 .from('users')
@@ -1186,22 +1188,32 @@ export default function SettingsPage() {
                                             
                                             if (error) {
                                                 toast.error('Failed to update permissions: ' + error.message);
+                                                setIsSavingPermissions(false);
                                                 return;
                                             }
                                             
                                             toast.success('Permissions updated successfully');
                                             await fetchUsers();
+                                            setIsSavingPermissions(false);
                                             setIsPermissionOpen(false);
                                             setEditingUser(null);
                                             setUserPermissions([]);
                                         } catch (err) {
                                             console.error('Error updating permissions:', err);
                                             toast.error('Failed to update permissions');
+                                        } finally {
+                                            setIsSavingPermissions(false);
                                         }
                                     }}
+                                    disabled={isSavingPermissions}
                                     className="bg-blue-600 hover:bg-blue-700"
                                 >
-                                    Save Permissions
+                                    {isSavingPermissions ? (
+                                        <>
+                                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                            Saving...
+                                        </>
+                                    ) : 'Save Permissions'}
                                 </Button>
                             </div>
                         </div>
