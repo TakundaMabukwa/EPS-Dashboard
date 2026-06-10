@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import {
   Truck,
   Users,
@@ -13,35 +14,71 @@ import {
   TrendingUp,
   ArrowRight,
   Calendar,
-  TrendingDown,
 } from "lucide-react";
 
-const mockData = {
-  trucks: { booked: 24, available: 12, unavailable: 4 },
-  drivers: { available: 38, unavailable: 6 },
-  totalValue: { value: 1248300, change: 12.4 },
-  enRouteAlerts: [
-    { id: 1, truck: "Truck #452", issue: "Engine Malfunction" },
-    { id: 2, truck: "Truck #180", issue: "Weather Delay" },
-  ],
-  availabilityForecast: [
-    { route: "Route AX-901", vehicle: "Trailer / Freightliner", driver: "Driver S. Miller", time: "45m" },
-    { route: "Route BD-214", vehicle: "Trailer / Refrigerated", driver: "Driver J. Doe", time: "2h 15m" },
-    { route: "Route ZX-102", vehicle: "Trailer / Flatbed", driver: "Driver B. Chan", time: "4h 50m" },
-  ],
-  fuel: { totalUsed: 4500, refillsToday: 18, efficiency: 2.4 },
-  cpk: { planned: 1.15, actual: 1.22, warning: "Operational costs are 6.1% above projections this period" },
-  recentActivity: [
-    { type: "cancelled", trip: "Trip #TR-882 Cancelled", route: "Chicago → NY", detail: "Warehouse Lockout (15 min delay)", time: "12:12 PM" },
-    { type: "modified", trip: "Modified (ETA Changed)", route: "Trip #TR-884 Arr → Wed 12:30 PM", detail: "(+2h)", time: "12:12 PM" },
-    { type: "dispatched", trip: "Trip Dispatched", route: "Route: Miami → Dallas", detail: "Driver: A. King", time: "09:45 AM" },
-  ],
-};
+interface DriversCount {
+  total: number;
+  available: number;
+  unavailable: number;
+}
 
-const barData = [35, 55, 40, 70, 50, 80, 60, 85, 55, 75, 65, 90];
+interface RevenueData {
+  months: { month: string; total_revenue: number; trip_count: number }[];
+  total: number;
+}
 
 export default function ExecutiveReportTab() {
-  const data = mockData;
+  const [drivers, setDrivers] = useState<DriversCount>({ total: 0, available: 0, unavailable: 0 });
+  const [revenue, setRevenue] = useState<RevenueData>({ months: [], total: 0 });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const [driversRes, revenueRes] = await Promise.all([
+          fetch('/api/executive/drivers-count'),
+          fetch('/api/executive/revenue'),
+        ]);
+
+        if (driversRes.ok) {
+          const d = await driversRes.json();
+          setDrivers(d);
+        }
+
+        if (revenueRes.ok) {
+          const r = await revenueRes.json();
+          setRevenue(r);
+        }
+      } catch (err) {
+        console.error('Failed to fetch executive data:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchData();
+  }, []);
+
+  // Build monthly revenue bars for the chart
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const currentYear = new Date().getFullYear();
+  const monthlyMap = new Map<string, number>();
+  revenue.months.forEach((m) => {
+    const d = new Date(m.month);
+    if (d.getFullYear() === currentYear) {
+      monthlyMap.set(d.getMonth(), m.total_revenue);
+    }
+  });
+
+  const maxRevenue = Math.max(...Array.from(monthlyMap.values()), 1);
+
+  // Calculate change vs previous month
+  const currentMonthIdx = new Date().getMonth();
+  const currentRevenue = monthlyMap.get(currentMonthIdx) || 0;
+  const prevRevenue = monthlyMap.get(currentMonthIdx - 1) || monthlyMap.get(11) || 0;
+  const revenueChange = prevRevenue > 0 ? ((currentRevenue - prevRevenue) / prevRevenue * 100) : 0;
+
+  const fmt = (v: number) => v.toLocaleString('en-US', { maximumFractionDigits: 0 });
 
   return (
     <div className="space-y-4">
@@ -53,13 +90,15 @@ export default function ExecutiveReportTab() {
         </div>
         <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5">
           <Calendar className="h-4 w-4 text-gray-400" />
-          <span className="text-sm text-gray-600">Jun 10, 2026</span>
+          <span className="text-sm text-gray-600">
+            {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+          </span>
         </div>
       </div>
 
       {/* Top Row - Stats */}
       <div className="grid grid-cols-3 gap-4">
-        {/* Trucks */}
+        {/* Trucks - placeholder for now */}
         <div className="rounded-xl border border-gray-200 bg-white p-4">
           <div className="mb-3 flex items-center gap-2">
             <Truck className="h-4 w-4 text-gray-500" />
@@ -67,43 +106,47 @@ export default function ExecutiveReportTab() {
           </div>
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">Booked</span>
-              <span className="text-sm font-semibold text-gray-900">{data.trucks.booked}</span>
+              <span className="text-sm text-gray-600">Total Fleet</span>
+              <span className="text-sm font-semibold text-gray-900">--</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-2 text-sm text-gray-600">
                 <span className="h-2 w-2 rounded-full bg-emerald-500" />
                 Available
               </span>
-              <span className="text-sm font-semibold text-gray-900">{data.trucks.available}</span>
+              <span className="text-sm font-semibold text-gray-900">--</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-2 text-sm text-gray-600">
                 <span className="h-2 w-2 rounded-full bg-red-500" />
                 Unavailable
               </span>
-              <span className="text-sm font-semibold text-gray-900">{data.trucks.unavailable}</span>
+              <span className="text-sm font-semibold text-gray-900">--</span>
             </div>
           </div>
         </div>
 
-        {/* Drivers */}
+        {/* Drivers - live */}
         <div className="rounded-xl border border-gray-200 bg-white p-4">
           <div className="mb-3 flex items-center gap-2">
             <Users className="h-4 w-4 text-gray-500" />
             <span className="text-sm font-medium text-gray-700">Drivers</span>
           </div>
           <div className="mb-3">
-            <span className="text-4xl font-bold text-gray-900">{data.drivers.available}</span>
+            <span className="text-4xl font-bold text-gray-900">
+              {loading ? '--' : drivers.available}
+            </span>
             <span className="ml-2 text-sm text-gray-500">Available Today</span>
           </div>
           <div className="flex items-center gap-1.5 text-xs text-red-600">
             <AlertTriangle className="h-3 w-3" />
-            <span>{data.drivers.unavailable} Drivers Unavailable (On Leave/Sick)</span>
+            <span>
+              {loading ? '--' : drivers.unavailable} Drivers Unavailable (On Leave/Sick)
+            </span>
           </div>
         </div>
 
-        {/* Total Value of Goods */}
+        {/* Total Value of Goods - live */}
         <div className="rounded-xl border border-gray-200 bg-white p-4">
           <div className="mb-2 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -114,21 +157,36 @@ export default function ExecutiveReportTab() {
           </div>
           <div className="mb-1">
             <span className="text-3xl font-bold text-gray-900">
-              ${data.totalValue.value.toLocaleString()}
+              {loading ? '--' : `$${fmt(revenue.total)}`}
             </span>
           </div>
           <div className="mb-3 flex items-center gap-1 text-xs text-emerald-600">
             <TrendingUp className="h-3 w-3" />
-            <span>+{data.totalValue.change}% vs last month</span>
+            <span>{loading ? '--' : `${revenueChange >= 0 ? '+' : ''}${revenueChange.toFixed(1)}% vs last month`}</span>
           </div>
-          {/* Mini bar chart */}
+          {/* Monthly bar chart */}
           <div className="flex items-end gap-[3px]">
-            {barData.map((h, i) => (
-              <div
-                key={i}
-                className="flex-1 rounded-sm bg-gray-800"
-                style={{ height: `${h * 0.4}px` }}
-              />
+            {months.map((m, i) => {
+              const val = monthlyMap.get(i) || 0;
+              const h = val > 0 ? Math.max(4, (val / maxRevenue) * 48) : 4;
+              return (
+                <div key={m} className="group relative flex-1">
+                  <div
+                    className="rounded-sm bg-gray-800 transition-all hover:bg-gray-600"
+                    style={{ height: `${h}px` }}
+                  />
+                  <div className="pointer-events-none absolute bottom-full left-1/2 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-1.5 py-0.5 text-[10px] text-white group-hover:block">
+                    ${fmt(val)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-1 flex justify-between">
+            {months.map((m) => (
+              <span key={m} className="flex-1 text-center text-[8px] text-gray-400">
+                {m[0]}
+              </span>
             ))}
           </div>
         </div>
@@ -153,7 +211,6 @@ export default function ExecutiveReportTab() {
             </div>
           </div>
           <div className="relative h-52 bg-[#e8ecf1]">
-            {/* Map grid lines */}
             <div className="absolute inset-0 opacity-20">
               <svg width="100%" height="100%">
                 <defs>
@@ -164,24 +221,23 @@ export default function ExecutiveReportTab() {
                 <rect width="100%" height="100%" fill="url(#grid)" />
               </svg>
             </div>
-            {/* Map markers */}
             <div className="absolute left-[20%] top-[30%] h-3 w-3 rounded-full bg-blue-500 ring-2 ring-white" />
             <div className="absolute left-[35%] top-[45%] h-3 w-3 rounded-full bg-blue-500 ring-2 ring-white" />
             <div className="absolute left-[50%] top-[25%] h-3 w-3 rounded-full bg-blue-500 ring-2 ring-white" />
             <div className="absolute left-[65%] top-[55%] h-3 w-3 rounded-full bg-blue-500 ring-2 ring-white" />
             <div className="absolute left-[45%] top-[60%] h-4 w-4 rounded-full bg-blue-600 ring-2 ring-white" />
             <div className="absolute left-[55%] top-[40%] h-3 w-3 rounded-full bg-blue-500 ring-2 ring-white" />
-            <div className="absolute left-[70%] top-[35%] h-3 w-3 rounded-full bg-blue-500 ring-2 ring-white" />
             <div className="absolute left-[30%] top-[65%] h-3 w-3 rounded-full bg-blue-500 ring-2 ring-white" />
-            {/* Alerts overlay */}
             <div className="absolute left-3 top-3 rounded-lg bg-white/95 p-2.5 shadow-md">
-              <p className="mb-1.5 text-xs font-semibold text-gray-700">Active Alerts ({data.enRouteAlerts.length})</p>
-              {data.enRouteAlerts.map((alert) => (
-                <div key={alert.id} className="flex items-center gap-1.5 text-xs text-gray-600">
-                  <AlertTriangle className="h-3 w-3 text-amber-500" />
-                  <span>{alert.truck} - {alert.issue}</span>
-                </div>
-              ))}
+              <p className="mb-1.5 text-xs font-semibold text-gray-700">Active Alerts (2)</p>
+              <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                <AlertTriangle className="h-3 w-3 text-amber-500" />
+                <span>Truck #452 - Engine Malfunction</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                <AlertTriangle className="h-3 w-3 text-amber-500" />
+                <span>Truck #180 - Weather Delay</span>
+              </div>
             </div>
           </div>
         </div>
@@ -196,7 +252,11 @@ export default function ExecutiveReportTab() {
             <p className="mt-0.5 text-xs text-gray-500">Fleet freeing up within next 5 hours</p>
           </div>
           <div className="flex-1 space-y-3 p-4">
-            {data.availabilityForecast.map((item, i) => (
+            {[
+              { route: "Route AX-901", vehicle: "Trailer / Freightliner", driver: "Driver S. Miller", time: "45m" },
+              { route: "Route BD-214", vehicle: "Trailer / Refrigerated", driver: "Driver J. Doe", time: "2h 15m" },
+              { route: "Route ZX-102", vehicle: "Trailer / Flatbed", driver: "Driver B. Chan", time: "4h 50m" },
+            ].map((item, i) => (
               <div key={i} className="flex items-center justify-between">
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-gray-900">{item.route}</p>
@@ -227,18 +287,18 @@ export default function ExecutiveReportTab() {
           <div className="mb-3 grid grid-cols-2 gap-4">
             <div>
               <p className="text-xs text-gray-500">Total Used</p>
-              <p className="text-xl font-bold text-gray-900">{data.fuel.totalUsed.toLocaleString()}L</p>
+              <p className="text-xl font-bold text-gray-900">4,500L</p>
             </div>
             <div>
               <p className="text-xs text-gray-500">Refills Today</p>
-              <p className="text-xl font-bold text-gray-900">{data.fuel.refillsToday}</p>
+              <p className="text-xl font-bold text-gray-900">18</p>
             </div>
           </div>
           <div>
             <div className="mb-1.5 flex items-center justify-between">
               <span className="text-xs text-gray-500">Consumption Efficiency</span>
               <span className="flex items-center gap-0.5 text-xs text-emerald-600">
-                <TrendingUp className="h-3 w-3" />+{data.fuel.efficiency}%
+                <TrendingUp className="h-3 w-3" />+2.4%
               </span>
             </div>
             <div className="h-2 w-full rounded-full bg-gray-200">
@@ -257,7 +317,7 @@ export default function ExecutiveReportTab() {
             <div>
               <div className="mb-1.5 flex items-center justify-between">
                 <span className="text-xs text-gray-500">Planned CPK</span>
-                <span className="text-sm font-semibold text-gray-900">${data.cpk.planned}</span>
+                <span className="text-sm font-semibold text-gray-900">$1.15</span>
               </div>
               <div className="h-2 w-full rounded-full bg-gray-200">
                 <div className="h-2 rounded-full bg-gray-700" style={{ width: "85%" }} />
@@ -266,7 +326,7 @@ export default function ExecutiveReportTab() {
             <div>
               <div className="mb-1.5 flex items-center justify-between">
                 <span className="text-xs text-gray-500">Actual CPK</span>
-                <span className="text-sm font-semibold text-gray-900">${data.cpk.actual}</span>
+                <span className="text-sm font-semibold text-gray-900">$1.22</span>
               </div>
               <div className="h-2 w-full rounded-full bg-gray-200">
                 <div className="h-2 rounded-full bg-red-500" style={{ width: "92%" }} />
@@ -274,7 +334,7 @@ export default function ExecutiveReportTab() {
             </div>
           </div>
           <div className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
-            ⚠ Warning: {data.cpk.warning}
+            ⚠ Warning: Operational costs are 6.1% above projections this period
           </div>
         </div>
 
@@ -288,7 +348,11 @@ export default function ExecutiveReportTab() {
             <button className="text-xs font-medium text-gray-500 hover:text-gray-900">View All</button>
           </div>
           <div className="space-y-3">
-            {data.recentActivity.map((item, i) => (
+            {[
+              { type: "cancelled", trip: "Trip #TR-882 Cancelled", route: "Chicago → NY", detail: "Warehouse Lockout (15 min delay)", time: "12:12 PM" },
+              { type: "modified", trip: "Modified (ETA Changed)", route: "Trip #TR-884 Arr → Wed 12:30 PM", detail: "(+2h)", time: "12:12 PM" },
+              { type: "dispatched", trip: "Trip Dispatched", route: "Route: Miami → Dallas", detail: "Driver: A. King", time: "09:45 AM" },
+            ].map((item, i) => (
               <div key={i} className="flex gap-2.5">
                 <div className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
                   item.type === "cancelled" ? "bg-red-500" :
