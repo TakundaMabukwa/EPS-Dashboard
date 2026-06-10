@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/table'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { RollingNumber } from '@/components/ui/rolling-number'
 import {
   Plus,
   Search,
@@ -24,6 +25,10 @@ import {
   AlertTriangle,
   Edit,
   Trash,
+  Shield,
+  Camera,
+  Stethoscope,
+  Clock,
 } from 'lucide-react'
 import {
   Sheet,
@@ -153,6 +158,7 @@ export default function Drivers() {
   const [licenseFilter, setLicenseFilter] = useState<'all' | 'sa' | 'foreign'>(
     'all',
   )
+  const [cardFilter, setCardFilter] = useState<string | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [editingDriverId, setEditingDriverId] = useState<number | null>(null)
 
@@ -221,51 +227,38 @@ export default function Drivers() {
   const fetchDriverPerformanceData = async () => {
     setPerformanceLoading(true)
     try {
-      const currentDate = new Date()
-      const year = currentDate.getFullYear()
-      const month = currentDate.getMonth() + 1
-
-      // Fetch all driver performance scorecards
-      const perfResponse = await fetch(
-        `/api/eps-rewards?endpoint=driver-performance/all&year=${year}&month=${month}`
-      )
-      const perfData = await perfResponse.json()
-      const junkNames = new Set([
-        '08000001216BBB3B 08000001216BBB3B',
-        '08000001746A30BD 08000001746A30BD',
-        '0800000174A972CA 0800000174A972CA',
-        '0800000176515451 0800000176515451',
-        '08000001765433C5 08000001765433C5',
-        '08000001765C3DE8 08000001765C3DE8',
-        '0800000176D27EAD 0800000176D27EAD',
-        '0800000177C3E106 0800000177C3E106',
-        '090 090',
-        '1111 LT58HBGP DRIVER SPARE TAG MKHIZE',
-        '2116 SPARE TAG',
-        '37659 SPARE TAG',
-        '390083 390083',
-        '59722 SPARE TAG',
-        '29251 THOKOZANI MCHUNU',
-        '29308 SENZO WISEMAN',
-        '29348 VELAPHI JAGI THEMBA GAZU',
-        '29596 PHILASANDE ARTHUR MKHIZE',
-        '29621 ADORE LUNGILE NGOMA',
-        '29700 LUNGISANI ANDREAS DIDI',
-        '29704 FRANCIS MKHWANAZI',
-        '29810 INNOCENT MBATHA',
-        '29860-REUBEN ZWANE',
-        '29933 - SAKHILE ENGCOBO',
-        '29956 LUCKY MAKHUBELE',
-      ])
-      const scorecards = (perfData.scorecards || []).filter((d: any) => !junkNames.has(d.driver_name))
-      setDriverPerformanceData(scorecards)
-
-      // Fetch top speeding drivers
-      const speedResponse = await fetch(
-        `/api/eps-rewards?endpoint=top-speeding-drivers&limit=10`
-      )
-      const speedData = await speedResponse.json()
-      setTopSpeedingDrivers((speedData.top_speeding_drivers || []).filter((d: any) => !junkNames.has(d.driver_name)))
+      const res = await fetch('/api/driver/scorecard')
+      const data = await res.json()
+      if (data.ok && Array.isArray(data.data)) {
+        const junkNames = new Set([
+          '08000001216BBB3B 08000001216BBB3B',
+          '08000001746A30BD 08000001746A30BD',
+          '0800000174A972CA 0800000174A972CA',
+          '0800000176515451 0800000176515451',
+          '08000001765433C5 08000001765433C5',
+          '08000001765C3DE8 08000001765C3DE8',
+          '0800000176D27EAD 0800000176D27EAD',
+          '0800000177C3E106 0800000177C3E106',
+          '090 090',
+          '1111 LT58HBGP DRIVER SPARE TAG MKHIZE',
+          '2116 SPARE TAG',
+          '37659 SPARE TAG',
+          '390083 390083',
+          '59722 SPARE TAG',
+          '29251 THOKOZANI MCHUNU',
+          '29308 SENZO WISEMAN',
+          '29348 VELAPHI JAGI THEMBA GAZU',
+          '29596 PHILASANDE ARTHUR MKHIZE',
+          '29621 ADORE LUNGILE NGOMA',
+          '29700 LUNGISANI ANDREAS DIDI',
+          '29704 FRANCIS MKHWANAZI',
+          '29810 INNOCENT MBATHA',
+          '29860-REUBEN ZWANE',
+          '29933 - SAKHILE ENGCOBO',
+          '29956 LUCKY MAKHUBELE',
+        ])
+        setDriverPerformanceData(data.data.filter((d: any) => !junkNames.has(d.name || d.full_name || '')))
+      }
     } catch (err) {
       console.error('Failed to fetch driver performance data', err)
       toast.error('Failed to load driver performance data')
@@ -535,13 +528,28 @@ export default function Drivers() {
       (licenseFilter === 'sa' && driver.sa_issued) ||
       (licenseFilter === 'foreign' && !driver.sa_issued)
 
-    return matchesSearch && matchesFilter
+    const now = new Date()
+    const in30 = new Date()
+    in30.setDate(in30.getDate() + 30)
+
+    let matchesCard = true
+    if (cardFilter === 'license') {
+      matchesCard = !!driver.license_expiry_date && new Date(driver.license_expiry_date) <= in30
+    } else if (cardFilter === 'pdp') {
+      matchesCard = !!driver.pdp_expiry_date && new Date(driver.pdp_expiry_date) <= in30
+    } else if (cardFilter === 'hazcam') {
+      matchesCard = !!driver.hazCamDate && new Date(driver.hazCamDate) <= in30
+    } else if (cardFilter === 'medic') {
+      matchesCard = !!driver.medic_exam_date && new Date(driver.medic_exam_date) <= in30
+    }
+
+    return matchesSearch && matchesFilter && matchesCard
   })
 
   return (
     <div className="min-h-screen bg-background">
       {/* Tab Navigation */}
-      <div className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur-md">
+      <div className="border-b border-border bg-card">
         <div className="max-w-screen-2xl mx-auto">
           <div className="flex gap-1 px-4 py-2">
             <button
@@ -1106,204 +1114,276 @@ export default function Drivers() {
               </div>
 
               {/* Stats Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <Card className="border-border/60">
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-chart-1/10">
-                        <Users className="h-5 w-5 text-chart-1" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Total Drivers</p>
-                        <p className="text-xl font-bold text-foreground">{drivers.length}</p>
-                      </div>
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                {/* Total Drivers */}
+                <button
+                  onClick={() => setCardFilter(null)}
+                  className={`relative overflow-hidden rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 p-4 text-white shadow-lg transition-all hover:scale-[1.02] hover:shadow-xl text-left ${
+                    cardFilter === null ? 'ring-2 ring-black ring-offset-2' : ''
+                  }`}
+                >
+                  <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
+                  <div className="absolute -bottom-2 -right-2 h-16 w-16 rounded-full bg-white/5" />
+                  <div className="relative">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-2">
+                      <Users className="h-4 w-4" />
                     </div>
-                  </CardContent>
-                </Card>
+                    <p className="text-xs font-medium text-blue-100">Total Drivers</p>
+                    <p className="text-2xl font-bold mt-0.5">
+                      <RollingNumber value={drivers.length} duration={1000} />
+                    </p>
+                  </div>
+                </button>
 
-                <Card className="border-border/60">
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-chart-2/10">
-                        <Star className="h-5 w-5 text-chart-2" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">SA Licensed</p>
-                        <p className="text-xl font-bold text-foreground">
-                          {drivers.filter((d) => d.sa_issued).length}
-                        </p>
-                      </div>
+                {/* License Expiring */}
+                <button
+                  onClick={() => setCardFilter(cardFilter === 'license' ? null : 'license')}
+                  className={`relative overflow-hidden rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 p-4 text-white shadow-lg transition-all hover:scale-[1.02] hover:shadow-xl text-left ${
+                    cardFilter === 'license' ? 'ring-2 ring-black ring-offset-2' : ''
+                  }`}
+                >
+                  <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
+                  <div className="absolute -bottom-2 -right-2 h-16 w-16 rounded-full bg-white/5" />
+                  <div className="relative">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-2">
+                      <Shield className="h-4 w-4" />
                     </div>
-                  </CardContent>
-                </Card>
+                    <p className="text-xs font-medium text-amber-100">License Expiring</p>
+                    <p className="text-2xl font-bold mt-0.5">
+                      <RollingNumber
+                        value={drivers.filter((d) => {
+                          if (!d.license_expiry_date) return false
+                          const exp = new Date(d.license_expiry_date)
+                          const now = new Date()
+                          const in30 = new Date()
+                          in30.setDate(in30.getDate() + 30)
+                          return exp <= in30
+                        }).length}
+                        duration={1000}
+                      />
+                    </p>
+                    <p className="text-[10px] text-amber-200 mt-0.5">expired or within 30 days</p>
+                  </div>
+                </button>
 
-                <Card className="border-border/60">
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-chart-4/10">
-                        <Activity className="h-5 w-5 text-chart-4" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Active PDP</p>
-                        <p className="text-xl font-bold text-foreground">
-                          {
-                            drivers.filter(
-                              (d) =>
-                                d.professional_driving_permit &&
-                                d.pdp_expiry_date &&
-                                new Date(d.pdp_expiry_date) > new Date(),
-                            ).length
-                          }
-                        </p>
-                      </div>
+                {/* PDP Expiring */}
+                <button
+                  onClick={() => setCardFilter(cardFilter === 'pdp' ? null : 'pdp')}
+                  className={`relative overflow-hidden rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 p-4 text-white shadow-lg transition-all hover:scale-[1.02] hover:shadow-xl text-left ${
+                    cardFilter === 'pdp' ? 'ring-2 ring-black ring-offset-2' : ''
+                  }`}
+                >
+                  <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
+                  <div className="absolute -bottom-2 -right-2 h-16 w-16 rounded-full bg-white/5" />
+                  <div className="relative">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-2">
+                      <Activity className="h-4 w-4" />
                     </div>
-                  </CardContent>
-                </Card>
+                    <p className="text-xs font-medium text-emerald-100">PDP Expiring</p>
+                    <p className="text-2xl font-bold mt-0.5">
+                      <RollingNumber
+                        value={drivers.filter((d) => {
+                          if (!d.pdp_expiry_date) return false
+                          const exp = new Date(d.pdp_expiry_date)
+                          const now = new Date()
+                          const in30 = new Date()
+                          in30.setDate(in30.getDate() + 30)
+                          return exp <= in30
+                        }).length}
+                        duration={1000}
+                      />
+                    </p>
+                    <p className="text-[10px] text-emerald-200 mt-0.5">expired or within 30 days</p>
+                  </div>
+                </button>
 
-                <Card className="border-border/60">
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-destructive/10">
-                        <AlertTriangle className="h-5 w-5 text-destructive" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Expiring Soon</p>
-                        <p className="text-xl font-bold text-foreground">
-                          {
-                            drivers.filter((d) => {
-                              if (!d.license_expiry_date) return false
-                              const expiryDate = new Date(d.license_expiry_date)
-                              const thirtyDaysFromNow = new Date()
-                              thirtyDaysFromNow.setDate(
-                                thirtyDaysFromNow.getDate() + 30,
-                              )
-                              return (
-                                expiryDate <= thirtyDaysFromNow &&
-                                expiryDate > new Date()
-                              )
-                            }).length
-                          }
-                        </p>
-                      </div>
+                {/* HazCam Expiring */}
+                <button
+                  onClick={() => setCardFilter(cardFilter === 'hazcam' ? null : 'hazcam')}
+                  className={`relative overflow-hidden rounded-xl bg-gradient-to-br from-purple-500 to-violet-500 p-4 text-white shadow-lg transition-all hover:scale-[1.02] hover:shadow-xl text-left ${
+                    cardFilter === 'hazcam' ? 'ring-2 ring-black ring-offset-2' : ''
+                  }`}
+                >
+                  <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
+                  <div className="absolute -bottom-2 -right-2 h-16 w-16 rounded-full bg-white/5" />
+                  <div className="relative">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-2">
+                      <Camera className="h-4 w-4" />
                     </div>
-                  </CardContent>
-                </Card>
+                    <p className="text-xs font-medium text-purple-100">HazCam Expiring</p>
+                    <p className="text-2xl font-bold mt-0.5">
+                      <RollingNumber
+                        value={drivers.filter((d) => {
+                          if (!d.hazCamDate) return false
+                          const exp = new Date(d.hazCamDate)
+                          const now = new Date()
+                          const in30 = new Date()
+                          in30.setDate(in30.getDate() + 30)
+                          return exp <= in30
+                        }).length}
+                        duration={1000}
+                      />
+                    </p>
+                    <p className="text-[10px] text-purple-200 mt-0.5">expired or within 30 days</p>
+                  </div>
+                </button>
+
+                {/* Medic Exam Expiring */}
+                <button
+                  onClick={() => setCardFilter(cardFilter === 'medic' ? null : 'medic')}
+                  className={`relative overflow-hidden rounded-xl bg-gradient-to-br from-rose-500 to-pink-500 p-4 text-white shadow-lg transition-all hover:scale-[1.02] hover:shadow-xl text-left ${
+                    cardFilter === 'medic' ? 'ring-2 ring-black ring-offset-2' : ''
+                  }`}
+                >
+                  <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
+                  <div className="absolute -bottom-2 -right-2 h-16 w-16 rounded-full bg-white/5" />
+                  <div className="relative">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-2">
+                      <Stethoscope className="h-4 w-4" />
+                    </div>
+                    <p className="text-xs font-medium text-rose-100">Medic Exam Expiring</p>
+                    <p className="text-2xl font-bold mt-0.5">
+                      <RollingNumber
+                        value={drivers.filter((d) => {
+                          if (!d.medic_exam_date) return false
+                          const exp = new Date(d.medic_exam_date)
+                          const now = new Date()
+                          const in30 = new Date()
+                          in30.setDate(in30.getDate() + 30)
+                          return exp <= in30
+                        }).length}
+                        duration={1000}
+                      />
+                    </p>
+                    <p className="text-[10px] text-rose-200 mt-0.5">expired or within 30 days</p>
+                  </div>
+                </button>
               </div>
 
               {/* Search and Filters */}
-              <Card className="border-border/60">
-                <CardContent className="p-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                    <div className="relative flex-1">
-                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <input
-                        type="text"
-                        placeholder="Search drivers..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-9 pr-4 py-2 border border-border rounded-md bg-background text-sm focus:ring-2 focus:ring-ring focus:border-transparent"
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setLicenseFilter('all')}
-                        className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                          licenseFilter === 'all'
-                            ? 'bg-primary text-primary-foreground'
-                            : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                        }`}
-                      >
-                        All
-                      </button>
-                      <button
-                        onClick={() => setLicenseFilter('sa')}
-                        className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                          licenseFilter === 'sa'
-                            ? 'bg-primary text-primary-foreground'
-                            : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                        }`}
-                      >
-                        SA Issued
-                      </button>
-                      <button
-                        onClick={() => setLicenseFilter('foreign')}
-                        className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                          licenseFilter === 'foreign'
-                            ? 'bg-primary text-primary-foreground'
-                            : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                        }`}
-                      >
-                        Foreign
-                      </button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="relative flex-1 max-w-sm">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    type="text"
+                    placeholder="Search drivers..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2 border border-border rounded-lg bg-white text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-ring transition-colors placeholder:text-muted-foreground"
+                  />
+                </div>
+                <div className="flex gap-1.5 bg-muted/50 p-1 rounded-lg">
+                  {[
+                    { key: 'all', label: 'All' },
+                    { key: 'sa', label: 'SA Issued' },
+                    { key: 'foreign', label: 'Foreign' },
+                  ].map(({ key, label }) => (
+                    <button
+                      key={key}
+                      onClick={() => setLicenseFilter(key as typeof licenseFilter)}
+                      className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
+                        licenseFilter === key
+                          ? 'bg-white text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
               {/* Drivers Table */}
-              <Card className="border-border/60">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-semibold">Driver Database</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-border bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
-                          <th className="px-4 py-3 text-left font-medium">Driver Code</th>
-                          <th className="px-4 py-3 text-left font-medium">Name</th>
-                          <th className="px-4 py-3 text-left font-medium">ID/Passport</th>
-                          <th className="px-4 py-3 text-left font-medium">Cell Number</th>
-                          <th className="px-4 py-3 text-left font-medium">PDP Expiry</th>
-                          <th className="px-4 py-3 text-left font-medium">HazCam Date</th>
-                          <th className="px-4 py-3 text-left font-medium">Medic Exam</th>
-                          <th className="px-4 py-3 text-left font-medium">Actions</th>
+              <div className="border border-border rounded-lg bg-white overflow-hidden flex flex-col" style={{ height: 'calc(100vh - 340px)', minHeight: '400px' }}>
+                <div className="overflow-auto flex-1">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 z-10">
+                      <tr className="bg-gradient-to-r from-slate-800 to-slate-900">
+                        <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Code</th>
+                        <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Name</th>
+                        <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">ID/Passport</th>
+                        <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Cell</th>
+                        <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">License Expiry</th>
+                        <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">PDP Expiry</th>
+                        <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">HazCam</th>
+                        <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Medic Exam</th>
+                        <th className="px-4 py-2 text-right text-[11px] font-semibold text-white uppercase tracking-wider">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {isLoading ? (
+                        <tr>
+                          <td colSpan={9} className="px-4 py-12 text-center">
+                            <div className="flex items-center justify-center text-gray-500">
+                              <div className="animate-spin rounded-full h-5 w-5 border-2 border-gray-200 border-t-blue-600 mr-3"></div>
+                              Loading drivers...
+                            </div>
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border">
-                        {isLoading ? (
-                          <tr>
-                            <td colSpan={8} className="px-4 py-8 text-center">
-                              <div className="flex items-center justify-center">
-                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                                <span className="ml-2 text-muted-foreground">Loading drivers...</span>
-                              </div>
-                            </td>
-                          </tr>
-                        ) : drivers.length === 0 ? (
-                          <tr>
-                            <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
-                              No drivers found
-                            </td>
-                          </tr>
-                        ) : (
-                          filteredDrivers.map((driver, i) => (
-                            <tr key={driver.id} className={`transition-colors hover:bg-muted/30 ${i % 2 === 1 ? 'bg-muted/10' : ''}`}>
-                              <td className="px-4 py-3">{driver.driver_restriction_code || '-'}</td>
-                              <td className="px-4 py-3 font-medium">{driver.surname}</td>
-                              <td className="px-4 py-3">{driver.id_or_passport_document || '-'}</td>
-                              <td className="px-4 py-3">{driver.cell_number || '-'}</td>
-                              <td className="px-4 py-3">{formatDate(driver.pdp_expiry_date)}</td>
-                              <td className="px-4 py-3">{formatDate(driver.hazCamDate)}</td>
-                              <td className="px-4 py-3">{formatDate(driver.medic_exam_date)}</td>
-                              <td className="px-4 py-3">
-                                <div className="flex gap-1">
-                                  <Button size="sm" variant="outline" onClick={() => handleViewDriver(driver)}>
+                      ) : filteredDrivers.length === 0 ? (
+                        <tr>
+                          <td colSpan={9} className="px-4 py-12 text-center text-gray-500">
+                            No drivers found
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredDrivers.map((driver) => {
+                          const getExpiryStyle = (dateStr: string | null | undefined) => {
+                            if (!dateStr) return ''
+                            const exp = new Date(dateStr)
+                            const now = new Date()
+                            const in30 = new Date()
+                            in30.setDate(in30.getDate() + 30)
+                            if (exp <= now) return 'animate-pulse text-red-600 font-bold bg-red-50'
+                            if (exp <= in30) return 'animate-pulse text-orange-500 font-bold bg-orange-50'
+                            return 'text-gray-600'
+                          }
+                          return (
+                            <tr key={driver.id} className="hover:bg-gray-50/80 transition-colors">
+                              <td className="px-4 py-2">
+                                <div className="text-sm font-medium text-gray-900">{driver.driver_restriction_code || '-'}</div>
+                                <div className="text-xs text-gray-500">{driver.first_name || ''}</div>
+                              </td>
+                              <td className="px-4 py-2 text-sm text-gray-900">{driver.surname}</td>
+                              <td className="px-4 py-2 text-sm text-gray-600">{driver.id_or_passport_document || '-'}</td>
+                              <td className="px-4 py-2 text-sm text-gray-600">{driver.cell_number || '-'}</td>
+                              <td className={`px-4 py-2 text-sm ${getExpiryStyle(driver.license_expiry_date)}`}>
+                                {formatDate(driver.license_expiry_date)}
+                              </td>
+                              <td className={`px-4 py-2 text-sm ${getExpiryStyle(driver.pdp_expiry_date)}`}>
+                                {formatDate(driver.pdp_expiry_date)}
+                              </td>
+                              <td className={`px-4 py-2 text-sm ${getExpiryStyle(driver.hazCamDate)}`}>
+                                {formatDate(driver.hazCamDate)}
+                              </td>
+                              <td className={`px-4 py-2 text-sm ${getExpiryStyle(driver.medic_exam_date)}`}>
+                                {formatDate(driver.medic_exam_date)}
+                              </td>
+                              <td className="px-4 py-2 text-right">
+                                <div className="flex gap-1 justify-end">
+                                  <Button size="sm" variant="ghost" className="h-7 text-xs text-gray-600 hover:text-gray-900" onClick={() => handleViewDriver(driver)}>
                                     View
                                   </Button>
-                                  <SecureButton page="drivers" action="edit" size="sm" variant="outline" onClick={() => startEditDriver(driver)}>
+                                  <SecureButton page="drivers" action="edit" size="sm" variant="ghost" className="h-7 text-xs text-gray-600 hover:text-gray-900" onClick={() => startEditDriver(driver)}>
                                     Edit
                                   </SecureButton>
                                 </div>
                               </td>
                             </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
+                          )
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {filteredDrivers.length > 0 && (
+                  <div className="px-4 py-2 border-t border-gray-100 bg-gray-50/50 shrink-0">
+                    <p className="text-xs text-gray-500">
+                      Showing <span className="font-medium text-gray-700">{filteredDrivers.length}</span> of <span className="font-medium text-gray-700">{drivers.length}</span> drivers
+                    </p>
                   </div>
-                </CardContent>
-              </Card>
+                )}
+              </div>
 
               {/* Driver Details Sheet */}
               <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
@@ -2020,332 +2100,146 @@ export default function Drivers() {
                   </table>
                 </div>
               </Card>
-
-              {/* Overall Risk Score Bar Chart */}
-              <Card className="p-6">
-                <h3 className="mb-4 font-semibold text-purple-800 text-lg text-center">
-                  Overall Risk Score by Month
-                </h3>
-                <div className="h-80">
-                  <div className="grid grid-cols-6 gap-4 h-full items-end">
-                    <div className="flex flex-col items-center">
-                      <div
-                        className="bg-teal-500 w-12 rounded-t"
-                        style={{ height: '29%' }}
-                      ></div>
-                      <span className="text-xs mt-2 text-gray-600">July</span>
-                      <span className="text-xs text-gray-500">29</span>
-                    </div>
-                    <div className="flex flex-col items-center">
-                      <div
-                        className="bg-teal-500 w-12 rounded-t"
-                        style={{ height: '26%' }}
-                      ></div>
-                      <span className="text-xs mt-2 text-gray-600">Aug</span>
-                      <span className="text-xs text-gray-500">26</span>
-                    </div>
-                    <div className="flex flex-col items-center">
-                      <div
-                        className="bg-teal-500 w-12 rounded-t"
-                        style={{ height: '26%' }}
-                      ></div>
-                      <span className="text-xs mt-2 text-gray-600">Sep</span>
-                      <span className="text-xs text-gray-500">26</span>
-                    </div>
-                    <div className="flex flex-col items-center">
-                      <div
-                        className="bg-teal-500 w-12 rounded-t"
-                        style={{ height: '26%' }}
-                      ></div>
-                      <span className="text-xs mt-2 text-gray-600">Oct</span>
-                      <span className="text-xs text-gray-500">26</span>
-                    </div>
-                    <div className="flex flex-col items-center">
-                      <div
-                        className="bg-teal-500 w-12 rounded-t"
-                        style={{ height: '26%' }}
-                      ></div>
-                      <span className="text-xs mt-2 text-gray-600">Nov</span>
-                      <span className="text-xs text-gray-500">26</span>
-                    </div>
-                    <div className="flex flex-col items-center">
-                      <div
-                        className="bg-teal-500 w-12 rounded-t"
-                        style={{ height: '20%' }}
-                      ></div>
-                      <span className="text-xs mt-2 text-gray-600">Dec</span>
-                      <span className="text-xs text-gray-500">20</span>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-
-              {/* Driver Performance Bar Chart */}
-              <Card className="p-6">
-                <h3 className="mb-4 font-semibold text-lg text-center">
-                  Driver Performance Scores
-                </h3>
-                <div className="h-64">
-                  <div className="grid grid-cols-5 gap-4 h-full items-end">
-                    <div className="flex flex-col items-center">
-                      <div
-                        className="bg-blue-500 w-16 rounded-t"
-                        style={{ height: '85%' }}
-                      ></div>
-                      <span className="text-xs mt-2 text-gray-600 text-center">
-                        AMOS NTSAKO
-                      </span>
-                      <span className="text-xs text-gray-500">85%</span>
-                    </div>
-                    <div className="flex flex-col items-center">
-                      <div
-                        className="bg-green-500 w-16 rounded-t"
-                        style={{ height: '78%' }}
-                      ></div>
-                      <span className="text-xs mt-2 text-gray-600 text-center">
-                        ANDRIES HABOFANOE
-                      </span>
-                      <span className="text-xs text-gray-500">78%</span>
-                    </div>
-                    <div className="flex flex-col items-center">
-                      <div
-                        className="bg-yellow-500 w-16 rounded-t"
-                        style={{ height: '72%' }}
-                      ></div>
-                      <span className="text-xs mt-2 text-gray-600 text-center">
-                        AVHATAKALI
-                      </span>
-                      <span className="text-xs text-gray-500">72%</span>
-                    </div>
-                    <div className="flex flex-col items-center">
-                      <div
-                        className="bg-red-500 w-16 rounded-t"
-                        style={{ height: '68%' }}
-                      ></div>
-                      <span className="text-xs mt-2 text-gray-600 text-center">
-                        BANDILE LOREN
-                      </span>
-                      <span className="text-xs text-gray-500">68%</span>
-                    </div>
-                    <div className="flex flex-col items-center">
-                      <div
-                        className="bg-purple-500 w-16 rounded-t"
-                        style={{ height: '82%' }}
-                      ></div>
-                      <span className="text-xs mt-2 text-gray-600 text-center">
-                        BANNANA
-                      </span>
-                      <span className="text-xs text-gray-500">82%</span>
-                    </div>
-                  </div>
-                </div>
-              </Card>
             </div>
           )}
 
           {activeTab === 'drivers-performance' && (
-            <div className="space-y-6">
+            <div className="space-y-4">
               {performanceLoading ? (
                 <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                  <span className="ml-2">Loading performance data...</span>
+                  <div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-200 border-t-blue-600"></div>
+                  <span className="ml-3 text-gray-500 text-sm">Loading performance data...</span>
                 </div>
               ) : (
                 <>
-                  {/* Performance Stats */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <Card className="border-border/60">
-                      <CardContent className="p-4">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-chart-1/10">
-                            <Users className="h-5 w-5 text-chart-1" />
-                          </div>
-                          <div>
-                            <p className="text-xs text-muted-foreground">Total Drivers</p>
-                            <p className="text-xl font-bold text-foreground">{driverPerformanceData.length}</p>
-                          </div>
+                  {/* Stat Cards */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    {/* Total Drivers */}
+                    <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 p-4 text-white shadow-lg shadow-blue-500/20">
+                      <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
+                      <div className="absolute -bottom-2 -right-2 h-16 w-16 rounded-full bg-white/5" />
+                      <div className="relative">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-2">
+                          <Users className="h-4 w-4" />
                         </div>
-                      </CardContent>
-                    </Card>
+                        <p className="text-xs font-medium text-blue-100">Total Drivers</p>
+                        <p className="text-2xl font-bold mt-0.5">{driverPerformanceData.length}</p>
+                      </div>
+                    </div>
 
-                    <Card className="border-border/60">
-                      <CardContent className="p-4">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-50">
-                            <Star className="h-5 w-5 text-amber-800" />
-                          </div>
-                          <div>
-                            <p className="text-xs text-muted-foreground">Gold Level</p>
-                            <p className="text-xl font-bold text-foreground">
-                              {driverPerformanceData.filter(d => d.points?.reward_level === 'Gold').length}
-                            </p>
-                          </div>
+                    {/* Below 25 - Critical */}
+                    <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-red-500 to-rose-600 p-4 text-white shadow-lg shadow-red-500/20">
+                      <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
+                      <div className="absolute -bottom-2 -right-2 h-16 w-16 rounded-full bg-white/5" />
+                      <div className="relative">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-2">
+                          <AlertTriangle className="h-4 w-4" />
                         </div>
-                      </CardContent>
-                    </Card>
+                        <p className="text-xs font-medium text-red-100">Critical (Below 25)</p>
+                        <p className="text-2xl font-bold mt-0.5">
+                          {driverPerformanceData.filter((d: any) => d.score < 25).length}
+                        </p>
+                      </div>
+                    </div>
 
-                    <Card className="border-border/60">
-                      <CardContent className="p-4">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-destructive/10">
-                            <AlertTriangle className="h-5 w-5 text-destructive" />
-                          </div>
-                          <div>
-                            <p className="text-xs text-muted-foreground">Total Violations</p>
-                            <p className="text-xl font-bold text-foreground">
-                              {driverPerformanceData.reduce((sum, d) => sum + (d.violations?.total || 0), 0)}
-                            </p>
-                          </div>
+                    {/* 25-75 - Warning */}
+                    <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 p-4 text-white shadow-lg shadow-amber-500/20">
+                      <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
+                      <div className="absolute -bottom-2 -right-2 h-16 w-16 rounded-full bg-white/5" />
+                      <div className="relative">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-2">
+                          <Activity className="h-4 w-4" />
                         </div>
-                      </CardContent>
-                    </Card>
+                        <p className="text-xs font-medium text-amber-100">Warning (25-75)</p>
+                        <p className="text-2xl font-bold mt-0.5">
+                          {driverPerformanceData.filter((d: any) => d.score >= 25 && d.score < 75).length}
+                        </p>
+                      </div>
+                    </div>
 
-                    <Card className="border-border/60">
-                      <CardContent className="p-4">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-chart-2/10">
-                            <BarChart3 className="h-5 w-5 text-chart-2" />
-                          </div>
-                          <div>
-                            <p className="text-xs text-muted-foreground">Avg Points</p>
-                            <p className="text-xl font-bold text-foreground">
-                              {driverPerformanceData.length > 0
-                                ? Math.round(
-                                    driverPerformanceData.reduce((sum, d) => sum + (d.points?.current_points || 0), 0) /
-                                      driverPerformanceData.length
-                                  )
-                                : 0}
-                            </p>
-                          </div>
+                    {/* Above 75 - Good */}
+                    <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 p-4 text-white shadow-lg shadow-emerald-500/20">
+                      <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
+                      <div className="absolute -bottom-2 -right-2 h-16 w-16 rounded-full bg-white/5" />
+                      <div className="relative">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-2">
+                          <Star className="h-4 w-4" />
                         </div>
-                      </CardContent>
-                    </Card>
+                        <p className="text-xs font-medium text-emerald-100">Good (Above 75)</p>
+                        <p className="text-2xl font-bold mt-0.5">
+                          {driverPerformanceData.filter((d: any) => d.score >= 75).length}
+                        </p>
+                      </div>
+                    </div>
                   </div>
 
-                  {/* Driver Performance Table */}
-                  <Card className="border-border/60">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-semibold">Driver Performance Scorecards</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="border-b border-border bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
-                              <th className="px-4 py-3 text-left font-medium">Driver Name</th>
-                              <th className="px-4 py-3 text-left font-medium">Plate</th>
-                              <th className="px-4 py-3 text-right font-medium">Current Points</th>
-                              <th className="px-4 py-3 text-right font-medium">Points Deducted</th>
-                              <th className="px-4 py-3 text-left font-medium">Reward Level</th>
-                              <th className="px-4 py-3 text-center font-medium">Total Violations</th>
-                              <th className="px-4 py-3 text-center font-medium">Speed</th>
-                              <th className="px-4 py-3 text-center font-medium">Harsh Braking</th>
-                              <th className="px-4 py-3 text-center font-medium">Night Driving</th>
+                  {/* Performance Table */}
+                  <div className="border border-border rounded-lg bg-white overflow-hidden flex flex-col" style={{ height: 'calc(100vh - 340px)', minHeight: '400px' }}>
+                    <div className="overflow-auto flex-1">
+                      <table className="w-full text-sm">
+                        <thead className="sticky top-0 z-10">
+                          <tr className="bg-gradient-to-r from-slate-800 to-slate-900">
+                            <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Driver Name</th>
+                            <th className="px-4 py-2 text-center text-[11px] font-semibold text-white uppercase tracking-wider">Score</th>
+                            <th className="px-4 py-2 text-center text-[11px] font-semibold text-white uppercase tracking-wider">Safety Events</th>
+                            <th className="px-4 py-2 text-center text-[11px] font-semibold text-white uppercase tracking-wider">Deductions</th>
+                            <th className="px-4 py-2 text-right text-[11px] font-semibold text-white uppercase tracking-wider">KM Today</th>
+                            <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {driverPerformanceData.length === 0 ? (
+                            <tr>
+                              <td colSpan={6} className="px-4 py-12 text-center text-gray-500">
+                                No performance data available
+                              </td>
                             </tr>
-                          </thead>
-                          <tbody className="divide-y divide-border">
-                            {driverPerformanceData.length === 0 ? (
-                              <tr>
-                                <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
-                                  No performance data available
-                                </td>
-                              </tr>
-                            ) : (
-                              driverPerformanceData.map((driver, idx) => (
-                                <tr key={idx} className={`transition-colors hover:bg-muted/30 ${idx % 2 === 1 ? 'bg-muted/10' : ''}`}>
-                                  <td className="px-4 py-3 font-medium">{driver.driver_name}</td>
-                                  <td className="px-4 py-3 font-mono text-xs">{driver.plate}</td>
-                                  <td className="px-4 py-3 text-right font-semibold text-chart-2">
-                                    {driver.points?.current_points || 0}
+                          ) : (
+                            driverPerformanceData.map((driver: any) => {
+                              const score = driver.score || 0
+                              let scoreColor = 'text-emerald-600 bg-emerald-50'
+                              let statusLabel = 'Good'
+                              let statusColor = 'bg-emerald-100 text-emerald-700'
+                              if (score < 25) {
+                                scoreColor = 'text-red-600 bg-red-50'
+                                statusLabel = 'Critical'
+                                statusColor = 'bg-red-100 text-red-700'
+                              } else if (score < 75) {
+                                scoreColor = 'text-amber-600 bg-amber-50'
+                                statusLabel = 'Warning'
+                                statusColor = 'bg-amber-100 text-amber-700'
+                              }
+                              return (
+                                <tr key={driver.id} className="hover:bg-gray-50/80 transition-colors">
+                                  <td className="px-4 py-2.5 text-sm font-medium text-gray-900">{driver.full_name || driver.name}</td>
+                                  <td className="px-4 py-2.5 text-center">
+                                    <span className={`inline-flex items-center justify-center w-10 h-10 rounded-lg text-sm font-bold ${scoreColor}`}>
+                                      {score}
+                                    </span>
                                   </td>
-                                  <td className="px-4 py-3 text-right text-destructive">
-                                    {driver.points?.points_deducted || 0}
+                                  <td className="px-4 py-2.5 text-center text-sm text-gray-600">{driver.safety_events || 0}</td>
+                                  <td className="px-4 py-2.5 text-center text-sm text-gray-600">{driver.deductions || 0}</td>
+                                  <td className="px-4 py-2.5 text-right text-sm text-gray-600">{parseFloat(driver.km_today || 0).toFixed(1)}</td>
+                                  <td className="px-4 py-2.5">
+                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColor}`}>
+                                      {statusLabel}
+                                    </span>
                                   </td>
-                                  <td className="px-4 py-3">
-                                    <Badge
-                                      className={
-                                        driver.points?.reward_level === 'Gold'
-                                          ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                          : driver.points?.reward_level === 'Silver'
-                                            ? 'bg-slate-50 text-slate-700 border-slate-200'
-                                            : 'bg-orange-50 text-orange-800 border-orange-200'
-                                      }
-                                      variant="outline"
-                                    >
-                                      {driver.points?.reward_level || 'N/A'}
-                                    </Badge>
-                                  </td>
-                                  <td className="px-4 py-3 text-center">
-                                    <Badge variant={driver.violations?.total > 5 ? 'destructive' : 'secondary'}>
-                                      {driver.violations?.total || 0}
-                                    </Badge>
-                                  </td>
-                                  <td className="px-4 py-3 text-center font-mono text-xs">{driver.violations?.speed || 0}</td>
-                                  <td className="px-4 py-3 text-center font-mono text-xs">{driver.violations?.harsh_braking || 0}</td>
-                                  <td className="px-4 py-3 text-center font-mono text-xs">{driver.violations?.night_driving || 0}</td>
                                 </tr>
-                              ))
-                            )}
-                          </tbody>
-                        </table>
+                              )
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                    {driverPerformanceData.length > 0 && (
+                      <div className="px-4 py-2 border-t border-gray-100 bg-gray-50/50 shrink-0">
+                        <p className="text-xs text-gray-500">
+                          Showing <span className="font-medium text-gray-700">{driverPerformanceData.length}</span> drivers
+                        </p>
                       </div>
-                    </CardContent>
-                  </Card>
-
-                  {/* Top Speeding Drivers */}
-                  {topSpeedingDrivers.length > 0 && (
-                    <Card className="border-border/60">
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                          <AlertTriangle className="h-4 w-4 text-destructive" />
-                          Top Speeding Drivers
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-sm">
-                            <thead>
-                              <tr className="border-b border-border bg-destructive/5 text-xs uppercase tracking-wide text-muted-foreground">
-                                <th className="px-4 py-3 text-left font-medium">Rank</th>
-                                <th className="px-4 py-3 text-left font-medium">Driver Name</th>
-                                <th className="px-4 py-3 text-left font-medium">Plate</th>
-                                <th className="px-4 py-3 text-center font-medium">Speeding Violations</th>
-                                <th className="px-4 py-3 text-right font-medium">Points Deducted</th>
-                                <th className="px-4 py-3 text-right font-medium">Current Points</th>
-                                <th className="px-4 py-3 text-left font-medium">Level</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-border">
-                              {topSpeedingDrivers.map((driver, i) => (
-                                <tr key={driver.rank} className={`transition-colors hover:bg-destructive/5 ${i % 2 === 1 ? 'bg-muted/10' : ''}`}>
-                                  <td className="px-4 py-3 font-bold">{driver.rank}</td>
-                                  <td className="px-4 py-3 font-medium">{driver.driver_name}</td>
-                                  <td className="px-4 py-3 font-mono text-xs">{driver.plate}</td>
-                                  <td className="px-4 py-3 text-center">
-                                    <Badge variant="destructive">{driver.speeding_violations}</Badge>
-                                  </td>
-                                  <td className="px-4 py-3 text-right text-destructive font-mono">{driver.points_deducted}</td>
-                                  <td className="px-4 py-3 text-right font-semibold font-mono">{driver.current_points}</td>
-                                  <td className="px-4 py-3">
-                                    <Badge
-                                      className={
-                                        driver.current_level === 'Gold'
-                                          ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                          : 'bg-slate-50 text-slate-700 border-slate-200'
-                                      }
-                                      variant="outline"
-                                    >
-                                      {driver.current_level}
-                                    </Badge>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
+                    )}
+                  </div>
                 </>
               )}
             </div>

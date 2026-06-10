@@ -20,14 +20,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Truck, Car, FileText, TruckElectricIcon } from "lucide-react";
-import React, { useEffect, useState } from "react";
+import { Plus, Truck, Car, FileText, TruckElectricIcon, Search, Wrench, AlertTriangle, MapPin, Shield, Activity } from "lucide-react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { RollingNumber } from "@/components/ui/rolling-number";
 import {
   Table,
   TableBody,
@@ -169,33 +170,56 @@ export default function Vehicles() {
   const [equipmentData, setEquipmentData] = useState<any[]>([]);
   const [isEquipmentSheetOpen, setIsEquipmentSheetOpen] = useState(false);
   const [equipmentVehicleReg, setEquipmentVehicleReg] = useState("");
+  const [cardFilter, setCardFilter] = useState<string | null>(null);
+  const [branchFilter, setBranchFilter] = useState<string>('all');
   
+  const branches = [
+    { name: 'BRAKEN GATE CPT', code: 'BRK' },
+    { name: 'CANCELLED DN', code: 'CANCEL' },
+    { name: 'DCC CROSSBORDER', code: 'DCC' },
+    { name: 'EPS JOHANNESBURG', code: 'JHB' },
+    { name: 'GOSFORTH PARK', code: 'GFS' },
+    { name: 'HEAD OFFICE', code: 'HO' },
+    { name: 'NORTHFIELDS', code: 'NORTH' },
+    { name: 'OPEN NETWORK', code: 'ON' },
+    { name: 'POLOKWANE LID', code: 'PLKL' },
+    { name: 'RIVERSANDS', code: 'RS' },
+    { name: 'SPAR KZN', code: 'SPAR' },
+    { name: 'WATERFALL MIDRAND', code: 'WTF' },
+    { name: 'WRITTEN OFF', code: 'WO' },
+  ];
   
+
+  const fetchVehicles = async () => {
+    const { data: vehicles, error } = await supabase
+      .from("vehiclesc")
+      .select("*")
+      .neq("branch_name", "SOLD");
+    if (error) {
+      console.error("the error is", error.name, error.message);
+    } else {
+      // @ts-expect-error
+      setVehicles(vehicles || []);
+    }
+  };
 
   useEffect(() => {
-    const getTechnician = async () => {
-      // Fetch technicians
-      const { data: user, error: userError } = await supabase.auth.getUser();
-      const currentUser = user.user?.id;
+    const channel = supabase
+      .channel("vehicles-changes")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "vehiclesc" },
+        (payload) => {
+          console.log("Change received!", payload);
+          fetchVehicles();
+        }
+      )
+      .subscribe();
+    fetchVehicles();
 
-      if (!currentUser) {
-        setTechnicians([]);
-        return;
-      }
-      const { data: techniciansData, error: techError } = await supabase
-        .from("technicians")
-        .select("*")
-        // .eq("type", "internal");
-
-      setTechnicians(techniciansData as []);
-
-      if (techError) {
-        console.error("Error fetching technicians:", techError);
-        setTechnicians([]);
-        return;
-      }
+    return () => {
+      channel.unsubscribe();
     };
-    getTechnician();
   }, []);
 
   useEffect(() => {
@@ -211,16 +235,38 @@ export default function Vehicles() {
     toast.info(`Uploading: ${selectedFile.name}`);
   };
 
-  // Filter vehicles based on search
-  const filteredVehicles = vehicles.filter((vehicle) => {
-    const searchLower = search.toLowerCase();
-    return (
-      (vehicle.make || '').toLowerCase().includes(searchLower) ||
-      (vehicle.model || '').toLowerCase().includes(searchLower) ||
-      (vehicle.registration_number || '').toLowerCase().includes(searchLower) ||
-      (vehicle.vehicle_type || '').toLowerCase().includes(searchLower)
-    );
-  });
+  // Filter vehicles based on search and card filter
+  const filteredVehicles = useMemo(() => {
+    const now = new Date();
+    const in30 = new Date();
+    in30.setDate(in30.getDate() + 30);
+
+    return vehicles.filter((vehicle) => {
+      const searchLower = search.toLowerCase();
+      const matchesSearch =
+        (vehicle.make || '').toLowerCase().includes(searchLower) ||
+        (vehicle.model || '').toLowerCase().includes(searchLower) ||
+        (vehicle.registration_number || '').toLowerCase().includes(searchLower) ||
+        (vehicle.vehicle_type || '').toLowerCase().includes(searchLower) ||
+        (vehicle.branch_name || '').toLowerCase().includes(searchLower) ||
+        (vehicle.branch_code || '').toLowerCase().includes(searchLower);
+
+      let matchesCard = true;
+      if (cardFilter === 'license-expiring') {
+        const exp = vehicle.license_expiry_date ? new Date(vehicle.license_expiry_date) : null;
+        matchesCard = !!exp && exp <= in30;
+      } else if (cardFilter === 'license-expired') {
+        const exp = vehicle.license_expiry_date ? new Date(vehicle.license_expiry_date) : null;
+        matchesCard = !!exp && exp <= now;
+      } else if (cardFilter === 'service-due') {
+        matchesCard = vehicle.service_due_flag === true || vehicle.service_due_flag === 'true' || vehicle.service_due_flag === 1;
+      }
+
+      const matchesBranch = branchFilter === 'all' || vehicle.branch_name === branchFilter;
+
+      return matchesSearch && matchesCard && matchesBranch;
+    });
+  }, [vehicles, search, cardFilter, branchFilter]);
 
   // Pagination state & logic (50 per page)
   const [currentPage, setCurrentPage] = useState(1);
@@ -262,37 +308,6 @@ export default function Vehicles() {
         return "";
     }
   };
-
-  const fetchVehicles = async () => {
-    const { data: vehicles, error } = await supabase
-      .from("vehiclesc")
-      .select("*")
-      .or("type.is.null,type.eq.internal")
-      .neq("department_name", "SOLD");
-    if (error) {
-      console.error("the error is", error.name, error.message);
-    } else {
-      // @ts-expect-error
-      setVehicles(vehicles || []);
-    }
-  };
-  useEffect(() => {
-    const vehiclesc = supabase
-      .channel("schema-db-changes")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "vehiclesc" },
-        (payload) => {
-          console.log("Change received!", payload);
-        }
-      )
-      .subscribe();
-    fetchVehicles();
-
-    return () => {
-      vehiclesc.unsubscribe;
-    };
-  }, []);
 
   const form = useForm<VehicleFormValues>({
     resolver: zodResolver(vehicleFormSchema),
@@ -497,71 +512,6 @@ export default function Vehicles() {
         </SecureButton>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Total Fleet</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {vehicles.length}
-                </p>
-              </div>
-              <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                <span className="text-blue-600 text-sm font-semibold">🚗</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Vehicles</p>
-                <p className="text-2xl font-bold text-green-600">
-                  {vehicles.filter((v) => v.vehicle_type === "vehicle").length}
-                </p>
-              </div>
-              <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
-                <Car className="w-4 h-4 text-green-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Trailers</p>
-                <p className="text-2xl font-bold text-purple-600">
-                  {vehicles.filter((v) => v.vehicle_type === "trailer").length}
-                </p>
-              </div>
-              <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
-                <Truck className="w-4 h-4 text-purple-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">
-                  High Priority
-                </p>
-                <p className="text-2xl font-bold text-red-600">
-                  {vehicles.filter((v) => v.vehicle_priority === "high").length}
-                </p>
-              </div>
-              <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
-                <span className="text-red-600 text-sm font-semibold">⚠</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
       {/* Add Vehicle Form */}
       {isAddingVehicle && (
         <Card>
@@ -1101,143 +1051,247 @@ export default function Vehicles() {
         </Card>
       )}
 
-      {/* Vehicle List */}
-      {vehicles.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Fleet Overview</CardTitle>
-            <div className="mt-2">
-              <Input
-                placeholder="Search by make, model, registration, or type..."
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="max-w-sm"
+      {/* Stat Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* Total Vehicles */}
+        <button
+          onClick={() => setCardFilter(null)}
+          className={`relative overflow-hidden rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 p-4 text-white shadow-lg transition-all hover:scale-[1.02] hover:shadow-xl text-left ${
+            cardFilter === null ? 'ring-2 ring-black ring-offset-2' : ''
+          }`}
+        >
+          <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
+          <div className="absolute -bottom-2 -right-2 h-16 w-16 rounded-full bg-white/5" />
+          <div className="relative">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-2">
+              <Truck className="h-4 w-4" />
+            </div>
+            <p className="text-xs font-medium text-blue-100">Total Vehicles</p>
+            <p className="text-2xl font-bold mt-0.5">
+              <RollingNumber value={vehicles.length} duration={1000} />
+            </p>
+          </div>
+        </button>
+
+        {/* License Expiring */}
+        <button
+          onClick={() => setCardFilter(cardFilter === 'license-expiring' ? null : 'license-expiring')}
+          className={`relative overflow-hidden rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 p-4 text-white shadow-lg transition-all hover:scale-[1.02] hover:shadow-xl text-left ${
+            cardFilter === 'license-expiring' ? 'ring-2 ring-black ring-offset-2' : ''
+          }`}
+        >
+          <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
+          <div className="absolute -bottom-2 -right-2 h-16 w-16 rounded-full bg-white/5" />
+          <div className="relative">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-2">
+              <Shield className="h-4 w-4" />
+            </div>
+            <p className="text-xs font-medium text-amber-100">License Expiring</p>
+            <p className="text-2xl font-bold mt-0.5">
+              <RollingNumber
+                value={vehicles.filter((v) => {
+                  if (!v.license_expiry_date) return false;
+                  const exp = new Date(v.license_expiry_date);
+                  const in30 = new Date();
+                  in30.setDate(in30.getDate() + 30);
+                  return exp <= in30;
+                }).length}
+                duration={1000}
               />
+            </p>
+            <p className="text-[10px] text-amber-200 mt-0.5">expired or within 30 days</p>
+          </div>
+        </button>
+
+        {/* License Expired */}
+        <button
+          onClick={() => setCardFilter(cardFilter === 'license-expired' ? null : 'license-expired')}
+          className={`relative overflow-hidden rounded-xl bg-gradient-to-br from-red-500 to-rose-600 p-4 text-white shadow-lg transition-all hover:scale-[1.02] hover:shadow-xl text-left ${
+            cardFilter === 'license-expired' ? 'ring-2 ring-black ring-offset-2' : ''
+          }`}
+        >
+          <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
+          <div className="absolute -bottom-2 -right-2 h-16 w-16 rounded-full bg-white/5" />
+          <div className="relative">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-2">
+              <AlertTriangle className="h-4 w-4" />
             </div>
-          </CardHeader>
-          <CardContent>
-            <div className="border border-slate-200 rounded-lg overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-slate-50 border-b border-slate-200">
-                    <TableHead className="h-10 px-3 text-xs font-semibold text-slate-700 uppercase tracking-wider">Registration</TableHead>
-                    <TableHead className="h-10 px-3 text-xs font-semibold text-slate-700 uppercase tracking-wider">Make/Model</TableHead>
-                    <TableHead className="h-10 px-3 text-xs font-semibold text-slate-700 uppercase tracking-wider">Type</TableHead>
-                    <TableHead className="h-10 px-3 text-xs font-semibold text-slate-700 uppercase tracking-wider">Year</TableHead>
-                    <TableHead className="h-10 px-3 text-xs font-semibold text-slate-700 uppercase tracking-wider">Fuel</TableHead>
-                    <TableHead className="h-10 px-3 text-xs font-semibold text-slate-700 uppercase tracking-wider">Priority</TableHead>
-                    <TableHead className="h-10 px-3 text-xs font-semibold text-slate-700 uppercase tracking-wider">Driver</TableHead>
-                    <TableHead className="h-10 px-3 text-xs font-semibold text-slate-700 uppercase tracking-wider">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {paginatedVehicles.map((vehicle, index) => (
-                    <TableRow
-                      key={vehicle.id}
-                      className="h-12 hover:bg-slate-50 border-b border-slate-100 transition-colors"
-                    >
-                      <TableCell className="px-3 py-2 text-sm font-medium text-slate-900">{vehicle.registration_number || '-'}</TableCell>
-                      <TableCell className="px-3 py-2 text-sm text-slate-700">
-                        <div className="flex flex-col">
-                          <span className="font-medium">{vehicle.make || '-'}</span>
-                          <span className="text-xs text-slate-500">{vehicle.model || '-'}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="px-3 py-2 text-sm text-slate-700">
-                        <div className="flex items-center gap-1">
-                          {getVehicleTypeIcon(vehicle.vehicle_type)}
-                          <span className="capitalize text-xs">{vehicle.vehicle_type || '-'}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="px-3 py-2 text-sm text-slate-700">{vehicle.manufactured_year || '-'}</TableCell>
-                      <TableCell className="px-3 py-2 text-sm text-slate-700">
-                        <span className="capitalize text-xs">{vehicle.fuel_type || '-'}</span>
-                      </TableCell>
-                      <TableCell className="px-3 py-2 text-sm">
-                        {getPriorityBadge(vehicle.vehicle_priority)}
-                      </TableCell>
-                      <TableCell className="px-3 py-2 text-sm text-slate-700">
-                        {drivers.find(driver => driver.id === vehicle.driver_id) ? (
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs">
-                              {drivers.find(driver => driver.id === vehicle.driver_id)?.first_name} {drivers.find(driver => driver.id === vehicle.driver_id)?.surname}
+            <p className="text-xs font-medium text-red-100">License Expired</p>
+            <p className="text-2xl font-bold mt-0.5">
+              <RollingNumber
+                value={vehicles.filter((v) => {
+                  if (!v.license_expiry_date) return false;
+                  return new Date(v.license_expiry_date) <= new Date();
+                }).length}
+                duration={1000}
+              />
+            </p>
+          </div>
+        </button>
+
+        {/* Service Due */}
+        <button
+          onClick={() => setCardFilter(cardFilter === 'service-due' ? null : 'service-due')}
+          className={`relative overflow-hidden rounded-xl bg-gradient-to-br from-purple-500 to-violet-500 p-4 text-white shadow-lg transition-all hover:scale-[1.02] hover:shadow-xl text-left ${
+            cardFilter === 'service-due' ? 'ring-2 ring-black ring-offset-2' : ''
+          }`}
+        >
+          <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
+          <div className="absolute -bottom-2 -right-2 h-16 w-16 rounded-full bg-white/5" />
+          <div className="relative">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-2">
+              <Wrench className="h-4 w-4" />
+            </div>
+            <p className="text-xs font-medium text-purple-100">Service Due</p>
+            <p className="text-2xl font-bold mt-0.5">
+              <RollingNumber
+                value={vehicles.filter((v) => v.service_due_flag === true || v.service_due_flag === 'true' || v.service_due_flag === 1).length}
+                duration={1000}
+              />
+            </p>
+          </div>
+        </button>
+      </div>
+
+      {/* Vehicle List */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Search vehicles..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="w-full pl-9 pr-4 py-2 border border-border rounded-lg bg-white text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-ring transition-colors placeholder:text-muted-foreground"
+          />
+        </div>
+        <select
+          value={branchFilter}
+          onChange={(e) => { setBranchFilter(e.target.value); setCurrentPage(1); }}
+          className="px-3 py-2 border border-border rounded-lg bg-white text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-ring transition-colors text-gray-700"
+        >
+          <option value="all">All Branches</option>
+          {branches.map((b) => (
+            <option key={b.code} value={b.name}>{b.name} ({b.code})</option>
+          ))}
+        </select>
+        {(cardFilter || branchFilter !== 'all') && (
+          <button
+            onClick={() => { setCardFilter(null); setBranchFilter('all'); }}
+            className="text-xs text-gray-500 hover:text-gray-700 underline"
+          >
+            Clear filters
+          </button>
+        )}
+      </div>
+
+      {vehicles.length > 0 && (
+        <div className="border border-border rounded-lg bg-white overflow-hidden flex flex-col" style={{ height: 'calc(100vh - 340px)', minHeight: '400px' }}>
+          <div className="overflow-auto flex-1">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 z-10">
+                <tr className="bg-gradient-to-r from-slate-800 to-slate-900">
+                  <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Registration</th>
+                  <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Make/Model</th>
+                  <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Branch</th>
+                  <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Type</th>
+                  <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Year</th>
+                  <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">License Expiry</th>
+                  <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Service Due</th>
+                  <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Driver</th>
+                  <th className="px-4 py-2 text-right text-[11px] font-semibold text-white uppercase tracking-wider">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {paginatedVehicles.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-12 text-center text-gray-500">
+                      No vehicles found
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedVehicles.map((vehicle) => {
+                    const getExpiryStyle = (dateStr: string | null | undefined) => {
+                      if (!dateStr) return '';
+                      const exp = new Date(dateStr);
+                      const now = new Date();
+                      const in30 = new Date();
+                      in30.setDate(in30.getDate() + 30);
+                      if (exp <= now) return 'animate-pulse text-red-600 font-bold bg-red-50';
+                      if (exp <= in30) return 'animate-pulse text-orange-500 font-bold bg-orange-50';
+                      return 'text-gray-600';
+                    };
+                    const isServiceDue = vehicle.service_due_flag === true || vehicle.service_due_flag === 'true' || vehicle.service_due_flag === 1;
+                    return (
+                      <tr key={vehicle.id} className="hover:bg-gray-50/80 transition-colors">
+                        <td className="px-4 py-2.5 text-sm font-medium text-gray-900">{vehicle.registration_number || '-'}</td>
+                        <td className="px-4 py-2.5">
+                          <div className="text-sm font-medium text-gray-900">{vehicle.make || '-'}</div>
+                          <div className="text-xs text-gray-500">{vehicle.model || '-'}</div>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <div className="text-sm text-gray-900">{vehicle.branch_name || '-'}</div>
+                          <div className="text-xs text-gray-500">{vehicle.branch_code || ''}</div>
+                        </td>
+                        <td className="px-4 py-2.5 text-sm text-gray-600 capitalize">{vehicle.vehicle_type || '-'}</td>
+                        <td className="px-4 py-2.5 text-sm text-gray-600">{vehicle.manufactured_year || '-'}</td>
+                        <td className={`px-4 py-2.5 text-sm ${getExpiryStyle(vehicle.license_expiry_date)}`}>
+                          {vehicle.license_expiry_date ? new Date(vehicle.license_expiry_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          {isServiceDue ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
+                              Yes
                             </span>
+                          ) : (
+                            <span className="text-xs text-gray-400">No</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-sm text-gray-600">
+                          {drivers.find(d => d.id === vehicle.driver_id)
+                            ? `${drivers.find(d => d.id === vehicle.driver_id)?.first_name} ${drivers.find(d => d.id === vehicle.driver_id)?.surname}`
+                            : <span className="text-gray-400">Unassigned</span>
+                          }
+                        </td>
+                        <td className="px-4 py-2.5 text-right">
+                          <div className="flex gap-1 justify-end">
+                            <Button variant="ghost" size="sm" className="h-7 text-xs text-gray-600 hover:text-gray-900" onClick={() => { setSelectedVehicle(vehicle); setIsSheetOpen(true); }}>
+                              View
+                            </Button>
+                            <Link href={`/vehicles/${vehicle.id}`}>
+                              <Button variant="ghost" size="sm" className="h-7 text-xs text-gray-600 hover:text-gray-900">
+                                Details
+                              </Button>
+                            </Link>
                           </div>
-                        ) : (
-                          <span className="text-xs text-slate-400">Unassigned</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="px-3 py-2">
-                        <div className="flex gap-1">
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            className="h-7 px-2 text-xs"
-                            onClick={() => {
-                              setSelectedVehicle(vehicle);
-                              setIsSheetOpen(true);
-                            }}
-                          >
-                            View
-                          </Button>
-                          <SecureButton 
-                            page="vehicles"
-                            action="edit"
-                            variant="outline" 
-                            size="sm"
-                            className="h-7 px-2 text-xs"
-                            onClick={async () => {
-                              setEquipmentVehicleReg(vehicle.registration_number || '');
-                              await fetchEquipmentData(vehicle.registration_number || '');
-                              setIsEquipmentSheetOpen(true);
-                            }}
-                          >
-                            Equipment
-                          </SecureButton>
-                          <Link href={`/vehicles/${vehicle.id}`}>
-                            <Button variant="default" size="sm" className="h-7 px-2 text-xs bg-slate-700 hover:bg-slate-800">Details</Button>
-                          </Link>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-
-              {/* Pagination Controls */}
-              <div className="flex items-center justify-between px-4 py-3 bg-white border-t border-slate-200">
-                <div className="text-sm text-slate-600">
-                  Showing {(filteredVehicles.length === 0) ? 0 : ( (currentPage - 1) * PAGE_SIZE + 1 )} - {Math.min(currentPage * PAGE_SIZE, filteredVehicles.length)} of {filteredVehicles.length}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                    disabled={currentPage === 1}
-                  >
-                    Prev
-                  </Button>
-                  <div className="text-sm text-slate-700 px-2">
-                    Page {currentPage} of {totalPages}
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                    disabled={currentPage === totalPages}
-                  >
-                    Next
-                  </Button>
-                </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+          {filteredVehicles.length > 0 && (
+            <div className="px-4 py-2 border-t border-gray-100 bg-gray-50/50 shrink-0 flex items-center justify-between">
+              <p className="text-xs text-gray-500">
+                Showing {(currentPage - 1) * PAGE_SIZE + 1} - {Math.min(currentPage * PAGE_SIZE, filteredVehicles.length)} of <span className="font-medium text-gray-700">{filteredVehicles.length}</span> vehicles
+              </p>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
+                  Prev
+                </Button>
+                <span className="text-xs text-gray-500">Page {currentPage} of {totalPages}</span>
+                <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
+                  Next
+                </Button>
               </div>
-
             </div>
-          </CardContent>
-        </Card>
+          )}
+        </div>
       )}
 
       {/* Vehicle Details Sheet */}

@@ -262,7 +262,7 @@ export default function ExecutiveReportTab() {
           <div className="flex items-center gap-1.5 text-xs text-red-600">
             <AlertTriangle className="h-3 w-3" />
             <span>
-              {loading ? '--' : drivers.unavailable} Drivers Unavailable (On Leave/Sick)
+              {loading ? '--' : drivers.unavailable} Drivers Unavailable (On Trips)
             </span>
           </div>
         </div>
@@ -360,15 +360,7 @@ export default function ExecutiveReportTab() {
           <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5">
             <div className="flex items-center gap-2">
               <MapIcon className="h-4 w-4 text-gray-500" />
-              <span className="text-sm font-medium text-gray-700">En-route Status</span>
-            </div>
-            <div className="flex gap-1">
-              <button className="rounded-md bg-gray-900 px-3 py-1 text-xs font-medium text-white">
-                Live View
-              </button>
-              <button className="rounded-md px-3 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100">
-                Full Map
-              </button>
+              <span className="text-sm font-medium text-gray-700">Vehicles on Active Trips</span>
             </div>
           </div>
           <div className="relative" style={{ height: '320px' }}>
@@ -378,16 +370,6 @@ export default function ExecutiveReportTab() {
               </div>
             )}
             <div ref={mapContainerRef} className="absolute inset-0" style={{ height: '100%', width: '100%' }} />
-            {/* Alerts overlay */}
-            <div className="absolute left-3 top-3 z-10 rounded-lg bg-white/95 p-2.5 shadow-md">
-              <p className="mb-1.5 text-xs font-semibold text-gray-700">Active Vehicles ({activeTrips.length})</p>
-              {activeTrips.slice(0, 3).map((trip, i) => (
-                <div key={i} className="flex items-center gap-1.5 text-xs text-gray-600">
-                  <span className={`h-2 w-2 rounded-full ${(trip.speed || 0) > 0 ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-                  <span>{trip.registration} - {trip.speed > 0 ? `${Math.round(trip.speed)} km/h` : 'Idle'}</span>
-                </div>
-              ))}
-            </div>
           </div>
         </div>
 
@@ -398,7 +380,7 @@ export default function ExecutiveReportTab() {
               <Clock className="h-4 w-4 text-gray-500" />
               <span className="text-sm font-medium text-gray-700">Availability Forecast</span>
             </div>
-            <p className="mt-0.5 text-xs text-gray-500">Soonest arrivals first (Google Distance Matrix)</p>
+            <p className="mt-0.5 text-xs text-gray-500">Arriving Soon</p>
           </div>
           <div className="flex-1 space-y-3 p-4 overflow-y-auto" style={{ maxHeight: '240px' }}>
             {etaVehicles.slice(0, 6).map((v, i) => {

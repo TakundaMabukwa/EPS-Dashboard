@@ -1,78 +1,51 @@
 "use client";
 
-const months = ['AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER', 'JANUARY'];
+import { useEffect, useState } from "react";
 
-const monthlyKmData = [728783, 730932, 740486, 733432, 619449, 569940];
-const monthlyTripsData = [28612, 30879, 33838, 33008, 26765, 24560];
-const overallRiskBarData = [29, 26, 26, 26, 26, 20];
-
-const worstSpeedingDrivers = [
-  { name: 'ZABAZENJODA ZWAKUTH', pct: 85.23 },
-  { name: 'LEWIS NCEDILE MODLO', pct: 89.14 },
-  { name: 'WANDILE ZINDLOVU', pct: 71.27 },
-  { name: 'SAKHLE CEDRIC SIKAYI', pct: 79.62 },
-  { name: 'Lusiko Lesley Ludiba', pct: 71.96 },
-  { name: 'Senzo Wiseman Magagula', pct: 75.58 },
-  { name: 'SIBONGISENI KOLWANA', pct: 79.80 },
-  { name: 'IKAGENG MALEBANA', pct: 77.01 },
-  { name: 'AMOS MOYESHAMA', pct: 79.22 },
-  { name: 'XOLELO FONO', pct: 74.83 },
-];
-
+const ALL_MONTHS = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
 const pieColors = ['#c0392b', '#e74c3c', '#d35400', '#e67e22', '#f39c12', '#27ae60', '#2980b9', '#8e44ad', '#c0c0c0', '#7f8c8d'];
 
 function SemiCircleGauge({ value, max = 100 }: { value: number; max?: number }) {
   const pct = Math.min(value / max, 1);
   const angle = pct * 180;
-  const radius = 90;
   const cx = 100;
   const cy = 100;
-
   const needleAngle = (180 - angle) * (Math.PI / 180);
-  const needleX = cx + (radius - 10) * Math.cos(needleAngle);
-  const needleY = cy - (radius - 10) * Math.sin(needleAngle);
+  const needleX = cx + 70 * Math.cos(needleAngle);
+  const needleY = cy - 70 * Math.sin(needleAngle);
 
   return (
-    <svg viewBox="0 0 200 120" className="w-full h-auto">
-      {/* Green zone (0-33%) */}
-      <path d="M 10 100 A 90 90 0 0 1 55 18" fill="none" stroke="#27ae60" strokeWidth="20" />
-      {/* Orange zone (33-66%) */}
-      <path d="M 55 18 A 90 90 0 0 1 145 18" fill="none" stroke="#f39c12" strokeWidth="20" />
-      {/* Red zone (66-100%) */}
-      <path d="M 145 18 A 90 90 0 0 1 190 100" fill="none" stroke="#c0392b" strokeWidth="20" />
-      {/* Needle */}
-      <line x1={cx} y1={cy} x2={needleX} y2={needleY} stroke="#333" strokeWidth="2" />
-      <circle cx={cx} cy={cy} r="4" fill="#333" />
-      {/* Value */}
-      <text x={cx} y={cy - 10} textAnchor="middle" className="fill-gray-800 text-[18px] font-bold">
-        {value}
-      </text>
-      <text x={cx} y={cy + 8} textAnchor="middle" className="fill-gray-600 text-[8px] font-semibold">
-        Overall Risk Score
-      </text>
+    <svg viewBox="0 0 200 115" className="w-full h-auto max-h-[180px]">
+      <path d="M 15 100 A 85 85 0 0 1 58 22" fill="none" stroke="#27ae60" strokeWidth="18" />
+      <path d="M 58 22 A 85 85 0 0 1 142 22" fill="none" stroke="#f39c12" strokeWidth="18" />
+      <path d="M 142 22 A 85 85 0 0 1 185 100" fill="none" stroke="#c0392b" strokeWidth="18" />
+      <line x1={cx} y1={cy} x2={needleX} y2={needleY} stroke="#333" strokeWidth="2.5" />
+      <circle cx={cx} cy={cy} r="5" fill="#333" />
+      <text x={cx} y={cy - 8} textAnchor="middle" className="fill-gray-800 text-[20px] font-bold">{value}</text>
+      <text x={cx} y={cy + 10} textAnchor="middle" className="fill-gray-500 text-[8px] font-semibold">Overall Risk Score</text>
     </svg>
   );
 }
 
-function BarChart3D({ data, color, maxValue }: { data: number[]; color: string; maxValue: number }) {
+function MonthlyBarChart({ data, labels, color, maxValue }: { data: number[]; labels: string[]; color: string; maxValue: number }) {
   return (
-    <div className="flex items-end justify-between gap-2 h-[180px] px-2">
+    <div className="flex items-end justify-between gap-1 h-[160px] px-1 border-b border-gray-200">
       {data.map((val, i) => {
-        const h = (val / maxValue) * 160;
+        const h = maxValue > 0 ? (val / maxValue) * 140 : 0;
         return (
-          <div key={i} className="flex flex-col items-center flex-1">
-            <span className="text-[9px] font-semibold text-gray-700 mb-0.5">{val.toLocaleString()}</span>
+          <div key={i} className="flex flex-col items-center flex-1 min-w-0">
+            <span className="text-[8px] font-semibold text-gray-600 mb-0.5">{val > 0 ? val.toLocaleString() : '0'}</span>
             <div className="relative w-full flex justify-center">
               <div
-                className="w-8 rounded-t-sm"
+                className="w-7 rounded-t-sm"
                 style={{
-                  height: `${h}px`,
-                  background: `linear-gradient(135deg, ${color} 0%, ${color}cc 50%, ${color}99 100%)`,
-                  boxShadow: `2px 0 4px ${color}44, inset -2px 0 3px ${color}33`,
+                  height: `${Math.max(h, val > 0 ? 4 : 0)}px`,
+                  background: `linear-gradient(135deg, ${color} 0%, ${color}cc 100%)`,
+                  boxShadow: `1px 0 2px ${color}33`,
                 }}
               />
             </div>
-            <span className="text-[8px] text-gray-600 mt-1 font-medium">{months[i]}</span>
+            <span className="text-[7px] text-gray-500 mt-1 font-medium text-center">{labels[i]}</span>
           </div>
         );
       })}
@@ -80,45 +53,43 @@ function BarChart3D({ data, color, maxValue }: { data: number[]; color: string; 
   );
 }
 
-function PieChart3D({ data }: { data: typeof worstSpeedingDrivers }) {
-  const total = data.reduce((s, d) => s + d.pct, 0);
+function PieChart({ data, labels }: { data: number[]; labels: string[] }) {
+  const total = data.reduce((s, d) => s + d, 0);
+  if (total === 0) return <div className="text-xs text-gray-400 text-center py-4">No data</div>;
   let cumAngle = -90;
 
   return (
     <div className="flex items-center gap-3">
-      <svg viewBox="0 0 120 120" className="w-[140px] h-[140px] shrink-0">
-        {data.map((d, i) => {
-          const angle = (d.pct / total) * 360;
+      <svg viewBox="0 0 100 100" className="w-[130px] h-[130px] shrink-0">
+        {data.map((val, i) => {
+          const angle = (val / total) * 360;
           const startAngle = cumAngle;
           cumAngle += angle;
           const endAngle = cumAngle;
-
           const startRad = (startAngle * Math.PI) / 180;
           const endRad = (endAngle * Math.PI) / 180;
-
-          const x1 = 60 + 50 * Math.cos(startRad);
-          const y1 = 60 + 50 * Math.sin(startRad);
-          const x2 = 60 + 50 * Math.cos(endRad);
-          const y2 = 60 + 50 * Math.sin(endRad);
-
+          const x1 = 50 + 42 * Math.cos(startRad);
+          const y1 = 50 + 42 * Math.sin(startRad);
+          const x2 = 50 + 42 * Math.cos(endRad);
+          const y2 = 50 + 42 * Math.sin(endRad);
           const largeArc = angle > 180 ? 1 : 0;
-
           return (
             <path
               key={i}
-              d={`M 60 60 L ${x1} ${y1} A 50 50 0 ${largeArc} 1 ${x2} ${y2} Z`}
-              fill={pieColors[i]}
+              d={`M 50 50 L ${x1} ${y1} A 42 42 0 ${largeArc} 1 ${x2} ${y2} Z`}
+              fill={pieColors[i % pieColors.length]}
               stroke="#fff"
-              strokeWidth="1"
+              strokeWidth="0.8"
             />
           );
         })}
       </svg>
-      <div className="space-y-0.5">
-        {data.map((d, i) => (
+      <div className="space-y-1">
+        {labels.map((label, i) => (
           <div key={i} className="flex items-center gap-1.5 text-[9px]">
-            <span className="w-2 h-2 rounded-sm shrink-0" style={{ backgroundColor: pieColors[i] }} />
-            <span className="text-gray-700 font-medium uppercase">{d.name}</span>
+            <span className="w-2 h-2 rounded-sm shrink-0" style={{ backgroundColor: pieColors[i % pieColors.length] }} />
+            <span className="text-gray-700 font-medium uppercase truncate max-w-[120px]">{label}</span>
+            <span className="text-gray-400 ml-auto">{((data[i] / total) * 100).toFixed(1)}%</span>
           </div>
         ))}
       </div>
@@ -127,54 +98,139 @@ function PieChart3D({ data }: { data: typeof worstSpeedingDrivers }) {
 }
 
 export default function ExecDashTab() {
+  const [monthlyKm, setMonthlyKm] = useState<any[]>([]);
+  const [riskDist, setRiskDist] = useState<any[]>([]);
+  const [riskScores, setRiskScores] = useState<any[]>([]);
+  const [topSpeeding, setTopSpeeding] = useState<any[]>([]);
+  const [tripStatus, setTripStatus] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [kmRes, riskRes, scoresRes, speedRes, tripsRes] = await Promise.all([
+          fetch("/api/dashboard/km/monthly"),
+          fetch("/api/dashboard/risk/distribution"),
+          fetch("/api/dashboard/risk/scores"),
+          fetch("/api/dashboard/speeding/top"),
+          fetch("/api/dashboard/trips/status"),
+        ]);
+        const [km, risk, scores, speed, trips] = await Promise.all([
+          kmRes.json(), riskRes.json(), scoresRes.json(), speedRes.json(), tripsRes.json()
+        ]);
+        if (km.ok) setMonthlyKm(km.data);
+        if (risk.ok) setRiskDist(risk.data);
+        if (scores.ok) setRiskScores(scores.data);
+        if (speed.ok) setTopSpeeding(speed.data);
+        if (trips.ok) setTripStatus(trips.data);
+      } catch (e) {
+        console.error("Failed to fetch exec dash data:", e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
+  const monthMap: Record<string, number> = {};
+  monthlyKm.forEach(d => {
+    if (d.month) {
+      const m = parseInt(d.month.split("-")[1]);
+      monthMap[m] = parseFloat(d.total_km);
+    }
+  });
+  const kmData = ALL_MONTHS.map((_, i) => monthMap[i + 1] || 0);
+  const maxKm = Math.max(...kmData, 1);
+
+  const avgRisk = riskScores.length > 0
+    ? Math.round(riskScores.reduce((s, d) => s + d.score, 0) / riskScores.length)
+    : 0;
+
+  const speedLabels = topSpeeding.slice(0, 10).map((d: any) => {
+    const name = d.full_name || d.name || "";
+    return name.length > 18 ? name.substring(0, 18) + "..." : name;
+  });
+  const speedValues = topSpeeding.slice(0, 10).map((d: any) => parseInt(d.speeding_events));
+  const totalSpeeding = speedValues.reduce((s, v) => s + v, 0);
+
+  const tripLabels = tripStatus.map(d => d.status?.toUpperCase() || "");
+  const tripValues = tripStatus.map(d => parseInt(d.count));
+  const maxTrips = Math.max(...tripValues, 1);
+
+  const riskScoreMap: Record<string, number> = {};
+  riskScores.forEach(d => {
+    const dateStr = d.score_date;
+    if (dateStr) {
+      const m = new Date(dateStr).getMonth() + 1;
+      if (!riskScoreMap[m]) riskScoreMap[m] = [];
+      riskScoreMap[m].push(d.score);
+    }
+  });
+  const riskScoreData = ALL_MONTHS.map((_, i) => {
+    const scores = riskScoreMap[i + 1];
+    return scores ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+  });
+  const maxRisk = Math.max(...riskScoreData, 1);
+
+  const unitsNotUpdating = 1;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-200 border-t-blue-600"></div>
+        <span className="ml-3 text-gray-500 text-sm">Loading dashboard data...</span>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-[calc(100vh-200px)] bg-[#b8b8b8] p-4">
+    <div className="space-y-4">
       {/* Top Row */}
-      <div className="grid grid-cols-3 gap-4 mb-4">
+      <div className="grid grid-cols-3 gap-4">
         {/* Monthly Kilometres */}
-        <div className="bg-[#d4d4d4] border border-[#a0a0a0] rounded-lg p-3 shadow-inner">
-          <h3 className="text-center text-sm font-bold text-purple-800 mb-2">Monthly Kilometres</h3>
-          <BarChart3D data={monthlyKmData} color="#c8a415" maxValue={800000} />
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <h3 className="text-center text-sm font-bold text-purple-800 mb-3">Monthly Kilometres</h3>
+          <MonthlyBarChart data={kmData} labels={ALL_MONTHS.map(m => m.substring(0, 3))} color="#c8a415" maxValue={maxKm} />
         </div>
 
         {/* Overall Risk Score Gauge */}
-        <div className="bg-[#d4d4d4] border border-[#a0a0a0] rounded-lg p-3 shadow-inner flex flex-col items-center justify-center">
-          <SemiCircleGauge value={20} />
+        <div className="bg-white border border-gray-200 rounded-xl p-4 flex flex-col items-center justify-center">
+          <SemiCircleGauge value={avgRisk} />
         </div>
 
         {/* Top 10 Worst Speeding Drivers */}
-        <div className="bg-[#d4d4d4] border border-[#a0a0a0] rounded-lg p-3 shadow-inner">
-          <h3 className="text-center text-sm font-bold text-purple-800 mb-2">Top 10 Worst Speeding Drivers</h3>
-          <PieChart3D data={worstSpeedingDrivers} />
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <h3 className="text-center text-sm font-bold text-purple-800 mb-3">Top 10 Worst Speeding Drivers</h3>
+          <PieChart data={speedValues} labels={speedLabels} />
         </div>
       </div>
 
       {/* Bottom Row */}
       <div className="grid grid-cols-3 gap-4">
         {/* Number Of Trips */}
-        <div className="bg-[#d4d4d4] border border-[#a0a0a0] rounded-lg p-3 shadow-inner">
-          <h3 className="text-center text-sm font-bold text-purple-800 mb-2">Number Of Trips</h3>
-          <BarChart3D data={monthlyTripsData} color="#7b2d8e" maxValue={35000} />
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <h3 className="text-center text-sm font-bold text-purple-800 mb-3">Number Of Trips</h3>
+          <MonthlyBarChart data={tripValues} labels={tripLabels.map(l => l.substring(0, 3))} color="#7b2d8e" maxValue={maxTrips} />
         </div>
 
         {/* Units Not Updating */}
-        <div className="bg-[#d4d4d4] border border-[#a0a0a0] rounded-lg p-3 shadow-inner flex flex-col items-center justify-center">
-          <div className="relative w-[140px] h-[140px]">
-            <svg viewBox="0 0 140 140" className="w-full h-full">
-              <circle cx="70" cy="70" r="65" fill="#6b2d8e" />
-              <circle cx="70" cy="70" r="55" fill="#7b3d9e" />
+        <div className="bg-white border border-gray-200 rounded-xl p-4 flex flex-col items-center justify-center">
+          <div className="relative w-[120px] h-[120px]">
+            <svg viewBox="0 0 100 100" className="w-full h-full">
+              <circle cx="50" cy="50" r="46" fill="#6b2d8e" />
+              <circle cx="50" cy="50" r="38" fill="#7b3d9e" />
             </svg>
             <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-5xl font-bold text-white drop-shadow-lg">1</span>
+              <span className="text-4xl font-bold text-white drop-shadow-lg">-</span>
             </div>
           </div>
-          <p className="text-sm font-bold text-purple-800 mt-2">Units Not Updating</p>
+          <p className="text-sm font-bold text-purple-800 mt-3">Units Not Updating</p>
         </div>
 
         {/* Overall Risk Score Bar */}
-        <div className="bg-[#d4d4d4] border border-[#a0a0a0] rounded-lg p-3 shadow-inner">
-          <h3 className="text-center text-sm font-bold text-purple-800 mb-2">Overall Risk Score</h3>
-          <BarChart3D data={overallRiskBarData} color="#5fbfbf" maxValue={30} />
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <h3 className="text-center text-sm font-bold text-purple-800 mb-3">Overall Risk Score</h3>
+          <MonthlyBarChart data={riskScoreData} labels={ALL_MONTHS.map(m => m.substring(0, 3))} color="#5fbfbf" maxValue={maxRisk} />
         </div>
       </div>
     </div>
