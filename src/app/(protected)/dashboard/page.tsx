@@ -751,6 +751,7 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
   const [loading, setLoading] = useState(true)
   const [tripSearch, setTripSearch] = useState('')
   const [driverLookup, setDriverLookup] = useState<Record<string, string>>({})
+  const [vehicleLookup, setVehicleLookup] = useState<Record<string, string>>({})
 
   useEffect(() => {
     async function fetchTrips() {
@@ -770,21 +771,27 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
           // Removed automatic modal opening
         }
 
-        // Build driver lookup map for search
+        // Build driver and vehicle lookup maps for search
         try {
           const { data: assignments } = await supabase
             .from('vehicle_assignments')
-            .select('trip_id, drivers(first_name, surname)')
+            .select('trip_id, drivers(first_name, surname), vehicle(registration_number, name)')
           if (assignments) {
-            const lookup: Record<string, string> = {}
+            const driverLookup: Record<string, string> = {}
+            const vehicleLookup: Record<string, string> = {}
             for (const a of assignments) {
-              const name = a.drivers ? `${a.drivers.first_name || ''} ${a.drivers.surname || ''}`.trim() : ''
-              if (name && a.trip_id) lookup[a.trip_id] = name
+              const driverArr = a.drivers
+              const driver = Array.isArray(driverArr) ? driverArr[0] : driverArr
+              const driverName = driver ? `${driver.first_name || ''} ${driver.surname || ''}`.trim() : ''
+              if (driverName && a.trip_id) driverLookup[a.trip_id] = driverName
+              const vehiclePlate = a.vehicle?.registration_number || a.vehicle?.name || ''
+              if (vehiclePlate && a.trip_id) vehicleLookup[a.trip_id] = vehiclePlate
             }
-            setDriverLookup(lookup)
+            setDriverLookup(driverLookup)
+            setVehicleLookup(vehicleLookup)
           }
         } catch {
-          // driver search won't work but trips still load
+          // search won't work but trips still load
         }
       } catch (err) {
         console.error('Error fetching trips:', err)
@@ -818,6 +825,7 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
       if (!tripSearch.trim()) return true
       const q = tripSearch.toLowerCase()
       const driverName = driverLookup[trip.id] || driverLookup[trip.trip_id] || ''
+      const vehiclePlate = vehicleLookup[trip.id] || vehicleLookup[trip.trip_id] || ''
       const pickupAddr = trip.pickup_locations?.[0]?.address || trip.pickuplocations?.[0]?.address || ''
       const dropoffAddr = trip.dropoff_locations?.[0]?.address || trip.dropofflocations?.[0]?.address || ''
       const clientDetails = typeof trip.clientdetails === 'string' ? JSON.parse(trip.clientdetails) : trip.clientdetails
@@ -826,7 +834,7 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
         trip.trip_id, trip.id, trip.ordernumber, trip.route,
         trip.origin, trip.destination, trip.cargo, trip.cargo_weight,
         trip.vehicle_type, trip.status,
-        driverName, pickupAddr, dropoffAddr, clientName
+        driverName, vehiclePlate, pickupAddr, dropoffAddr, clientName
       ].filter(Boolean).join(' ').toLowerCase()
       return searchable.includes(q)
     })
