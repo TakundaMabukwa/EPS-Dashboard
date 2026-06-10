@@ -1148,29 +1148,60 @@ export default function SettingsPage() {
                 <Dialog open={isPermissionOpen} onOpenChange={setIsPermissionOpen}>
                     <DialogContent className="!max-w-none w-[70vw] max-h-[90vh] overflow-y-auto sm:!max-w-none">
                         <DialogHeader>
-                            <DialogTitle>View User Permissions</DialogTitle>
+                            <DialogTitle>Edit User Permissions</DialogTitle>
                             <DialogDescription>
-                                Current permissions for {editingUser?.email}
+                                Update permissions for {editingUser?.email}
                             </DialogDescription>
                         </DialogHeader>
                         <div className="space-y-4">
                             <div className="text-sm text-gray-600">
-                                Permissions assigned to <strong>{editingUser?.email}</strong>:
+                                Modify permissions for <strong>{editingUser?.email}</strong>. Check/uncheck pages and actions as needed.
                             </div>
                             <PageActionSelector
                                 initialPermissions={userPermissions}
-                                readOnly={true}
-                                onChange={() => {}}
+                                readOnly={false}
+                                onChange={(newPermissions) => {
+                                    setUserPermissions(newPermissions);
+                                }}
                             />
-                            <div className="flex justify-end pt-4">
+                            <div className="flex justify-end gap-2 pt-4 border-t">
                                 <Button 
+                                    variant="outline"
                                     onClick={() => {
                                         setIsPermissionOpen(false);
                                         setEditingUser(null);
                                         setUserPermissions([]);
                                     }}
                                 >
-                                    Close
+                                    Cancel
+                                </Button>
+                                <Button 
+                                    onClick={async () => {
+                                        if (!editingUser) return;
+                                        try {
+                                            const { error } = await supabase
+                                                .from('users')
+                                                .update({ permissions: userPermissions })
+                                                .eq('id', (editingUser as { id: string }).id);
+                                            
+                                            if (error) {
+                                                toast.error('Failed to update permissions: ' + error.message);
+                                                return;
+                                            }
+                                            
+                                            toast.success('Permissions updated successfully');
+                                            await fetchUsers();
+                                            setIsPermissionOpen(false);
+                                            setEditingUser(null);
+                                            setUserPermissions([]);
+                                        } catch (err) {
+                                            console.error('Error updating permissions:', err);
+                                            toast.error('Failed to update permissions');
+                                        }
+                                    }}
+                                    className="bg-blue-600 hover:bg-blue-700"
+                                >
+                                    Save Permissions
                                 </Button>
                             </div>
                         </div>

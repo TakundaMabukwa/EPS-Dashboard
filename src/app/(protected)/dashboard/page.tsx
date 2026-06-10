@@ -71,6 +71,8 @@ import TestRouteMap from "@/components/map/test-route-map";
 import { DateTimePicker } from "@/components/ui/datetime-picker";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Area, AreaChart } from 'recharts';
 import { EditTripModal } from "@/components/ui/edit-trip-modal";
+import { VehicleDashboardModal } from "@/components/ui/vehicle-dashboard-modal";
+import { Gauge } from "lucide-react";
 import LiveMapView from "@/components/map/live-map-view";
 
 // Global vehicle data cache to prevent redundant API calls
@@ -142,6 +144,7 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
   const [vehicleLocation, setVehicleLocation] = useState<any>(null)
   const [isFlashing, setIsFlashing] = useState(false)
   const [assignment, setAssignment] = useState<any>(null)
+  const [dashboardOpen, setDashboardOpen] = useState(false)
 
   // Check for unauthorized stops and trigger flash animation
   useEffect(() => {
@@ -697,7 +700,18 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
         >
           <X className="w-3 h-3" /> Close
         </SecureButton>
+
       </div>
+
+      <Button
+        size="sm"
+        variant="default"
+        className="h-10 text-sm font-semibold w-full mt-2 bg-gradient-to-r from-slate-700 to-slate-900 hover:from-slate-800 hover:to-black text-white shadow-lg hover:shadow-xl transition-all duration-200 border-0"
+        onClick={() => setDashboardOpen(true)}
+      >
+        <Gauge className="w-4 h-4 mr-2" />
+        Dashboard
+      </Button>
 
       {/* Full-width Video Button */}
       <Button
@@ -716,6 +730,15 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
         <Video className="w-4 h-4 mr-2" />
         View Live Camera Feeds
       </Button>
+
+      <VehicleDashboardModal
+        open={dashboardOpen}
+        onOpenChange={setDashboardOpen}
+        trip={trip}
+        driverInfo={driverInfo}
+        vehicleInfo={vehicleInfo}
+        vehicleLocation={vehicleLocation}
+      />
     </div>
   )
 }

@@ -144,7 +144,7 @@ export default function FuelCanBusDisplay() {
     <div className="h-full bg-slate-50">
       <div className="p-4">
         {vehicles.size > 0 ? (
-          <div className="grid grid-cols-1 gap-2 sm:gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
             {getFuelGaugeData().map((data) => (
               <FuelGauge
                 key={data.id}
@@ -154,6 +154,7 @@ export default function FuelCanBusDisplay() {
                 temperature={data.temperature}
                 volume={data.volume}
                 status={data.status}
+                onRefresh={fetchFuelData}
               />
             ))}
           </div>

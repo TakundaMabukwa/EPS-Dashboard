@@ -101,25 +101,30 @@ export default function LoadPlanPage() {
   const [selectedDriverLocation, setSelectedDriverLocation] = useState(null)
   
   // Cost calculation state
-  const [selectedVehicle, setSelectedVehicle] = useState('')
   const [fuelPricePerLiter, setFuelPricePerLiter] = useState('9.67')
   const [estimatedDistance, setEstimatedDistance] = useState(0)
-  const [approximateFuelCost, setApproximateFuelCost] = useState(0)
-  const [approximatedCPK, setApproximatedCPK] = useState(0)
-  const [approximatedVehicleCost, setApproximatedVehicleCost] = useState(0)
-  const [approximatedDriverCost, setApproximatedDriverCost] = useState(0)
-  const [totalVehicleCost, setTotalVehicleCost] = useState(0)
   const [fuelLitres, setFuelLitres] = useState(0)
+  const [fuelCost, setFuelCost] = useState(0)
   const [maintenanceCost, setMaintenanceCost] = useState(0)
   const [breakdownCost, setBreakdownCost] = useState(0)
-  const [fixedCost, setFixedCost] = useState(0)
-  const [loadingCost, setLoadingCost] = useState(850)
-  const [packingCost, setPackingCost] = useState(350)
   const [tollCost, setTollCost] = useState(0)
-  const [borderCost, setBorderCost] = useState(0)
-  const [profitMargin, setProfitMargin] = useState(0.20)
-  const [sellingPrice, setSellingPrice] = useState(0)
+  const [driverCost, setDriverCost] = useState(0)
+  const [allowanceCost, setAllowanceCost] = useState(0)
+  const [tripFixedCost, setTripFixedCost] = useState(0)
+  const [loadingCost, setLoadingCost] = useState(0)
+  const [packingCost, setPackingCost] = useState(0)
+  const [casualCost, setCasualCost] = useState(0)
+  const [crossBorderCost, setCrossBorderCost] = useState(0)
+  const [totalTripCost, setTotalTripCost] = useState(0)
+  const [costPerKm, setCostPerKm] = useState(0)
+  const [recommendedSellingPrice, setRecommendedSellingPrice] = useState(0)
   const [profit, setProfit] = useState(0)
+  const [profitMargin, setProfitMargin] = useState(20)
+  const [profitMarginPct, setProfitMarginPct] = useState(0)
+  const [tripDays, setTripDays] = useState(1)
+  const [dieselPrice, setDieselPrice] = useState(9.67)
+  const [fuelEfficiency, setFuelEfficiency] = useState(0)
+  const [isCostLoading, setIsCostLoading] = useState(false)
   const [stopsCount, setStopsCount] = useState(0)
   const [goodsInTransitPremium, setGoodsInTransitPremium] = useState('')
   const [tripType, setTripType] = useState('local')
@@ -127,8 +132,18 @@ export default function LoadPlanPage() {
   const [availableStopPoints, setAvailableStopPoints] = useState([])
   const [isLoadingStopPoints, setIsLoadingStopPoints] = useState(false)
   const [customStopPoints, setCustomStopPoints] = useState([])
-  const [tripDays, setTripDays] = useState(1)
   const [isManuallyOrdered, setIsManuallyOrdered] = useState(false)
+
+  // New costing inputs
+  const [loadingWorkers, setLoadingWorkers] = useState(0)
+  const [loadingHours, setLoadingHours] = useState(0)
+  const [packingWorkers, setPackingWorkers] = useState(0)
+  const [packingHours, setPackingHours] = useState(0)
+  const [casualWorkers, setCasualWorkers] = useState(0)
+  const [casualHours, setCasualHours] = useState(0)
+  const [casualRate, setCasualRate] = useState(0)
+  const [isCrossBorder, setIsCrossBorder] = useState(false)
+
   const addressDecisionRef = useRef(null)
 
   const doesClientHaveGeozone = (clientData) => {
@@ -159,38 +174,7 @@ export default function LoadPlanPage() {
     return null
   }
 
-  const PAYLOAD_EFFICIENCY = [
-    { maxRatio: 0, efficiency: 1.00 },
-    { maxRatio: 0.50, efficiency: 0.95 },
-    { maxRatio: 0.75, efficiency: 0.90 },
-    { maxRatio: 1.00, efficiency: 0.85 },
-  ]
 
-  const getPayloadEfficiency = (payloadKg: number, maxPayloadKg: number) => {
-    if (!maxPayloadKg || !payloadKg) return 1.0
-    const ratio = payloadKg / maxPayloadKg
-    for (let i = PAYLOAD_EFFICIENCY.length - 1; i >= 0; i--) {
-      if (ratio >= (i === 0 ? 0 : PAYLOAD_EFFICIENCY[i - 1].maxRatio)) {
-        return PAYLOAD_EFFICIENCY[i].efficiency
-      }
-    }
-    return 1.0
-  }
-
-  const VEHICLE_COST_PROFILES = {
-    'TAUTLINER':                    { fuelConsumptionKmPerL: 2.3, maintenanceCostPerKm: 1.10, breakdownCostPerKm: 0.06, driverAllowancePerKm: 1.40, fixedDailyCost: 3824, maxPayloadKg: 34000 },
-    'TAUT X-BRDER - BOTSWANA':      { fuelConsumptionKmPerL: 2.3, maintenanceCostPerKm: 1.10, breakdownCostPerKm: 0.06, driverAllowancePerKm: 1.40, fixedDailyCost: 4000, maxPayloadKg: 34000 },
-    'TAUT X-BRDER - NAMIBIA':       { fuelConsumptionKmPerL: 2.3, maintenanceCostPerKm: 1.10, breakdownCostPerKm: 0.06, driverAllowancePerKm: 1.40, fixedDailyCost: 4000, maxPayloadKg: 34000 },
-    'CITRUS LOAD (+1 DAY STANDING FPT)': { fuelConsumptionKmPerL: 2.3, maintenanceCostPerKm: 1.10, breakdownCostPerKm: 0.06, driverAllowancePerKm: 1.40, fixedDailyCost: 4200, maxPayloadKg: 34000 },
-    '14M/15M COMBO (NEW)':          { fuelConsumptionKmPerL: 2.3, maintenanceCostPerKm: 1.10, breakdownCostPerKm: 0.06, driverAllowancePerKm: 1.40, fixedDailyCost: 3824, maxPayloadKg: 34000 },
-    '14M/15M REEFER':               { fuelConsumptionKmPerL: 2.1, maintenanceCostPerKm: 1.20, breakdownCostPerKm: 0.06, driverAllowancePerKm: 1.40, fixedDailyCost: 4200, maxPayloadKg: 30000 },
-    '9 METER (NEW)':                { fuelConsumptionKmPerL: 3.0, maintenanceCostPerKm: 0.90, breakdownCostPerKm: 0.05, driverAllowancePerKm: 1.20, fixedDailyCost: 2800, maxPayloadKg: 12000 },
-    '8T JHB (NEW - EPS)':           { fuelConsumptionKmPerL: 4.0, maintenanceCostPerKm: 0.80, breakdownCostPerKm: 0.05, driverAllowancePerKm: 1.10, fixedDailyCost: 1650, maxPayloadKg: 8000 },
-    '8T JHB (NEW) - X-BRDER - MOZ': { fuelConsumptionKmPerL: 4.0, maintenanceCostPerKm: 0.80, breakdownCostPerKm: 0.05, driverAllowancePerKm: 1.10, fixedDailyCost: 1800, maxPayloadKg: 8000 },
-    '8T JHB (OLD)':                 { fuelConsumptionKmPerL: 4.0, maintenanceCostPerKm: 0.80, breakdownCostPerKm: 0.05, driverAllowancePerKm: 1.10, fixedDailyCost: 1500, maxPayloadKg: 8000 },
-    '14 TON CURTAIN':               { fuelConsumptionKmPerL: 2.8, maintenanceCostPerKm: 0.90, breakdownCostPerKm: 0.06, driverAllowancePerKm: 1.30, fixedDailyCost: 3000, maxPayloadKg: 14000 },
-    '1TON BAKKIE':                  { fuelConsumptionKmPerL: 8.0, maintenanceCostPerKm: 0.50, breakdownCostPerKm: 0.03, driverAllowancePerKm: 0.80, fixedDailyCost: 800, maxPayloadKg: 1000 },
-  }
 
   // Fetch loads and reference data
   // Fetch stop points with pagination and caching
@@ -720,77 +704,74 @@ export default function LoadPlanPage() {
     calculateRouteDistance()
   }, [loadingLocation, dropOffPoint])
 
-  const calculateTripCost = useCallback((vehicleType, kms, days, fuelPrice, loading, packing, tolls, border, margin, payloadKg) => {
-    const profile = VEHICLE_COST_PROFILES[vehicleType]
-    if (!profile || !kms || !days) {
-      return {
-        fuelLitres: 0, fuelCost: 0, maintenanceCost: 0, breakdownCost: 0, driverCost: 0,
-        fixedCost: 0, totalCost: 0, cpk: 0, sellingPrice: 0, profit: 0,
+  const clearCosts = () => {
+    setFuelLitres(0); setFuelCost(0); setMaintenanceCost(0); setBreakdownCost(0)
+    setTollCost(0); setDriverCost(0); setAllowanceCost(0); setTripFixedCost(0)
+    setLoadingCost(0); setPackingCost(0); setCasualCost(0); setCrossBorderCost(0)
+    setTotalTripCost(0); setCostPerKm(0); setRecommendedSellingPrice(0); setProfit(0)
+    setProfitMarginPct(0); setDieselPrice(9.67); setFuelEfficiency(0)
+  }
+
+  // Fetch cost calculation from server-side API
+  const fetchCostCalculation = useCallback(async () => {
+    if (!selectedVehicleId || !estimatedDistance || estimatedDistance <= 0) {
+      clearCosts()
+      return
+    }
+
+    setIsCostLoading(true)
+    try {
+      const response = await fetch('/api/load-plan/calculate-cost', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          vehicleId: Number(selectedVehicleId),
+          distanceKm: estimatedDistance,
+          manualFuelPrice: parseFloat(fuelPricePerLiter) || undefined,
+          profitMargin: profitMargin / 100,
+        }),
+      })
+
+      if (!response.ok) {
+        const errText = await response.text()
+        console.error('Cost calculation error:', errText)
+        clearCosts()
+        return
       }
-    }
 
-    const payloadEfficiency = getPayloadEfficiency(payloadKg || 0, profile.maxPayloadKg)
-    const effectiveConsumption = profile.fuelConsumptionKmPerL * payloadEfficiency
-    const litres = kms / effectiveConsumption
-    const fuel = litres * fuelPrice
-    const maintenance = kms * profile.maintenanceCostPerKm
-    const breakdown = kms * profile.breakdownCostPerKm
-    const driver = kms * profile.driverAllowancePerKm
-    const fixed = days * profile.fixedDailyCost
-    const totalCost = fuel + maintenance + breakdown + driver + fixed + loading + packing + tolls + border
-    const cpk = totalCost / kms
-    const selling = totalCost * (1 + margin)
-    const profitVal = selling - totalCost
-
-    return {
-      fuelLitres: litres,
-      fuelCost: fuel,
-      maintenanceCost: maintenance,
-      breakdownCost: breakdown,
-      driverCost: driver,
-      fixedCost: fixed,
-      totalCost,
-      cpk,
-      sellingPrice: selling,
-      profit: profitVal,
+      const data = await response.json()
+      setFuelLitres(data.fuelLitres)
+      setFuelCost(data.fuelCost)
+      setMaintenanceCost(data.maintenanceCost)
+      setBreakdownCost(data.breakdownCost)
+      setTollCost(data.tollCost)
+      setDriverCost(data.driverCost)
+      setAllowanceCost(data.allowanceCost)
+      setTripFixedCost(data.tripFixedCost)
+      setLoadingCost(data.loadingCost)
+      setPackingCost(data.packingCost)
+      setCasualCost(data.casualCost)
+      setCrossBorderCost(data.crossBorderCost)
+      setTotalTripCost(data.totalTripCost)
+      setCostPerKm(data.costPerKm)
+      setRecommendedSellingPrice(data.recommendedSellingPrice)
+      setProfit(data.profit)
+      setProfitMarginPct(data.profitMargin)
+      setDieselPrice(data.dieselPrice)
+      setFuelEfficiency(data.fuelEfficiency)
+      if (data.tripDays) setTripDays(data.tripDays)
+    } catch (err) {
+      console.error('Failed to fetch cost calculation:', err)
+      clearCosts()
+    } finally {
+      setIsCostLoading(false)
     }
-  }, [VEHICLE_COST_PROFILES])
+  }, [selectedVehicleId, estimatedDistance, loadingWorkers, loadingHours, packingWorkers, packingHours,
+      casualWorkers, casualHours, casualRate, isCrossBorder, profitMargin, fuelPricePerLiter])
 
   useEffect(() => {
-    if (selectedVehicleType && estimatedDistance > 0) {
-      const costBreakdown = calculateTripCost(
-        selectedVehicleType, estimatedDistance, tripDays,
-        parseFloat(fuelPricePerLiter) || 0,
-        loadingCost, packingCost, tollCost, borderCost,
-        profitMargin,
-        0
-      )
-
-      setFuelLitres(costBreakdown.fuelLitres)
-      setApproximateFuelCost(costBreakdown.fuelCost)
-      setMaintenanceCost(costBreakdown.maintenanceCost)
-      setBreakdownCost(costBreakdown.breakdownCost)
-      setApproximatedDriverCost(costBreakdown.driverCost)
-      setFixedCost(costBreakdown.fixedCost)
-      setApproximatedVehicleCost(costBreakdown.fixedCost)
-      setTotalVehicleCost(costBreakdown.totalCost)
-      setApproximatedCPK(costBreakdown.cpk)
-      setSellingPrice(costBreakdown.sellingPrice)
-      setProfit(costBreakdown.profit)
-    } else {
-      setFuelLitres(0)
-      setApproximateFuelCost(0)
-      setMaintenanceCost(0)
-      setBreakdownCost(0)
-      setApproximatedDriverCost(0)
-      setFixedCost(0)
-      setApproximatedVehicleCost(0)
-      setTotalVehicleCost(0)
-      setApproximatedCPK(0)
-      setSellingPrice(0)
-      setProfit(0)
-    }
-  }, [selectedVehicleType, estimatedDistance, tripDays, fuelPricePerLiter, loadingCost, packingCost, tollCost, borderCost, profitMargin, calculateTripCost])
+    fetchCostCalculation()
+  }, [fetchCostCalculation])
 
 
 
@@ -1434,11 +1415,23 @@ export default function LoadPlanPage() {
           return null
         }).filter(Boolean),
         selected_vehicle_type: selectedVehicleType,
-        approximate_fuel_cost: approximateFuelCost,
-        approximated_cpk: approximatedCPK,
-        approximated_vehicle_cost: approximatedVehicleCost,
-        approximated_driver_cost: approximatedDriverCost,
-        total_vehicle_cost: totalVehicleCost,
+        fuel_litres: fuelLitres,
+        fuel_cost: fuelCost,
+        maintenance_cost: maintenanceCost,
+        breakdown_cost: breakdownCost,
+        toll_cost: tollCost,
+        driver_cost: driverCost,
+        allowance_cost: allowanceCost,
+        trip_fixed_cost: tripFixedCost,
+        loading_cost: loadingCost,
+        packing_cost: packingCost,
+        casual_cost: casualCost,
+        cross_border_cost: crossBorderCost,
+        total_trip_cost: totalTripCost,
+        cost_per_km: costPerKm,
+        selling_price: recommendedSellingPrice,
+        profit: profit,
+        profit_margin: profitMarginPct,
         goods_in_transit_premium: parseFloat(goodsInTransitPremium) || null,
         estimated_distance: estimatedDistance,
         fuel_price_per_liter: parseFloat(fuelPricePerLiter) || null
@@ -2043,40 +2036,68 @@ export default function LoadPlanPage() {
                       <TrendingUp className="h-5 w-5 text-white" />
                     </div>
                     <h3 className="text-xl font-semibold text-slate-800">Trip Cost Estimation</h3>
+                    {isCostLoading && <span className="ml-2 text-xs text-slate-500 animate-pulse">Calculating...</span>}
                   </div>
                   
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
                     {/* Left Half - Input Fields and Stats */}
                     <div className="h-full flex flex-col justify-between space-y-6">
                       <div className="space-y-6">
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                           <div className="space-y-1">
                             <Label className="text-xs font-medium text-slate-700">Fuel Price (R/L)</Label>
                             <Input value={fuelPricePerLiter} onChange={(e) => setFuelPricePerLiter(e.target.value)} type="number" step="0.01" className="border-slate-300" />
                           </div>
                           <div className="space-y-1">
-                            <Label className="text-xs font-medium text-slate-700">Trip Days</Label>
-                            <Input value={tripDays} onChange={(e) => setTripDays(parseFloat(e.target.value) || 1)} type="number" step="0.5" min="0.5" className="border-slate-300" />
+                            <Label className="text-xs font-medium text-slate-700">Fuel Efficiency (km/L)</Label>
+                            <Input value={fuelEfficiency || ''} disabled className="border-slate-200 bg-slate-100" />
                           </div>
                           <div className="space-y-1">
-                            <Label className="text-xs font-medium text-slate-700">Profit Margin</Label>
+                            <Label className="text-xs font-medium text-slate-700">Diesel Price (R/L)</Label>
+                            <Input value={dieselPrice.toFixed(2)} disabled className="border-slate-200 bg-slate-100" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs font-medium text-slate-700">Trip Days</Label>
+                            <Input value={tripDays} disabled className="border-slate-200 bg-slate-100" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs font-medium text-slate-700">Profit Margin (%)</Label>
                             <Input value={profitMargin} onChange={(e) => setProfitMargin(parseFloat(e.target.value) || 0)} type="number" step="0.01" min="0" className="border-slate-300" />
                           </div>
                           <div className="space-y-1">
-                            <Label className="text-xs font-medium text-slate-700">Loading Cost</Label>
-                            <Input value={loadingCost} onChange={(e) => setLoadingCost(parseFloat(e.target.value) || 0)} type="number" step="10" className="border-slate-300" />
+                            <Label className="text-xs font-medium text-slate-700">Cross Border</Label>
+                            <div className="flex items-center h-10 px-3 border border-slate-300 rounded-md bg-white">
+                              <input type="checkbox" checked={isCrossBorder} onChange={(e) => setIsCrossBorder(e.target.checked)} className="h-4 w-4" />
+                              <span className="ml-2 text-xs text-slate-600">{isCrossBorder ? 'Yes' : 'No'}</span>
+                            </div>
                           </div>
                           <div className="space-y-1">
-                            <Label className="text-xs font-medium text-slate-700">Packing Cost</Label>
-                            <Input value={packingCost} onChange={(e) => setPackingCost(parseFloat(e.target.value) || 0)} type="number" step="10" className="border-slate-300" />
+                            <Label className="text-xs font-medium text-slate-700">Loading Workers</Label>
+                            <Input value={loadingWorkers} onChange={(e) => setLoadingWorkers(parseFloat(e.target.value) || 0)} type="number" min="0" className="border-slate-300" />
                           </div>
                           <div className="space-y-1">
-                            <Label className="text-xs font-medium text-slate-700">Toll Cost</Label>
-                            <Input value={tollCost} onChange={(e) => setTollCost(parseFloat(e.target.value) || 0)} type="number" step="10" className="border-slate-300" />
+                            <Label className="text-xs font-medium text-slate-700">Loading Hours</Label>
+                            <Input value={loadingHours} onChange={(e) => setLoadingHours(parseFloat(e.target.value) || 0)} type="number" min="0" className="border-slate-300" />
                           </div>
                           <div className="space-y-1">
-                            <Label className="text-xs font-medium text-slate-700">Border Cost</Label>
-                            <Input value={borderCost} onChange={(e) => setBorderCost(parseFloat(e.target.value) || 0)} type="number" step="50" className="border-slate-300" />
+                            <Label className="text-xs font-medium text-slate-700">Packing Workers</Label>
+                            <Input value={packingWorkers} onChange={(e) => setPackingWorkers(parseFloat(e.target.value) || 0)} type="number" min="0" className="border-slate-300" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs font-medium text-slate-700">Packing Hours</Label>
+                            <Input value={packingHours} onChange={(e) => setPackingHours(parseFloat(e.target.value) || 0)} type="number" min="0" className="border-slate-300" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs font-medium text-slate-700">Casual Workers</Label>
+                            <Input value={casualWorkers} onChange={(e) => setCasualWorkers(parseFloat(e.target.value) || 0)} type="number" min="0" className="border-slate-300" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs font-medium text-slate-700">Casual Hours</Label>
+                            <Input value={casualHours} onChange={(e) => setCasualHours(parseFloat(e.target.value) || 0)} type="number" min="0" className="border-slate-300" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs font-medium text-slate-700">Casual Rate (R/hr)</Label>
+                            <Input value={casualRate} onChange={(e) => setCasualRate(parseFloat(e.target.value) || 0)} type="number" min="0" className="border-slate-300" />
                           </div>
                           <div className="space-y-1">
                             <Label className="text-xs font-medium text-slate-700">Rate</Label>
@@ -2088,19 +2109,22 @@ export default function LoadPlanPage() {
                           {[
                             { label: 'Distance', value: `${estimatedDistance} km` },
                             { label: 'Stops', value: stopsCount },
-                            { label: 'CPK', value: `R${approximatedCPK.toFixed(2)}` },
+                            { label: 'CPK', value: `R${costPerKm.toFixed(2)}` },
                             { label: 'Fuel Litres', value: fuelLitres.toFixed(1) },
-                            { label: 'Fuel', value: `R${approximateFuelCost.toLocaleString()}` },
+                            { label: 'Fuel', value: `R${fuelCost.toLocaleString()}` },
                             { label: 'Maintenance', value: `R${maintenanceCost.toLocaleString()}` },
                             { label: 'Breakdown', value: `R${breakdownCost.toLocaleString()}` },
-                            { label: 'Driver', value: `R${approximatedDriverCost.toLocaleString()}` },
-                            { label: 'Fixed', value: `R${fixedCost.toLocaleString()}` },
+                            { label: 'Tolls', value: `R${tollCost.toLocaleString()}` },
+                            { label: 'Driver', value: `R${driverCost.toLocaleString()}` },
+                            { label: 'Allowance', value: `R${allowanceCost.toLocaleString()}` },
+                            { label: 'Fixed', value: `R${tripFixedCost.toLocaleString()}` },
                             { label: 'Loading', value: `R${loadingCost.toLocaleString()}` },
                             { label: 'Packing', value: `R${packingCost.toLocaleString()}` },
-                            { label: 'Tolls', value: `R${tollCost.toLocaleString()}` },
-                            { label: 'Border', value: `R${borderCost.toLocaleString()}` },
-                            { label: 'Selling Price', value: `R${sellingPrice.toLocaleString()}` },
+                            { label: 'Casual', value: `R${casualCost.toLocaleString()}` },
+                            { label: 'Border', value: `R${crossBorderCost.toLocaleString()}` },
+                            { label: 'Selling Price', value: `R${recommendedSellingPrice.toLocaleString()}` },
                             { label: 'Profit', value: `R${profit.toLocaleString()}` },
+                            { label: 'Profit %', value: `${profitMarginPct.toFixed(1)}%` },
                           ].map((item) => (
                             <div key={item.label} className="p-2 bg-white rounded-lg border border-slate-200 shadow-sm">
                               <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wide">{item.label}</p>
@@ -2113,8 +2137,8 @@ export default function LoadPlanPage() {
                       {/* Total Cost */}
                       <div className="p-6 bg-gradient-to-r from-slate-600 to-slate-700 rounded-xl shadow-lg">
                         <p className="text-sm font-medium text-slate-200 uppercase tracking-wide">Total Estimated Cost</p>
-                        <p className="text-3xl font-bold text-white mt-2">R{totalVehicleCost.toLocaleString()}</p>
-                        <p className="text-sm text-slate-300 mt-1">Selling Price: R{sellingPrice.toLocaleString()} | Profit: R{profit.toLocaleString()}</p>
+                        <p className="text-3xl font-bold text-white mt-2">R{totalTripCost.toLocaleString()}</p>
+                        <p className="text-sm text-slate-300 mt-1">Selling Price: R{recommendedSellingPrice.toLocaleString()} | Profit: R{profit.toLocaleString()} ({profitMarginPct.toFixed(1)}%)</p>
                       </div>
                     </div>
 
@@ -2130,15 +2154,17 @@ export default function LoadPlanPage() {
                         <ResponsiveContainer width="100%" height="100%">
                           <BarChart
                             data={[
-                              { name: 'Fuel', value: approximateFuelCost, fill: 'url(#fuelGradient)' },
+                              { name: 'Fuel', value: fuelCost, fill: 'url(#fuelGradient)' },
                               { name: 'Maintenance', value: maintenanceCost, fill: 'url(#vehicleGradient)' },
                               { name: 'Breakdown', value: breakdownCost, fill: 'url(#breakdownGradient)' },
-                              { name: 'Driver', value: approximatedDriverCost, fill: 'url(#driverGradient)' },
-                              { name: 'Fixed', value: fixedCost, fill: 'url(#fixedGradient)' },
+                              { name: 'Tolls', value: tollCost, fill: 'url(#tollGradient)' },
+                              { name: 'Driver', value: driverCost, fill: 'url(#driverGradient)' },
+                              { name: 'Allowance', value: allowanceCost, fill: 'url(#allowanceGradient)' },
+                              { name: 'Fixed', value: tripFixedCost, fill: 'url(#fixedGradient)' },
                               { name: 'Loading', value: loadingCost, fill: 'url(#loadingGradient)' },
                               { name: 'Packing', value: packingCost, fill: 'url(#packingGradient)' },
-                              { name: 'Tolls', value: tollCost, fill: 'url(#tollGradient)' },
-                              ...(borderCost > 0 ? [{ name: 'Border', value: borderCost, fill: 'url(#borderGradient)' }] : []),
+                              { name: 'Casual', value: casualCost, fill: 'url(#casualGradient)' },
+                              ...(crossBorderCost > 0 ? [{ name: 'Border', value: crossBorderCost, fill: 'url(#borderGradient)' }] : []),
                             ]}
                             margin={{ top: 20, right: 30, left: 40, bottom: 20 }}
                           >
@@ -2159,6 +2185,10 @@ export default function LoadPlanPage() {
                                 <stop offset="0%" stopColor="#fbbf24" stopOpacity={0.9}/>
                                 <stop offset="100%" stopColor="#f59e0b" stopOpacity={0.7}/>
                               </linearGradient>
+                              <linearGradient id="allowanceGradient" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#fcd34d" stopOpacity={0.9}/>
+                                <stop offset="100%" stopColor="#fbbf24" stopOpacity={0.7}/>
+                              </linearGradient>
                               <linearGradient id="fixedGradient" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="0%" stopColor="#a78bfa" stopOpacity={0.9}/>
                                 <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0.7}/>
@@ -2174,6 +2204,10 @@ export default function LoadPlanPage() {
                               <linearGradient id="tollGradient" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="0%" stopColor="#94a3b8" stopOpacity={0.9}/>
                                 <stop offset="100%" stopColor="#64748b" stopOpacity={0.7}/>
+                              </linearGradient>
+                              <linearGradient id="casualGradient" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#14b8a6" stopOpacity={0.9}/>
+                                <stop offset="100%" stopColor="#0d9488" stopOpacity={0.7}/>
                               </linearGradient>
                               <linearGradient id="borderGradient" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="0%" stopColor="#581c87" stopOpacity={0.9}/>
@@ -2203,9 +2237,17 @@ export default function LoadPlanPage() {
                           <div className="w-2.5 h-2.5 rounded-full bg-red-500"></div>
                           <span className="text-[10px] font-medium text-red-700">Breakdown</span>
                         </div>
+                        <div className="flex items-center gap-1 px-2 py-1 bg-slate-50 rounded-full border border-slate-200">
+                          <div className="w-2.5 h-2.5 rounded-full bg-slate-500"></div>
+                          <span className="text-[10px] font-medium text-slate-700">Tolls</span>
+                        </div>
                         <div className="flex items-center gap-1 px-2 py-1 bg-yellow-50 rounded-full border border-yellow-200">
                           <div className="w-2.5 h-2.5 rounded-full bg-yellow-500"></div>
                           <span className="text-[10px] font-medium text-yellow-700">Driver</span>
+                        </div>
+                        <div className="flex items-center gap-1 px-2 py-1 bg-amber-50 rounded-full border border-amber-200">
+                          <div className="w-2.5 h-2.5 rounded-full bg-amber-400"></div>
+                          <span className="text-[10px] font-medium text-amber-700">Allowance</span>
                         </div>
                         <div className="flex items-center gap-1 px-2 py-1 bg-purple-50 rounded-full border border-purple-200">
                           <div className="w-2.5 h-2.5 rounded-full bg-purple-500"></div>
@@ -2219,11 +2261,11 @@ export default function LoadPlanPage() {
                           <div className="w-2.5 h-2.5 rounded-full bg-orange-500"></div>
                           <span className="text-[10px] font-medium text-orange-700">Packing</span>
                         </div>
-                        <div className="flex items-center gap-1 px-2 py-1 bg-slate-50 rounded-full border border-slate-200">
-                          <div className="w-2.5 h-2.5 rounded-full bg-slate-500"></div>
-                          <span className="text-[10px] font-medium text-slate-700">Tolls</span>
+                        <div className="flex items-center gap-1 px-2 py-1 bg-teal-50 rounded-full border border-teal-200">
+                          <div className="w-2.5 h-2.5 rounded-full bg-teal-500"></div>
+                          <span className="text-[10px] font-medium text-teal-700">Casual</span>
                         </div>
-                        {borderCost > 0 && (
+                        {crossBorderCost > 0 && (
                           <div className="flex items-center gap-1 px-2 py-1 bg-purple-50 rounded-full border border-purple-200">
                             <div className="w-2.5 h-2.5 rounded-full bg-purple-900"></div>
                             <span className="text-[10px] font-medium text-purple-700">Border</span>

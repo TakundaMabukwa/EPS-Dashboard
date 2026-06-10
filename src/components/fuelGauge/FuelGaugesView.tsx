@@ -16,9 +16,7 @@ import { RefreshCw, Fuel, Save } from 'lucide-react';
 import { formatForDisplay } from '@/lib/utils/date-formatter';
 import { toast } from '@/hooks/use-toast';
 
-interface FuelGaugesViewProps {
-  onBack: () => void;
-}
+interface FuelGaugesViewProps {}
 
 interface FuelConsumptionData {
   id?: string | number;
@@ -34,8 +32,23 @@ interface FuelConsumptionData {
   updated_at?: string;
   fuel_anomaly?: string;
   fuel_anomaly_note?: string;
-  lastFuelFill?: any;
+  lastFuelFill?: {
+    time: string;
+    amount: number;
+    previousLevel: number;
+  };
   notes?: string | null;
+}
+
+interface EpsVehicleApiRecord {
+  plate?: string;
+  fuel_percentage?: string | number;
+  fuel_level?: string | number;
+  fuel_volume?: string | number;
+  fuel_temperature?: string | number;
+  speed?: string | number;
+  last_update?: string;
+  driver_name?: string;
 }
 
 interface GaugeNote {
@@ -46,7 +59,7 @@ interface GaugeNote {
   timestamp: string;
 }
 
-export function FuelGaugesView({ onBack }: FuelGaugesViewProps) {
+export function FuelGaugesView({}: FuelGaugesViewProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fuelConsumptionData, setFuelConsumptionData] = useState<FuelConsumptionData[]>([
@@ -336,7 +349,7 @@ export function FuelGaugesView({ onBack }: FuelGaugesViewProps) {
 
         return ({
         id: vehicle.id || index + 1,
-        location: vehicle.branch || vehicle.plate || 'Unknown Location',
+        location: vehicle.plate || vehicle.branch || 'Unknown Location',
         fuelLevel: percent || 0,
         temperature: parseFloat(vehicle.fuel_probe_1_temperature) || 25,
         volume: capacity,
@@ -388,7 +401,7 @@ export function FuelGaugesView({ onBack }: FuelGaugesViewProps) {
       {/* Gauges Grid */}
       <div className="p-4">
         {fuelConsumptionData.length > 0 ? (
-          <div className="gap-2 sm:gap-3 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
             {getFuelGaugeData().map((data) => (
               <FuelGauge
                 key={data.id}
@@ -405,7 +418,7 @@ export function FuelGaugesView({ onBack }: FuelGaugesViewProps) {
                 onAddNote={handleAddNote}
                 hasNotes={!!data.notes}
                 notes={data.notes}
-                className="hover:scale-105 transition-transform duration-200 transform"
+                onRefresh={fetchFuelData}
               />
             ))}
           </div>
