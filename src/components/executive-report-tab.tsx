@@ -39,6 +39,7 @@ export default function ExecutiveReportTab() {
   const [trucks, setTrucks] = useState<TrucksCount>({ total: 0, booked: 0, available: 0 });
   const [revenue, setRevenue] = useState<RevenueData>({ months: [], total: 0 });
   const [activeTrips, setActiveTrips] = useState<any[]>([]);
+  const [etaVehicles, setEtaVehicles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
@@ -48,11 +49,12 @@ export default function ExecutiveReportTab() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const [driversRes, revenueRes, trucksRes, tripsRes] = await Promise.all([
+        const [driversRes, revenueRes, trucksRes, tripsRes, etaRes] = await Promise.all([
           fetch('/api/executive/drivers-count'),
           fetch('/api/executive/revenue'),
           fetch('/api/executive/trucks-count'),
           fetch('/api/executive/active-trips'),
+          fetch('/api/executive/eta'),
         ]);
 
         if (driversRes.ok) {
@@ -73,6 +75,11 @@ export default function ExecutiveReportTab() {
         if (tripsRes.ok) {
           const t = await tripsRes.json();
           setActiveTrips(t);
+        }
+
+        if (etaRes.ok) {
+          const e = await etaRes.json();
+          setEtaVehicles(e);
         }
       } catch (err) {
         console.error('Failed to fetch executive data:', err);
@@ -342,47 +349,42 @@ export default function ExecutiveReportTab() {
               <Clock className="h-4 w-4 text-gray-500" />
               <span className="text-sm font-medium text-gray-700">Availability Forecast</span>
             </div>
-            <p className="mt-0.5 text-xs text-gray-500">Vehicles sorted by nearest to destination</p>
+            <p className="mt-0.5 text-xs text-gray-500">Soonest arrivals first (Google Distance Matrix)</p>
           </div>
           <div className="flex-1 space-y-3 p-4 overflow-y-auto" style={{ maxHeight: '240px' }}>
-            {activeTrips
-              .filter((t) => t.latitude && t.longitude)
-              .sort((a, b) => {
-                // Sort by speed (moving vehicles first), then by gps_time (most recent first)
-                if (a.speed > 0 && b.speed === 0) return -1;
-                if (a.speed === 0 && b.speed > 0) return 1;
-                return new Date(b.gps_time).getTime() - new Date(a.gps_time).getTime();
-              })
-              .slice(0, 5)
-              .map((trip, i) => {
-                const speed = trip.speed || 0;
-                const isMoving = speed > 0;
-                const timeSinceUpdate = trip.gps_time
-                  ? Math.round((Date.now() - new Date(trip.gps_time).getTime()) / 60000)
-                  : null;
-                return (
-                  <div key={i} className="flex items-center justify-between">
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-gray-900">{trip.registration}</p>
-                      <p className="truncate text-xs text-gray-500">
-                        {trip.origin?.split(',')[0] || ''} → {trip.destination?.split(',')[0] || ''}
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        {trip.driver_name || 'No driver'} • {isMoving ? `${Math.round(speed)} km/h` : 'Stationary'}
-                      </p>
-                    </div>
-                    <span className={`ml-2 shrink-0 rounded px-2 py-0.5 text-xs font-medium ${
-                      isMoving
-                        ? 'bg-emerald-50 text-emerald-700'
-                        : 'bg-amber-50 text-amber-700'
-                    }`}>
-                      {isMoving ? 'En route' : timeSinceUpdate !== null ? `${timeSinceUpdate}m ago` : 'Idle'}
-                    </span>
+            {etaVehicles.slice(0, 6).map((v, i) => {
+              const eta = new Date(v.estimated_arrival_at);
+              const now = new Date();
+              const minsLeft = Math.max(0, Math.round((eta.getTime() - now.getTime()) / 60000));
+              const hrs = Math.floor(minsLeft / 60);
+              const mins = minsLeft % 60;
+              const etaStr = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+              return (
+                <div key={i} className="flex items-center justify-between">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-900">{v.registration}</p>
+                    <p className="truncate text-xs text-gray-500">
+                      {v.destination_address}
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      {v.distance_text} • {v.duration_text}
+                      {v.driver_name ? ` • ${v.driver_name}` : ''}
+                    </p>
                   </div>
-                );
-              })}
-            {activeTrips.filter((t) => t.latitude && t.longitude).length === 0 && (
-              <p className="text-sm text-gray-400">No vehicles with live position data</p>
+                  <span className={`ml-2 shrink-0 rounded px-2 py-0.5 text-xs font-medium ${
+                    minsLeft <= 15
+                      ? 'bg-emerald-50 text-emerald-700'
+                      : minsLeft <= 60
+                        ? 'bg-amber-50 text-amber-700'
+                        : 'bg-blue-50 text-blue-700'
+                  }`}>
+                    {etaStr}
+                  </span>
+                </div>
+              );
+            })}
+            {etaVehicles.length === 0 && (
+              <p className="text-sm text-gray-400">No ETA data available</p>
             )}
           </div>
           <div className="border-t border-gray-100 px-4 py-2.5">
