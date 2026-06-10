@@ -1190,8 +1190,16 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
               <div className={cn(
               "w-7 h-7 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all duration-300",
               waypoint.isStop ? "bg-orange-500 border-orange-600 text-white" :
-              waypoint.current ? "bg-blue-500 border-blue-700 text-white" :
-              waypoint.completed ? "bg-emerald-600 border-emerald-700 text-white" :
+              waypoint.current ? (
+                (waypoint.currentElapsed || 0) > 1800 ? "bg-red-500 border-red-600 text-white" :
+                (waypoint.currentElapsed || 0) > 900 ? "bg-orange-500 border-orange-600 text-white" :
+                "bg-blue-500 border-blue-700 text-white"
+              ) :
+              waypoint.completed ? (
+                (waypoint.elapsedSeconds || 0) > 1800 ? "bg-red-500 border-red-600 text-white" :
+                (waypoint.elapsedSeconds || 0) > 900 ? "bg-orange-500 border-orange-600 text-white" :
+                "bg-emerald-600 border-emerald-700 text-white"
+              ) :
               "bg-slate-100 border-slate-200 text-slate-600"
               )}>
               {waypoint.isStop ? (
@@ -1207,8 +1215,16 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
               <span className={cn(
               "text-xs mt-1 text-center max-w-12 leading-tight",
               waypoint.isStop ? "text-orange-600 font-medium" :
-              waypoint.current ? "text-sky-700 font-semibold" :
-              waypoint.completed ? "text-emerald-700 font-medium" :
+              waypoint.current ? (
+                (waypoint.currentElapsed || 0) > 1800 ? "text-red-600 font-semibold" :
+                (waypoint.currentElapsed || 0) > 900 ? "text-orange-600 font-semibold" :
+                "text-sky-700 font-semibold"
+              ) :
+              waypoint.completed ? (
+                (waypoint.elapsedSeconds || 0) > 1800 ? "text-red-600 font-medium" :
+                (waypoint.elapsedSeconds || 0) > 900 ? "text-orange-600 font-medium" :
+                "text-emerald-700 font-medium"
+              ) :
               "text-gray-600"
               )}>
               {waypoint.label.split(' ')[0]}
