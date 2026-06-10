@@ -1223,20 +1223,32 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
                 {(() => {
                   const completedWithTime = waypoints.filter(w => w.completed && w.elapsedSeconds !== null && w.elapsedSeconds > 0)
                   const totalTime = completedWithTime.reduce((s, w) => s + (w.elapsedSeconds || 0), 0)
-                  const completedPct = waypoints.filter(w => w.completed).length / WORKFLOW_STATUSES.length * 100
-                  const segments: { width: number; color: string }[] = []
+                  const completedCount = waypoints.filter(w => w.completed).length
+                  const totalWaypoints = WORKFLOW_STATUSES.length
+                  const completedPct = (completedCount / totalWaypoints) * 100
+                  const segments: { width: number; color: string; elapsed: number }[] = []
                   if (totalTime > 0) {
                     completedWithTime.forEach((w, i) => {
                       const pct = ((w.elapsedSeconds || 0) / totalTime) * completedPct
-                      const intensity = Math.min(0.3 + (i / completedWithTime.length) * 0.7, 1)
-                      segments.push({ width: pct, color: `rgba(16,185,129,${intensity})` })
+                      const secs = w.elapsedSeconds || 0
+                      let color: string
+                      if (secs > 1800) color = '#ef4444'    // red (>30min)
+                      else if (secs > 900) color = '#f97316' // orange (>15min)
+                      else color = '#10b981'                  // emerald
+                      segments.push({ width: pct, color, elapsed: secs })
                     })
                   }
                   // Current segment
                   const currentSegWidth = Math.max(0, progress - completedPct)
-                  if (currentSegWidth > 0) segments.push({ width: currentSegWidth, color: 'rgba(59,130,246,0.6)' })
+                  if (currentSegWidth > 0) segments.push({ width: currentSegWidth, color: 'rgba(59,130,246,0.6)', elapsed: 0 })
                   return segments.map((seg, i) => (
-                    <div key={i} className="h-full transition-all duration-500" style={{ width: `${seg.width}%`, backgroundColor: seg.color }} />
+                    <div key={i} className="h-full transition-all duration-500 relative group" style={{ width: `${seg.width}%`, backgroundColor: seg.color }}>
+                      {seg.elapsed > 0 && (
+                        <span className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-[9px] text-gray-400 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
+                          {formatElapsed(seg.elapsed)}
+                        </span>
+                      )}
+                    </div>
                   ))
                 })()}
               </div>
