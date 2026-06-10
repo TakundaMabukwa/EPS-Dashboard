@@ -864,19 +864,28 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
     const stopsData = trip.stops_data || []
     // Build elapsed map: status -> elapsed_seconds from the previous status
     const elapsedMap: Record<string, number> = {}
+    const timestampMap: Record<string, string> = {}
     for (const entry of stopsData) {
       const s = entry.status?.toLowerCase()
-      if (s && typeof entry.elapsed_seconds === 'number') {
-        elapsedMap[s] = entry.elapsed_seconds
+      if (s) {
+        if (typeof entry.elapsed_seconds === 'number') elapsedMap[s] = entry.elapsed_seconds
+        if (entry.timestamp) timestampMap[s] = entry.timestamp
       }
     }
+    // Calculate elapsed time for current status (since last change)
+    const currentStatusValue = WORKFLOW_STATUSES[currentStatusIndex]?.value
+    const currentElapsed = currentStatusValue && timestampMap[currentStatusValue]
+      ? Math.floor((Date.now() - new Date(timestampMap[currentStatusValue]).getTime()) / 1000)
+      : 0
     const baseWaypoints = WORKFLOW_STATUSES.map((status, index) => ({
       position: (index / (WORKFLOW_STATUSES.length - 1)) * 100,
       label: status.label,
       completed: currentStatusIndex > index,
       current: currentStatusIndex === index,
       isStop: false,
-      elapsedSeconds: index > 0 ? (elapsedMap[status.value] ?? null) : null
+      elapsedSeconds: index > 0 ? (elapsedMap[status.value] ?? null) : null,
+      isCurrent: currentStatusIndex === index,
+      currentElapsed: currentStatusIndex === index ? currentElapsed : null
     }))
 
     // Insert stops between Loading (index 4) and On Trip (index 5)
@@ -1204,10 +1213,20 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
               )}>
               {waypoint.label.split(' ')[0]}
               </span>
-              {/* Elapsed time label between waypoints */}
+              {/* Elapsed time label below waypoint */}
               {waypoint.completed && waypoint.elapsedSeconds !== null && waypoint.elapsedSeconds > 0 && (
-                <span className="text-[9px] text-gray-400 mt-0.5 whitespace-nowrap">
+                <span className="text-[9px] text-gray-500 mt-0.5 whitespace-nowrap font-medium">
                   {formatElapsed(waypoint.elapsedSeconds)}
+                </span>
+              )}
+              {waypoint.isCurrent && waypoint.currentElapsed !== null && waypoint.currentElapsed > 0 && (
+                <span className={cn(
+                  "text-[9px] mt-0.5 whitespace-nowrap font-semibold",
+                  waypoint.currentElapsed > 1800 ? "text-red-500" :
+                  waypoint.currentElapsed > 900 ? "text-orange-500" :
+                  "text-blue-500"
+                )}>
+                  {formatElapsed(waypoint.currentElapsed)}
                 </span>
               )}
               {waypoint.isStop && (
@@ -1219,7 +1238,7 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
               ))}
               </div>
               {/* Segmented progress bar proportional to elapsed time */}
-              <div className="absolute top-3 left-3 right-3 h-1.5 bg-slate-100 -z-0 rounded flex overflow-hidden">
+              <div className="absolute top-3 left-3 right-3 h-1.5 bg-slate-100 -z-0 rounded flex">
                 {(() => {
                   const completedWithTime = waypoints.filter(w => w.completed && w.elapsedSeconds !== null && w.elapsedSeconds > 0)
                   const totalTime = completedWithTime.reduce((s, w) => s + (w.elapsedSeconds || 0), 0)
@@ -1240,7 +1259,13 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
                   }
                   // Current segment
                   const currentSegWidth = Math.max(0, progress - completedPct)
-                  if (currentSegWidth > 0) segments.push({ width: currentSegWidth, color: 'rgba(59,130,246,0.6)', elapsed: 0 })
+                  if (currentSegWidth > 0) {
+                    const curElapsed = waypoints.find(w => w.current)?.currentElapsed || 0
+                    let curColor = 'rgba(59,130,246,0.6)' // default blue
+                    if (curElapsed > 1800) curColor = '#ef4444'      // red >30min
+                    else if (curElapsed > 900) curColor = '#f97316'  // orange >15min
+                    segments.push({ width: currentSegWidth, color: curColor, elapsed: curElapsed })
+                  }
                   return segments.map((seg, i) => (
                     <div key={i} className="h-full transition-all duration-500 relative group" style={{ width: `${seg.width}%`, backgroundColor: seg.color }}>
                       {seg.elapsed > 0 && (
