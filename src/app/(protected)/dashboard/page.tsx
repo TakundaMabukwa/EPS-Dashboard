@@ -1815,7 +1815,7 @@ function TripReportsSection() {
 }
 
 export default function Dashboard() {
-  const [activeTab, setActiveTab] = useState<string>("executive-report");
+  const [activeTab, setActiveTab] = useState<string>("routing");
   const [auditData, setAuditData] = useState<any[]>([]);
   const [auditLoading, setAuditLoading] = useState(true);
   const [userRole, setUserRole] = useState<string>("");
@@ -2041,12 +2041,14 @@ export default function Dashboard() {
             className="w-full"
           >
             <TabsList className="flex w-fit items-center rounded-lg bg-white/90 backdrop-blur-sm p-1 shadow-lg">
+              {userRole === 'admin' && (
               <TabsTrigger
                 value="executive-report"
                 className="px-6 py-2 text-sm font-medium rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm"
               >
                 Executive Report
               </TabsTrigger>
+              )}
               <TabsTrigger
                 value="routing"
                 className="px-6 py-2 text-sm font-medium rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm"
@@ -2115,12 +2117,14 @@ export default function Dashboard() {
             className="w-full"
           >
             <TabsList className="flex w-fit items-center rounded-lg bg-slate-100 p-1 shadow-sm">
+              {userRole === 'admin' && (
               <TabsTrigger
                 value="executive-report"
                 className="px-6 py-2 text-sm font-medium rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm"
               >
                 Executive Report
               </TabsTrigger>
+              )}
               <TabsTrigger
                 value="routing"
                 className="px-6 py-2 text-sm font-medium rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm"
@@ -2144,7 +2148,7 @@ export default function Dashboard() {
         </div>
 
         {/* Conditionally render the main views */}
-        {activeTab === "executive-report" && (
+        {activeTab === "executive-report" && userRole === 'admin' && (
           <ExecutiveReportTab />
         )}
 
