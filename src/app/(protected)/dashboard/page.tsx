@@ -41,6 +41,7 @@ import {
   Moon,
   Sun,
   Search,
+  Fuel,
 } from "lucide-react";
 import { getDashboardStats } from "@/lib/stats/dashboard";
 import { createClient } from "@/lib/supabase/client";
@@ -74,8 +75,6 @@ import TestRouteMap from "@/components/map/test-route-map";
 import { DateTimePicker } from "@/components/ui/datetime-picker";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Area, AreaChart } from 'recharts';
 import { EditTripModal } from "@/components/ui/edit-trip-modal";
-import { VehicleDashboardModal } from "@/components/ui/vehicle-dashboard-modal";
-import { Gauge } from "lucide-react";
 import LiveMapView from "@/components/map/live-map-view";
 
 // Global vehicle data cache to prevent redundant API calls
@@ -145,9 +144,9 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
   const [vehicleInfo, setVehicleInfo] = useState<any>(null)
   const [loading, setLoading] = useState(false)
   const [vehicleLocation, setVehicleLocation] = useState<any>(null)
+  const [fuelData, setFuelData] = useState<any>(null)
   const [isFlashing, setIsFlashing] = useState(false)
   const [assignment, setAssignment] = useState<any>(null)
-  const [dashboardOpen, setDashboardOpen] = useState(false)
 
   // Check for unauthorized stops and trigger flash animation
   useEffect(() => {
@@ -221,6 +220,16 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
             })
             .catch(() => {})
         )
+        // Fetch fuel data for this vehicle
+        promises.push(
+          fetch('/api/fuel')
+            .then(r => r.json())
+            .then((fuelVehicles: any[]) => {
+              const match = fuelVehicles.find((v: any) => v.plate === assignment.vehicle.name)
+              if (match) setFuelData(match)
+            })
+            .catch(() => {})
+        )
       }
 
       await Promise.allSettled(promises)
@@ -282,18 +291,63 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
         </div>
       </div>
 
-      {/* Rate Information */}
-      {trip.rate && (
-        <div className="mb-2 p-2 rounded-lg bg-white/20 border border-white/5">
+      {/* Rate + Fuel */}
+      <div className="grid grid-cols-2 gap-2 mb-2">
+        <div className="p-2 rounded-lg bg-white/20 border border-white/5">
           <div className="flex items-center gap-1 mb-1">
             <div className="w-1.5 h-1.5 bg-green-500 rounded-full" />
             <span className="text-xs font-medium text-slate-700 uppercase">Rate</span>
           </div>
           <div className="text-xs font-medium text-green-600">
-            R{parseFloat(trip.rate).toLocaleString()}
+            {trip.rate ? `R${parseFloat(trip.rate).toLocaleString()}` : '—'}
           </div>
         </div>
-      )}
+        <div className="p-2 rounded-lg bg-white/20 border border-white/5">
+          <div className="flex items-center gap-1 mb-1">
+            <div className="w-1.5 h-1.5 bg-amber-500 rounded-full" />
+            <span className="text-xs font-medium text-slate-700 uppercase">Fuel</span>
+          </div>
+          {fuelData && fuelData.fuelLevel > 0 ? (
+            <div className="flex items-center gap-2">
+              {(() => {
+                const MAX_TANK = 400;
+                const litres = Math.max(0, fuelData.fuelLevel || 0);
+                const fillPct = Math.min(100, (litres / MAX_TANK) * 100);
+                const fuelColor = fillPct <= 10 ? '#ef4444' : fillPct <= 25 ? '#f97316' : fillPct <= 50 ? '#eab308' : '#10b981';
+                const sw = 4;
+                const r = 16;
+                const nr = r - sw / 2;
+                const circ = nr * 2 * Math.PI;
+                const dashoff = circ - (fillPct / 100) * circ;
+                return (
+                  <>
+                    <div className="relative shrink-0">
+                      <svg viewBox="0 0 36 36" className="h-[32px] w-[32px] -rotate-90">
+                        <circle cx="18" cy="18" r={nr} fill="none" stroke="#e2e8f0" strokeWidth={sw} />
+                        <circle
+                          cx="18" cy="18" r={nr} fill="none" stroke={fuelColor}
+                          strokeDasharray={`${circ} ${circ}`} strokeDashoffset={dashoff}
+                          strokeLinecap="round" strokeWidth={sw}
+                          className="transition-[stroke-dashoffset] duration-700 ease-out"
+                        />
+                      </svg>
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className="text-[9px] font-black leading-none text-[#1748d8]">{Math.round(litres)}</span>
+                      </div>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-medium text-slate-700">{Math.round(fillPct)}%</div>
+                      <div className="text-[9px] text-slate-500">Used: {fuelData.totalFuelUsed ? `${(fuelData.totalFuelUsed / 1000).toFixed(1)}k` : '—'}L</div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          ) : (
+            <div className="text-xs text-slate-400">No data</div>
+          )}
+        </div>
+      </div>
 
       {/* Unauthorized Stop Alert */}
       {trip.unauthorized_stops_count > 0 && trip.status?.toLowerCase() !== 'delivered' && (
@@ -706,16 +760,6 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
 
       </div>
 
-      <Button
-        size="sm"
-        variant="default"
-        className="h-10 text-sm font-semibold w-full mt-2 bg-gradient-to-r from-slate-700 to-slate-900 hover:from-slate-800 hover:to-black text-white shadow-lg hover:shadow-xl transition-all duration-200 border-0"
-        onClick={() => setDashboardOpen(true)}
-      >
-        <Gauge className="w-4 h-4 mr-2" />
-        Dashboard
-      </Button>
-
       {/* Full-width Video Button */}
       <Button
         size="sm"
@@ -734,14 +778,6 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
         View Live Camera Feeds
       </Button>
 
-      <VehicleDashboardModal
-        open={dashboardOpen}
-        onOpenChange={setDashboardOpen}
-        trip={trip}
-        driverInfo={driverInfo}
-        vehicleInfo={vehicleInfo}
-        vehicleLocation={vehicleLocation}
-      />
     </div>
   )
 }
@@ -832,6 +868,7 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
   const STATUS_OPTIONS = [
     { label: "Pending", value: "pending" },
     { label: "Accept", value: "accepted" },
+    { label: "Departing", value: "departing" },
     { label: "Reject", value: "rejected" },
     { label: "Arrived at Loading", value: "arrived-at-loading" },
     { label: "Staging Area", value: "staging-area" },
@@ -849,6 +886,7 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
   const WORKFLOW_STATUSES = [
     { label: "Pending", value: "pending" },
     { label: "Accept", value: "accepted" },
+    { label: "Departing", value: "departing" },
     { label: "Arrived at Loading", value: "arrived-at-loading" },
     { label: "Staging Area", value: "staging-area" },
     { label: "Loading", value: "loading" },
@@ -861,68 +899,107 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
   ]
 
   const getWaypointsWithStops = (trip: any) => {
-    const currentStatusIndex = WORKFLOW_STATUSES.findIndex(s => s.value === trip.status?.toLowerCase())
+    let effectiveStatus = trip.status?.toLowerCase()
     const stopsData = trip.stops_data || []
-    // Build elapsed map: status -> elapsed_seconds from the previous status
+
+    // For "stopped", find the last status that was actually recorded in stops_data
+    let isStopped = effectiveStatus === 'stopped'
+    if (isStopped && stopsData.length > 0) {
+      const lastRecorded = stopsData[stopsData.length - 1]
+      effectiveStatus = lastRecorded.status?.toLowerCase() || effectiveStatus
+    }
+
+    // Build elapsed map from stops_data (preserves order)
     const elapsedMap: Record<string, number> = {}
     const timestampMap: Record<string, string> = {}
+    const recordedOrder: string[] = []
     for (const entry of stopsData) {
       const s = entry.status?.toLowerCase()
+      if (s && !recordedOrder.includes(s)) recordedOrder.push(s)
       if (s) {
         if (typeof entry.elapsed_seconds === 'number') elapsedMap[s] = entry.elapsed_seconds
         if (entry.timestamp) timestampMap[s] = entry.timestamp
       }
     }
+
+    const currentStatusIndex = WORKFLOW_STATUSES.findIndex(s => s.value === effectiveStatus)
+
     // Calculate elapsed time for current status (since last change)
-    const currentStatusValue = WORKFLOW_STATUSES[currentStatusIndex]?.value
-    const currentElapsed = currentStatusValue && timestampMap[currentStatusValue]
-      ? Math.floor((Date.now() - new Date(timestampMap[currentStatusValue]).getTime()) / 1000)
+    const currentElapsed = effectiveStatus && timestampMap[effectiveStatus]
+      ? Math.floor((Date.now() - new Date(timestampMap[effectiveStatus]).getTime()) / 1000)
       : 0
-    const baseWaypoints = WORKFLOW_STATUSES.map((status, index) => ({
-      position: (index / (WORKFLOW_STATUSES.length - 1)) * 100,
+
+    // Build ordered statuses: recorded ones first (in stops_data order), then unrecorded ones
+    const unrecordedStatuses = WORKFLOW_STATUSES.filter(s => !recordedOrder.includes(s.value))
+    const orderedStatuses = [
+      ...recordedOrder.map(v => WORKFLOW_STATUSES.find(s => s.value === v)).filter(Boolean),
+      ...unrecordedStatuses
+    ]
+
+    // Build base waypoints in the new dynamic order
+    const baseWaypoints = orderedStatuses.map((status, index) => ({
+      position: (index / (orderedStatuses.length - 1)) * 100,
       label: status.label,
-      completed: currentStatusIndex > index,
-      current: currentStatusIndex === index,
+      completed: recordedOrder.includes(status.value) && status.value !== effectiveStatus,
+      current: status.value === effectiveStatus,
       isStop: false,
-      elapsedSeconds: index > 0 ? (elapsedMap[status.value] ?? null) : null,
-      isCurrent: currentStatusIndex === index,
-      currentElapsed: currentStatusIndex === index ? currentElapsed : null
+      elapsedSeconds: recordedOrder.includes(status.value) ? (elapsedMap[status.value] ?? null) : null,
+      isCurrent: status.value === effectiveStatus,
+      currentElapsed: status.value === effectiveStatus ? currentElapsed : null
     }))
 
     // Insert stops between Loading (index 4) and On Trip (index 5)
     const stops = trip.selected_stop_points || trip.selectedstoppoints || []
     if (stops.length > 0) {
-      const loadingPos = baseWaypoints[4].position
-      const onTripPos = baseWaypoints[5].position
+      const loadingIdx = orderedStatuses.findIndex(s => s.value === 'loading')
+      const onTripIdx = orderedStatuses.findIndex(s => s.value === 'on-trip')
+      const loadingPos = loadingIdx >= 0 ? baseWaypoints[loadingIdx]?.position ?? 36 : 36
+      const onTripPos = onTripIdx >= 0 ? baseWaypoints[onTripIdx]?.position ?? 45 : 45
       const stopSpacing = (onTripPos - loadingPos) / (stops.length + 1)
       
       const stopWaypoints = stops.map((stop: any, index: number) => ({
         position: loadingPos + (stopSpacing * (index + 1)),
         label: `Stop ${index + 1}`,
-        completed: currentStatusIndex > 4,
+        completed: recordedOrder.includes('loading') && !recordedOrder.includes('on-trip'),
         current: false,
         isStop: true,
         stopId: stop
       }))
+
+      // Rebuild base waypoints with adjusted positions for stops after loading
+      const loadingWaypoints = baseWaypoints.filter((_, i) => i <= (loadingIdx >= 0 ? loadingIdx : 4))
+      const afterLoadingWaypoints = baseWaypoints.filter((_, i) => i > (loadingIdx >= 0 ? loadingIdx : 4))
+      const lastLoadingPos = loadingWaypoints[loadingWaypoints.length - 1]?.position ?? loadingPos
+      afterLoadingWaypoints.forEach((wp, i) => {
+        wp.position = onTripPos + ((i + 1) / (afterLoadingWaypoints.length + stops.length)) * (100 - onTripPos)
+      })
+      stopWaypoints.forEach((swp, i) => {
+        swp.position = lastLoadingPos + ((i + 1) / (afterLoadingWaypoints.length + stops.length + 1)) * (100 - lastLoadingPos)
+      })
       
-      // Adjust positions of waypoints after Loading
-      const adjustedWaypoints = [...baseWaypoints]
-      for (let i = 5; i < adjustedWaypoints.length; i++) {
-        adjustedWaypoints[i].position = onTripPos + ((i - 5) / (WORKFLOW_STATUSES.length - 6)) * (100 - onTripPos)
-      }
-      
-      return [...adjustedWaypoints.slice(0, 5), ...stopWaypoints, ...adjustedWaypoints.slice(5)]
+      return { waypoints: [...loadingWaypoints, ...stopWaypoints, ...afterLoadingWaypoints], isStopped }
     }
     
-    return baseWaypoints
+    return { waypoints: baseWaypoints, isStopped }
   }
 
 
 
-  const getTripProgress = (status: string) => {
-    const statusIndex = WORKFLOW_STATUSES.findIndex(s => s.value === status?.toLowerCase())
-    if (statusIndex === -1) return 0
-    return ((statusIndex + 1) / WORKFLOW_STATUSES.length) * 100
+  const getTripProgress = (status: string, stopsData?: any[]) => {
+    let effectiveStatus = status?.toLowerCase()
+    // For "stopped", use the last recorded status from stops_data
+    if (effectiveStatus === 'stopped' && stopsData && stopsData.length > 0) {
+      effectiveStatus = stopsData[stopsData.length - 1]?.status?.toLowerCase() || effectiveStatus
+    }
+    // Count unique recorded statuses in order
+    const recordedOrder: string[] = []
+    for (const entry of (stopsData || [])) {
+      const s = entry.status?.toLowerCase()
+      if (s && !recordedOrder.includes(s)) recordedOrder.push(s)
+    }
+    if (recordedOrder.length === 0) return 0
+    // Progress is based on how many statuses have been recorded vs total possible
+    return (recordedOrder.length / WORKFLOW_STATUSES.length) * 100
   }
 
   const formatElapsed = (seconds: number | null | undefined) => {
@@ -992,8 +1069,8 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
       ) : (
       <div className="space-y-6">
       {tripsList.map((trip: any) => {
-        const waypoints = getWaypointsWithStops(trip)
-        const progress = getTripProgress(trip.status)
+        const { waypoints, isStopped } = getWaypointsWithStops(trip)
+        const progress = getTripProgress(trip.status, trip.stops_data)
 
         const clientDetails = typeof trip.clientdetails === 'string' ? JSON.parse(trip.clientdetails) : trip.clientdetails
         const title = clientDetails?.name || trip.selectedClient || trip.clientDetails?.name || `Trip ${trip.trip_id || trip.id}`
@@ -1053,20 +1130,6 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
                   </Button>
                 </div>
               )}
-
-              {/* Acceptance Time Warning */}
-              {(() => {
-                const warn = getAcceptanceWarning(trip)
-                if (!warn) return null
-                return (
-                  <div className={`flex items-center gap-2 p-2 mb-3 text-xs ${warn.bg} border ${warn.text} rounded-lg`}>
-                    <Clock className={`w-3 h-3 ${warn.icon} flex-shrink-0`} />
-                    <span className={`font-semibold ${warn.text} uppercase tracking-wide`}>{warn.label}</span>
-                    <span className={warn.text}>•</span>
-                    <span className={warn.text}>{warn.message}</span>
-                  </div>
-                )
-              })()}
 
               {/* Alert Banner */}
               {(() => {
@@ -1179,18 +1242,38 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
               </div>
 
               {/* Enhanced Timeline */}
-              <div className="mb-3">
-              <div className="flex items-center justify-between mb-2">
-              <h4 className="text-xs font-semibold text-black">Trip Progress</h4>
-              <span className="text-xs text-gray-700">{Math.round(progress)}% Complete</span>
-              </div>
+              <div className={cn("mb-3 mt-1", isStopped && "opacity-50 grayscale pointer-events-none")}>
+              {/* Trip Progress Bar */}
               <div className="relative">
-              <div className="flex justify-between items-center">
+              {/* Waypoint circles — positioned on the bar line */}
+              <div className="flex justify-between items-center relative z-10">
               {waypoints.map((waypoint, index) => (
-              <div key={index} className="flex flex-col items-center relative z-10 group">
+              <div key={index} className="flex flex-col items-center relative">
+              {/* Elapsed time — absolutely positioned so it never shifts the circles */}
+              <div className="absolute -top-5 left-1/2 -translate-x-1/2 h-4 flex items-end justify-center">
+              {waypoint.completed && waypoint.elapsedSeconds !== null && waypoint.elapsedSeconds > 0 && (
+                <span className={cn(
+                  "text-[9px] whitespace-nowrap font-medium",
+                  waypoint.elapsedSeconds > 1800 ? "text-red-500" :
+                  waypoint.elapsedSeconds > 900 ? "text-orange-500" :
+                  "text-gray-500"
+                )}>
+                  {formatElapsed(waypoint.elapsedSeconds)}
+                </span>
+              )}
+              {waypoint.isCurrent && waypoint.currentElapsed !== null && waypoint.currentElapsed > 0 && (
+                <span className={cn(
+                  "text-[9px] whitespace-nowrap font-semibold",
+                  waypoint.currentElapsed > 1800 ? "text-red-500" :
+                  waypoint.currentElapsed > 900 ? "text-orange-500" :
+                  "text-blue-500"
+                )}>
+                  {formatElapsed(waypoint.currentElapsed)}
+                </span>
+              )}
+              </div>
               <div className={cn(
               "w-7 h-7 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all duration-300",
-              waypoint.isStop ? "bg-orange-500 border-orange-600 text-white" :
               waypoint.current ? (
                 (waypoint.currentElapsed || 0) > 1800 ? "bg-red-500 border-red-600 text-white" :
                 (waypoint.currentElapsed || 0) > 900 ? "bg-orange-500 border-orange-600 text-white" :
@@ -1203,96 +1286,34 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
               ) :
               "bg-slate-100 border-slate-200 text-slate-600"
               )}>
-              {waypoint.isStop ? (
-                <MapPin className="w-3 h-3" />
-              ) : waypoint.completed ? (
-                <CheckCircle className="w-3 h-3" />
-              ) : waypoint.current ? (
-                <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
-              ) : (
-                index + 1
-              )}
+              {waypoint.completed ? <CheckCircle className="w-3 h-3" /> :
+               waypoint.current ? <div className="w-2 h-2 bg-white rounded-full animate-pulse" /> :
+               <span className="text-[9px]">{index + 1}</span>}
               </div>
               <span className={cn(
-              "text-xs mt-1 text-center max-w-12 leading-tight",
-              waypoint.isStop ? "text-orange-600 font-medium" :
+              "text-[10px] mt-1 text-center max-w-[52px] leading-tight",
               waypoint.current ? (
                 (waypoint.currentElapsed || 0) > 1800 ? "text-red-600 font-semibold" :
                 (waypoint.currentElapsed || 0) > 900 ? "text-orange-600 font-semibold" :
-                "text-sky-700 font-semibold"
+                "text-blue-600 font-semibold"
               ) :
               waypoint.completed ? (
                 (waypoint.elapsedSeconds || 0) > 1800 ? "text-red-600 font-medium" :
                 (waypoint.elapsedSeconds || 0) > 900 ? "text-orange-600 font-medium" :
                 "text-emerald-700 font-medium"
-              ) :
-              "text-gray-600"
+              ) : "text-gray-500"
               )}>
               {waypoint.label.split(' ')[0]}
               </span>
-              {/* Elapsed time label below waypoint */}
-              {waypoint.completed && waypoint.elapsedSeconds !== null && waypoint.elapsedSeconds > 0 && (
-                <span className="text-[9px] text-gray-500 mt-0.5 whitespace-nowrap font-medium">
-                  {formatElapsed(waypoint.elapsedSeconds)}
-                </span>
-              )}
-              {waypoint.isCurrent && waypoint.currentElapsed !== null && waypoint.currentElapsed > 0 && (
-                <span className={cn(
-                  "text-[9px] mt-0.5 whitespace-nowrap font-semibold",
-                  waypoint.currentElapsed > 1800 ? "text-red-500" :
-                  waypoint.currentElapsed > 900 ? "text-orange-500" :
-                  "text-blue-500"
-                )}>
-                  {formatElapsed(waypoint.currentElapsed)}
-                </span>
-              )}
-              {waypoint.isStop && (
-              <div className="absolute bottom-full mb-1 px-2 py-1 bg-white border rounded text-xs text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-20">
-                {typeof waypoint.stopId === 'object' ? waypoint.stopId.name : waypoint.stopId}
-              </div>
-              )}
               </div>
               ))}
               </div>
-              {/* Segmented progress bar proportional to elapsed time */}
-              <div className="absolute top-3 left-3 right-3 h-1.5 bg-slate-100 -z-0 rounded flex">
-                {(() => {
-                  const completedWithTime = waypoints.filter(w => w.completed && w.elapsedSeconds !== null && w.elapsedSeconds > 0)
-                  const totalTime = completedWithTime.reduce((s, w) => s + (w.elapsedSeconds || 0), 0)
-                  const completedCount = waypoints.filter(w => w.completed).length
-                  const totalWaypoints = WORKFLOW_STATUSES.length
-                  const completedPct = (completedCount / totalWaypoints) * 100
-                  const segments: { width: number; color: string; elapsed: number }[] = []
-                  if (totalTime > 0) {
-                    completedWithTime.forEach((w, i) => {
-                      const pct = ((w.elapsedSeconds || 0) / totalTime) * completedPct
-                      const secs = w.elapsedSeconds || 0
-                      let color: string
-                      if (secs > 1800) color = '#ef4444'    // red (>30min)
-                      else if (secs > 900) color = '#f97316' // orange (>15min)
-                      else color = '#10b981'                  // emerald
-                      segments.push({ width: pct, color, elapsed: secs })
-                    })
-                  }
-                  // Current segment
-                  const currentSegWidth = Math.max(0, progress - completedPct)
-                  if (currentSegWidth > 0) {
-                    const curElapsed = waypoints.find(w => w.current)?.currentElapsed || 0
-                    let curColor = 'rgba(59,130,246,0.6)' // default blue
-                    if (curElapsed > 1800) curColor = '#ef4444'      // red >30min
-                    else if (curElapsed > 900) curColor = '#f97316'  // orange >15min
-                    segments.push({ width: currentSegWidth, color: curColor, elapsed: curElapsed })
-                  }
-                  return segments.map((seg, i) => (
-                    <div key={i} className="h-full transition-all duration-500 relative group" style={{ width: `${seg.width}%`, backgroundColor: seg.color }}>
-                      {seg.elapsed > 0 && (
-                        <span className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-[9px] text-gray-400 whitespace-nowrap">
-                          {formatElapsed(seg.elapsed)}
-                        </span>
-                      )}
-                    </div>
-                  ))
-                })()}
+              {/* Bar line behind the circles — always passes through circle center */}
+              <div className="absolute top-[10px] left-[14px] right-[14px] h-1.5 bg-slate-200 -z-0 rounded">
+                <div
+                  className="h-full rounded bg-gradient-to-r from-emerald-500 via-blue-500 to-blue-400 transition-all duration-500"
+                  style={{ width: `${Math.min(progress, 100)}%` }}
+                />
               </div>
               </div>
               </div>
@@ -1581,6 +1602,7 @@ function TripReportsSection() {
                     const WORKFLOW = [
                       { label: "Pending", value: "pending" },
                       { label: "Accept", value: "accepted" },
+                      { label: "Departing", value: "departing" },
                       { label: "Arrived", value: "arrived-at-loading" },
                       { label: "Staging", value: "staging-area" },
                       { label: "Loading", value: "loading" },
@@ -1603,7 +1625,13 @@ function TripReportsSection() {
                     const currentIdx = WORKFLOW.findIndex(s => s.value === trip.status?.toLowerCase())
                     const totalTime = stopsData.reduce((sum: number, e: any) => sum + (e.elapsed_seconds || 0), 0)
                     const stepsCompleted = stopsData.length
-                    const progress = currentIdx >= 0 ? ((currentIdx + 1) / WORKFLOW.length) * 100 : 0
+                    // Dynamic progress based on recorded statuses
+                    const recordedOrder: string[] = []
+                    for (const entry of stopsData) {
+                      const s = entry.status?.toLowerCase()
+                      if (s && !recordedOrder.includes(s)) recordedOrder.push(s)
+                    }
+                    const progress = recordedOrder.length > 0 ? (recordedOrder.length / WORKFLOW.length) * 100 : (currentIdx >= 0 ? ((currentIdx + 1) / WORKFLOW.length) * 100 : 0)
                     const fmtElapsed = (secs: number | null | undefined) => {
                       if (!secs || secs <= 0) return 'No data'
                       if (secs < 60) return `${secs}s`
@@ -1612,13 +1640,18 @@ function TripReportsSection() {
                     }
                     const segColor = (secs: number) => secs > 1800 ? '#ef4444' : secs > 900 ? '#f97316' : '#10b981'
                     const segLabel = (secs: number) => secs > 1800 ? 'Overdue' : secs > 900 ? 'Delayed' : 'On Time'
-                    // Always show ALL 11 stops
-                    const wpData = WORKFLOW.map((w, i) => ({
+                    // Dynamic order: recorded statuses first (in stops_data order), then unrecorded
+                    const unrecorded = WORKFLOW.filter(w => !recordedOrder.includes(w.value))
+                    const orderedWorkflow = [
+                      ...recordedOrder.map(v => WORKFLOW.find(w => w.value === v)).filter(Boolean),
+                      ...unrecorded
+                    ]
+                    const wpData = orderedWorkflow.map((w, i) => ({
                       ...w,
-                      completed: currentIdx > i,
-                      current: currentIdx === i,
-                      elapsed: elapsedMap[w.value] ?? null,
-                      timestamp: timestampMap[w.value] ?? null,
+                      completed: recordedOrder.includes(w.value) && w.value !== trip.status?.toLowerCase(),
+                      current: w.value === trip.status?.toLowerCase(),
+                      elapsed: recordedOrder.includes(w.value) ? (elapsedMap[w.value] ?? null) : null,
+                      timestamp: recordedOrder.includes(w.value) ? (timestampMap[w.value] ?? null) : null,
                     }))
                     return (
                     <div className="bg-white rounded-xl border border-slate-200 p-5 mb-4">
@@ -1662,11 +1695,22 @@ function TripReportsSection() {
                           <h4 className="text-xs font-semibold text-black">Trip Progress</h4>
                           <span className="text-xs text-gray-700">{Math.round(progress)}% Complete</span>
                         </div>
-                        <div className="relative pt-1">
+                        <div className="relative">
                           {/* Waypoint circles — positioned on the bar line */}
                           <div className="flex justify-between items-center relative z-10">
                             {wpData.map((wp, i) => (
-                              <div key={i} className="flex flex-col items-center">
+                              <div key={i} className="flex flex-col items-center relative">
+                                {/* Elapsed time — absolutely positioned above */}
+                                <div className="absolute -top-5 left-1/2 -translate-x-1/2 h-4 flex items-end justify-center">
+                                  {wp.elapsed !== null && wp.elapsed > 0 && (
+                                    <span className={cn(
+                                      "text-[9px] whitespace-nowrap font-medium",
+                                      wp.elapsed > 1800 ? "text-red-500" :
+                                      wp.elapsed > 900 ? "text-orange-500" :
+                                      "text-gray-500"
+                                    )}>{fmtElapsed(wp.elapsed)}</span>
+                                  )}
+                                </div>
                                 <div className={cn(
                                   "w-7 h-7 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all duration-300",
                                   wp.current ? (
@@ -1698,19 +1742,11 @@ function TripReportsSection() {
                                     "text-emerald-700 font-medium"
                                   ) : "text-gray-500"
                                 )}>{wp.label}</span>
-                                <span className={cn(
-                                  "text-[9px] mt-0.5 whitespace-nowrap",
-                                  wp.elapsed !== null && wp.elapsed > 0 ? (
-                                    wp.elapsed > 1800 ? "text-red-500 font-semibold" :
-                                    wp.elapsed > 900 ? "text-orange-500 font-semibold" :
-                                    "text-gray-500 font-medium"
-                                  ) : "text-gray-400"
-                                )}>{wp.elapsed !== null && wp.elapsed > 0 ? fmtElapsed(wp.elapsed) : 'No data'}</span>
                               </div>
                             ))}
                           </div>
                           {/* Bar line behind the circles */}
-                          <div className="absolute top-3.5 left-[14px] right-[14px] h-1.5 bg-slate-200 -z-0 rounded">
+                          <div className="absolute top-[10px] left-[14px] right-[14px] h-1.5 bg-slate-200 -z-0 rounded">
                             <div
                               className="h-full rounded bg-gradient-to-r from-emerald-500 via-blue-500 to-blue-400 transition-all duration-500"
                               style={{ width: `${Math.min(progress, 100)}%` }}

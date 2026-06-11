@@ -15,6 +15,7 @@ import {
   ArrowRight,
   Calendar,
   CheckCircle,
+  X,
 } from "lucide-react";
 import { useGoogleMaps } from "@/hooks/use-google-maps";
 import { RollingNumber } from "@/components/ui/rolling-number";
@@ -43,6 +44,9 @@ export default function ExecutiveReportTab() {
   const [activeTrips, setActiveTrips] = useState<any[]>([]);
   const [etaVehicles, setEtaVehicles] = useState<any[]>([]);
   const [acceptance, setAcceptance] = useState({ total: 0, accepted: 0, notAccepted: 0, rate: 0 });
+  const [tripHistory, setTripHistory] = useState<any[]>([]);
+  const [selectedHistory, setSelectedHistory] = useState<any>(null);
+  const [showAllHistory, setShowAllHistory] = useState(false);
   const [loading, setLoading] = useState(true);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
@@ -51,50 +55,35 @@ export default function ExecutiveReportTab() {
 
   useEffect(() => {
     async function fetchData() {
-      try {
-        const [driversRes, revenueRes, trucksRes, tripsRes, etaRes, acceptanceRes] = await Promise.all([
-          fetch('/api/executive/drivers-count'),
-          fetch('/api/executive/revenue'),
-          fetch('/api/executive/trucks-count'),
-          fetch('/api/executive/active-trips'),
-          fetch('/api/executive/eta'),
-          fetch('/api/executive/acceptance-rate'),
-        ]);
-
-        if (driversRes.ok) {
-          const d = await driversRes.json();
-          setDrivers(d);
+      const fetchJson = async (url: string) => {
+        try {
+          const res = await fetch(url);
+          if (!res.ok) return null;
+          return await res.json();
+        } catch {
+          return null;
         }
+      };
 
-        if (revenueRes.ok) {
-          const r = await revenueRes.json();
-          setRevenue(r);
-        }
+      const [drivers, revenue, trucks, trips, eta, acceptance, history] = await Promise.all([
+        fetchJson('/api/executive/drivers-count'),
+        fetchJson('/api/executive/revenue'),
+        fetchJson('/api/executive/trucks-count'),
+        fetchJson('/api/executive/active-trips'),
+        fetchJson('/api/executive/eta'),
+        fetchJson('/api/executive/acceptance-rate'),
+        fetchJson('/api/executive/trip-history?limit=10'),
+      ]);
 
-        if (trucksRes.ok) {
-          const t = await trucksRes.json();
-          setTrucks(t);
-        }
+      if (drivers) setDrivers(drivers);
+      if (revenue) setRevenue(revenue);
+      if (trucks) setTrucks(trucks);
+      if (trips) setActiveTrips(trips);
+      if (eta) setEtaVehicles(eta);
+      if (acceptance) setAcceptance(acceptance);
+      if (history) setTripHistory(history);
 
-        if (tripsRes.ok) {
-          const t = await tripsRes.json();
-          setActiveTrips(t);
-        }
-
-        if (etaRes.ok) {
-          const e = await etaRes.json();
-          setEtaVehicles(e);
-        }
-
-        if (acceptanceRes.ok) {
-          const a = await acceptanceRes.json();
-          setAcceptance(a);
-        }
-      } catch (err) {
-        console.error('Failed to fetch executive data:', err);
-      } finally {
-        setLoading(false);
-      }
+      setLoading(false);
     }
 
     fetchData();
@@ -429,7 +418,7 @@ export default function ExecutiveReportTab() {
       {/* Bottom Row */}
       <div className="grid grid-cols-3 gap-4">
         {/* Fuel Management */}
-        <div className="rounded-xl border border-gray-200 bg-white p-4">
+        {/* <div className="rounded-xl border border-gray-200 bg-white p-4">
           <div className="mb-3 flex items-center gap-2">
             <Fuel className="h-4 w-4 text-gray-500" />
             <span className="text-sm font-medium text-gray-700">Fuel Management</span>
@@ -455,10 +444,10 @@ export default function ExecutiveReportTab() {
               <div className="h-2 rounded-full bg-emerald-500" style={{ width: "72%" }} />
             </div>
           </div>
-        </div>
+        </div> */}
 
         {/* CPK Efficiency */}
-        <div className="rounded-xl border border-gray-200 bg-white p-4">
+        {/* <div className="rounded-xl border border-gray-200 bg-white p-4">
           <div className="mb-3 flex items-center gap-2">
             <BarChart3 className="h-4 w-4 text-gray-500" />
             <span className="text-sm font-medium text-gray-700">CPK Efficiency</span>
@@ -486,7 +475,7 @@ export default function ExecutiveReportTab() {
           <div className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
             ⚠ Warning: Operational costs are 6.1% above projections this period
           </div>
-        </div>
+        </div> */}
 
         {/* Recent Activity */}
         <div className="rounded-xl border border-gray-200 bg-white p-4">
@@ -495,30 +484,108 @@ export default function ExecutiveReportTab() {
               <Activity className="h-4 w-4 text-gray-500" />
               <span className="text-sm font-medium text-gray-700">Recent Activity</span>
             </div>
-            <button className="text-xs font-medium text-gray-500 hover:text-gray-900">View All</button>
           </div>
-          <div className="space-y-3">
-            {[
-              { type: "cancelled", trip: "Trip #TR-882 Cancelled", route: "Chicago → NY", detail: "Warehouse Lockout (15 min delay)", time: "12:12 PM" },
-              { type: "modified", trip: "Modified (ETA Changed)", route: "Trip #TR-884 Arr → Wed 12:30 PM", detail: "(+2h)", time: "12:12 PM" },
-              { type: "dispatched", trip: "Trip Dispatched", route: "Route: Miami → Dallas", detail: "Driver: A. King", time: "09:45 AM" },
-            ].map((item, i) => (
-              <div key={i} className="flex gap-2.5">
+          <div className="space-y-0">
+            {tripHistory.length > 0 ? (showAllHistory ? tripHistory : tripHistory.slice(0, 5)).map((item) => (
+              <div key={item.id} className="flex items-start gap-2.5 rounded-lg px-2 py-2.5 hover:bg-gray-50 min-h-[52px]">
                 <div className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
-                  item.type === "cancelled" ? "bg-red-500" :
-                  item.type === "modified" ? "bg-amber-500" :
-                  "bg-emerald-500"
+                  item.changeType === 'edit' ? 'bg-amber-500' : 'bg-blue-500'
                 }`} />
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-900">{item.trip}</p>
-                  <p className="truncate text-xs text-gray-500">{item.route}</p>
-                  <p className="text-xs text-gray-400">{item.detail}</p>
-                  <p className="text-xs text-gray-400">{item.time}</p>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-semibold text-gray-900 truncate">{item.clientName}</p>
+                    <span className="text-[10px] text-gray-400">Trip #{item.tripNumber}</span>
+                  </div>
+                  <p className="truncate text-xs text-gray-600">
+                    {item.changes.length > 0 ? `${item.changes[0].label}: ${item.changes[0].from} → ${item.changes[0].to}` : item.changeType}
+                    {item.changeCount > 1 && <span className="text-gray-400"> +{item.changeCount - 1} more</span>}
+                  </p>
+                  <p className="text-[10px] text-gray-400">
+                    {new Date(item.createdAt).toLocaleString('en-ZA', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}
+                  </p>
                 </div>
+                <button
+                  onClick={() => setSelectedHistory(item)}
+                  className="mt-0.5 shrink-0 rounded-md bg-gray-100 px-2.5 py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-200"
+                >
+                  View
+                </button>
               </div>
-            ))}
+            )) : (
+              <p className="text-xs text-gray-400 text-center py-4">No recent activity</p>
+            )}
+            {tripHistory.length > 5 && !showAllHistory && (
+              <button
+                onClick={() => setShowAllHistory(true)}
+                className="w-full mt-2 py-2 text-xs font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-lg"
+              >
+                View More ({tripHistory.length - 5} more)
+              </button>
+            )}
+            {showAllHistory && tripHistory.length > 5 && (
+              <button
+                onClick={() => setShowAllHistory(false)}
+                className="w-full mt-2 py-2 text-xs font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-lg"
+              >
+                Show Less
+              </button>
+            )}
           </div>
         </div>
+
+        {/* History Detail Modal */}
+        {selectedHistory && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setSelectedHistory(null)}>
+            <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              {/* Header */}
+              <div className="border-b border-gray-200 px-6 py-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-lg font-bold text-gray-900">Trip #{selectedHistory.tripNumber}</p>
+                    <p className="text-sm text-gray-500">{selectedHistory.clientName}</p>
+                  </div>
+                  <button onClick={() => setSelectedHistory(null)} className="rounded-lg p-2 hover:bg-gray-100">
+                    <X className="h-5 w-5 text-gray-500" />
+                  </button>
+                </div>
+                <div className="mt-3 flex gap-4 text-xs text-gray-500">
+                  <span>Driver: <span className="font-medium text-gray-700">{selectedHistory.driverName}</span></span>
+                  <span>Route: <span className="font-medium text-gray-700">{selectedHistory.origin} → {selectedHistory.destination}</span></span>
+                  <span className="ml-auto text-gray-400">{new Date(selectedHistory.createdAt).toLocaleString('en-ZA')}</span>
+                </div>
+              </div>
+
+              {/* Changes Table */}
+              <div className="max-h-[55vh] overflow-y-auto px-6 py-4">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200">
+                      <th className="pb-3 text-left font-semibold text-gray-500 w-1/4">Field</th>
+                      <th className="pb-3 text-left font-semibold text-gray-500 w-[37.5%]">Before</th>
+                      <th className="pb-3 text-left font-semibold text-gray-500 w-[37.5%]">After</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedHistory.changes?.map((change: any) => (
+                      <tr key={change.field} className="border-b border-gray-50">
+                        <td className="py-3 pr-3 font-medium text-gray-700">{change.label}</td>
+                        <td className="py-3 pr-3">
+                          <span className="inline-block rounded-md bg-red-50 px-2 py-1 text-xs text-red-700">{change.from}</span>
+                        </td>
+                        <td className="py-3">
+                          <span className="inline-block rounded-md bg-emerald-50 px-2 py-1 text-xs text-emerald-700">{change.to}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {(!selectedHistory.changes || selectedHistory.changes.length === 0) && (
+                  <p className="text-sm text-gray-400 text-center py-6">No field changes recorded</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -468,7 +468,7 @@ export default function TripDetails({ id }) {
       <Card>
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-lg">Trip Progress</CardTitle>
+            {/* <CardTitle className="text-lg">Trip Progress</CardTitle> */}
             <div className="flex items-center gap-2">
               <StatusBadge status={trip?.status} />
             </div>

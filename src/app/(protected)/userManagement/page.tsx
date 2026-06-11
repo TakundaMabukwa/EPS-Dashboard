@@ -112,6 +112,7 @@ export default function SettingsPage() {
     const [driverHazCamDate, setDriverHazCamDate] = useState("");
     const [expandedPages, setExpandedPages] = useState<Set<string>>(new Set());
     const [roleFilter, setRoleFilter] = useState<string>("all");
+    const [lastSignInFilter, setLastSignInFilter] = useState<string>("all");
     const [emailSearch, setEmailSearch] = useState<string>("");
 
     // Form states:
@@ -524,6 +525,17 @@ export default function SettingsPage() {
                                         <SelectItem value="customer">External</SelectItem>
                                     </SelectContent>
                                 </Select>
+                                <Select value={lastSignInFilter} onValueChange={setLastSignInFilter}>
+                                    <SelectTrigger className="w-48">
+                                        <SelectValue placeholder="Last Sign In" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">All Time</SelectItem>
+                                        <SelectItem value="24h">Last 24 Hours</SelectItem>
+                                        <SelectItem value="7d">Last 7 Days</SelectItem>
+                                        <SelectItem value="30d">Last 30 Days</SelectItem>
+                                    </SelectContent>
+                                </Select>
                                 <Dialog open={isAddUserOpen} onOpenChange={(open) => {
                                     setIsAddUserOpen(open);
                                     if (!open) {
@@ -889,10 +901,21 @@ export default function SettingsPage() {
                                     </TableHeader>
                                     <TableBody>
                                         {users
-                                            .filter(user => 
-                                                (roleFilter === "all" || user.role === roleFilter) &&
-                                                user.email.toLowerCase().includes(emailSearch.toLowerCase())
-                                            )
+                                            .filter(user => {
+                                                if (roleFilter !== "all" && user.role !== roleFilter) return false;
+                                                if (!user.email.toLowerCase().includes(emailSearch.toLowerCase())) return false;
+                                                if (lastSignInFilter !== "all" && user.last_sign_in_at) {
+                                                    const lastSignIn = new Date(user.last_sign_in_at);
+                                                    const now = new Date();
+                                                    const diffMs = now.getTime() - lastSignIn.getTime();
+                                                    const diffHours = diffMs / (1000 * 60 * 60);
+                                                    if (lastSignInFilter === "24h" && diffHours > 24) return false;
+                                                    if (lastSignInFilter === "7d" && diffHours > 7 * 24) return false;
+                                                    if (lastSignInFilter === "30d" && diffHours > 30 * 24) return false;
+                                                }
+                                                if (lastSignInFilter !== "all" && !user.last_sign_in_at) return false;
+                                                return true;
+                                            })
                                             .map((user) => (
                                             <TableRow key={user.id} className="h-12">
                                                 <TableCell className="py-2">{user.email}</TableCell>

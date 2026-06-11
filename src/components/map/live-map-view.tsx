@@ -9,6 +9,17 @@ import { X, Search, MapPin, Navigation, Loader2, Video, Fuel, FileText, User, Ar
 import { cn } from "@/lib/utils";
 import { loadGoogleMaps } from "@/lib/google-maps";
 
+interface VideoDevice {
+  plateName: string;
+  deviceId: string;
+  deviceType: string;
+  cameras: number;
+  activeTime: string;
+  expirationTime: string;
+  timezone: string;
+  customerName: string;
+}
+
 interface Vehicle {
   id: string;
   plate: string;
@@ -26,6 +37,12 @@ interface Vehicle {
   address?: string;
   timestamp?: string;
   hasVideo?: boolean;
+  cameraOnline?: boolean;
+  cameraExpired?: boolean;
+  cameraActiveTime?: string;
+  cameraCount?: number;
+  deviceId?: string;
+  iteminstalled?: string;
 }
 
 interface FuelData {
@@ -59,7 +76,7 @@ export default function LiveMapView() {
   const [searchQuery, setSearchQuery] = useState("");
   const [mapLoaded, setMapLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [vehiclesWithVideo, setVehiclesWithVideo] = useState<Set<string>>(new Set());
+  const [vehiclesWithVideo, setVehiclesWithVideo] = useState<Map<string, VideoDevice>>(new Map());
   const [fuelView, setFuelView] = useState(false);
   const [fuelData, setFuelData] = useState<FuelData | null>(null);
   const [fuelLoading, setFuelLoading] = useState(false);
@@ -88,11 +105,34 @@ export default function LiveMapView() {
           const result = await response.json();
           console.log('Video API response data:', result);
           const devices = result.data?.devices || result.data || result || [];
-          const platesWithVideo = new Set(
-            devices.map((v: any) => v.plateName?.toUpperCase()).filter(Boolean)
-          );
-          console.log('Plates with video:', Array.from(platesWithVideo));
-          setVehiclesWithVideo(platesWithVideo);
+          const videoDeviceMap = new Map<string, VideoDevice>();
+          const now = new Date();
+          
+          devices.forEach((v: any) => {
+            const plate = v.plateName?.toUpperCase();
+            if (plate) {
+              const expirationTime = v.expirationTime ? new Date(v.expirationTime) : null;
+              const activeTime = v.activeTime ? new Date(v.activeTime) : null;
+              const isExpired = expirationTime ? expirationTime < now : false;
+              const isActiveRecently = activeTime ? (now.getTime() - activeTime.getTime()) < 5 * 60 * 1000 : false;
+              
+              videoDeviceMap.set(plate, {
+                plateName: v.plateName,
+                deviceId: v.deviceId,
+                deviceType: v.deviceType,
+                cameras: v.cameras,
+                activeTime: v.activeTime,
+                expirationTime: v.expirationTime,
+                timezone: v.timezone,
+                customerName: v.customerName,
+              });
+              
+              console.log(`Plate ${plate}: active=${v.activeTime}, expires=${v.expirationTime}, expired=${isExpired}, recentlyActive=${isActiveRecently}`);
+            }
+          });
+          
+          console.log('Video devices map:', Array.from(videoDeviceMap.keys()));
+          setVehiclesWithVideo(videoDeviceMap);
         } else {
           console.error('Video API returned non-OK status:', response.status, response.statusText);
         }
@@ -106,6 +146,13 @@ export default function LiveMapView() {
     return () => clearInterval(interval);
   }, []);
 
+  // Check if vehicle has cameras based on iteminstalled field
+  const hasCamerasInstalled = (iteminstalled: string | null | undefined): boolean => {
+    if (!iteminstalled) return false;
+    const lower = iteminstalled.toLowerCase();
+    return lower.includes('skycam') || lower.includes('sky cam') || lower.includes('cam');
+  };
+
   // Fetch vehicle data from API - only called after map loads
   const processEpsVehicles = (epsData: any, existingPlates: Set<string>): Vehicle[] => {
     if (!epsData) return [];
@@ -113,9 +160,19 @@ export default function LiveMapView() {
     if (data?.data) data = data.data;
     else if (data?.vehicles) data = data.vehicles;
     const vehicles = Array.isArray(data) ? data : data?.vehicles || data?.data || [];
+    const now = new Date();
+    
     return vehicles.map((v: any) => {
       const plate = v.plate || v.registrationNumber || 'Unknown';
       existingPlates.add(plate);
+      const normalizedPlate = plate.trim().toUpperCase();
+      const videoDevice = vehiclesWithVideo.get(normalizedPlate);
+      const installedHasCameras = hasCamerasInstalled(v.iteminstalled);
+      const hasVideo = installedHasCameras && !!videoDevice;
+      const isExpired = videoDevice?.expirationTime ? new Date(videoDevice.expirationTime) < now : false;
+      const isActiveRecently = videoDevice?.activeTime ? (now.getTime() - new Date(videoDevice.activeTime).getTime()) < 5 * 60 * 1000 : false;
+      const cameraOnline = hasVideo && !isExpired && isActiveRecently;
+      
       const vehicle: Vehicle = {
         id: v.id || plate || Math.random().toString(),
         plate,
@@ -125,8 +182,15 @@ export default function LiveMapView() {
         speed: v.speed != null ? v.speed : (v.gps_speed || 0),
         lastUpdate: v.lastUpdate || v.loc_time || v.timestamp || new Date().toISOString(),
         address: v.address || v.locationAddress || '',
-        hasVideo: vehiclesWithVideo.has((v.plate || '').trim().toUpperCase()),
+        hasVideo,
+        cameraOnline,
+        cameraExpired: isExpired,
+        cameraActiveTime: videoDevice?.activeTime,
+        cameraCount: videoDevice?.cameras,
+        deviceId: videoDevice?.deviceId,
+        iteminstalled: v.iteminstalled || '',
       };
+      
       const lat = parseFloat(v.latitude || v.lat);
       const lng = parseFloat(v.longitude || v.lng);
       if (!isNaN(lat) && !isNaN(lng)) {
@@ -174,11 +238,27 @@ export default function LiveMapView() {
   useEffect(() => {
     if (vehicles.length > 0) {
       console.log('Video availability updated, updating vehicle flags...');
+      const now = new Date();
       setVehicles(prevVehicles => 
-        prevVehicles.map(v => ({
-          ...v,
-          hasVideo: vehiclesWithVideo.has(v.plate?.trim().toUpperCase() || '')
-        }))
+        prevVehicles.map(v => {
+          const normalizedPlate = v.plate?.trim().toUpperCase() || '';
+          const videoDevice = vehiclesWithVideo.get(normalizedPlate);
+          const installedHasCameras = hasCamerasInstalled(v.iteminstalled);
+          const hasVideo = installedHasCameras && !!videoDevice;
+          const isExpired = videoDevice?.expirationTime ? new Date(videoDevice.expirationTime) < now : false;
+          const isActiveRecently = videoDevice?.activeTime ? (now.getTime() - new Date(videoDevice.activeTime).getTime()) < 5 * 60 * 1000 : false;
+          const cameraOnline = hasVideo && !isExpired && isActiveRecently;
+          
+          return {
+            ...v,
+            hasVideo,
+            cameraOnline,
+            cameraExpired: isExpired,
+            cameraActiveTime: videoDevice?.activeTime,
+            cameraCount: videoDevice?.cameras,
+            deviceId: videoDevice?.deviceId,
+          };
+        })
       );
     }
   }, [vehiclesWithVideo]);
@@ -237,7 +317,10 @@ export default function LiveMapView() {
 
     vehicles.forEach((vehicle) => {
       if (vehicle.location) {
-        const statusColor = "#1e3a8a"
+        let statusColor = "#1e3a8a"
+        if (vehicle.hasVideo && vehicle.cameraOnline) statusColor = "#059669"
+        else if (vehicle.hasVideo && vehicle.cameraExpired) statusColor = "#dc2626"
+        else if (vehicle.hasVideo) statusColor = "#d97706"
         const iconUrl = createTruckIcon(gm, statusColor)
 
         const marker = new gm.Marker({
@@ -293,13 +376,15 @@ export default function LiveMapView() {
     }
   }, [vehicles, mapLoaded])
 
-  // Filter and sort vehicles - video available vehicles first
+  // Filter and sort vehicles - video available and online first
   const filteredVehicles = vehicles
     .filter((vehicle) =>
       vehicle.plate.toLowerCase().includes(searchQuery.toLowerCase()) ||
       vehicle.driver?.toLowerCase().includes(searchQuery.toLowerCase())
     )
     .sort((a, b) => {
+      if (a.cameraOnline && !b.cameraOnline) return -1;
+      if (!a.cameraOnline && b.cameraOnline) return 1;
       if (a.hasVideo && !b.hasVideo) return -1;
       if (!a.hasVideo && b.hasVideo) return 1;
       return a.plate.localeCompare(b.plate);
@@ -397,15 +482,23 @@ export default function LiveMapView() {
                       {selectedVehicle.plate}
                     </h4>
                     {selectedVehicle.hasVideo && (
-                      <span className={cn(
-                        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium",
-                        selectedVehicle.status === 'online' 
-                          ? "bg-blue-600 text-white" 
-                          : "bg-gray-400 text-white"
-                      )}>
-                        <Video className="w-3 h-3" />
-                        Video {selectedVehicle.status === 'offline' && '(Offline)'}
-                      </span>
+                      selectedVehicle.cameraOnline ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-300">
+                          <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                          <Video className="w-3 h-3" />
+                          Camera Online ({selectedVehicle.cameraCount} cam)
+                        </span>
+                      ) : selectedVehicle.cameraExpired ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700 border border-red-300">
+                          <Video className="w-3 h-3" />
+                          Camera Expired
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 border border-gray-300">
+                          <Video className="w-3 h-3" />
+                          Camera Offline
+                        </span>
+                      )
                     )}
                   </div>
                   <span
@@ -464,6 +557,42 @@ export default function LiveMapView() {
                     </div>
                   </div>
                 )}
+
+                {selectedVehicle.hasVideo && (
+                  <div className="mt-2 pt-2 border-t border-gray-100">
+                    <div className="text-xs font-medium text-gray-700 mb-1">Camera Details</div>
+                    <div className="space-y-1 text-xs text-gray-600">
+                      <div className="flex justify-between">
+                        <span>Status</span>
+                        <span className={cn("font-medium", 
+                          selectedVehicle.cameraOnline ? "text-green-600" : 
+                          selectedVehicle.cameraExpired ? "text-red-600" : "text-gray-500"
+                        )}>
+                          {selectedVehicle.cameraOnline ? "Online" : selectedVehicle.cameraExpired ? "Expired" : "Offline"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Cameras</span>
+                        <span className="font-medium">{selectedVehicle.cameraCount || 0}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Device</span>
+                        <span className="font-medium text-[10px]">{selectedVehicle.deviceId || 'N/A'}</span>
+                      </div>
+                      {selectedVehicle.cameraActiveTime && (
+                        <div className="flex justify-between">
+                          <span>Last Seen</span>
+                          <span className="font-medium">{new Date(selectedVehicle.cameraActiveTime).toLocaleString('en-US', { 
+                            month: 'short', 
+                            day: 'numeric', 
+                            hour: '2-digit', 
+                            minute: '2-digit' 
+                          })}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Quick Actions Buttons */}
@@ -473,13 +602,26 @@ export default function LiveMapView() {
                   onClick={() => {
                     router.push(`/video-feeds?driver=${encodeURIComponent(selectedVehicle.driver || 'Unassigned')}&vehicle=${encodeURIComponent(selectedVehicle.plate)}`);
                   }}
-                  disabled={!selectedVehicle.hasVideo}
+                  disabled={!selectedVehicle.hasVideo || !selectedVehicle.cameraOnline}
                   className="w-full inline-flex items-center justify-start gap-3 rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4"
                 >
                   <Video className="w-4 h-4" />
-                  <span>Video</span>
-                  {selectedVehicle.hasVideo && (
-                    <span className="ml-auto px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">Available</span>
+                  <span>
+                    {selectedVehicle.hasVideo 
+                      ? selectedVehicle.cameraOnline 
+                        ? 'Watch Live Feed' 
+                        : selectedVehicle.cameraExpired 
+                          ? 'Camera Expired' 
+                          : 'Camera Offline'
+                      : 'No Camera'}
+                  </span>
+                  {selectedVehicle.hasVideo && selectedVehicle.cameraOnline && (
+                    <span className="ml-auto px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">Live</span>
+                  )}
+                  {selectedVehicle.hasVideo && !selectedVehicle.cameraOnline && (
+                    <span className="ml-auto px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full">
+                      {selectedVehicle.cameraExpired ? 'Expired' : 'Offline'}
+                    </span>
                   )}
                 </button>
 
@@ -739,17 +881,27 @@ export default function LiveMapView() {
                       <h4 className="font-bold text-lg text-blue-900">
                         {vehicle.plate}
                       </h4>
-                      {vehicle.hasVideo && (
-                        <span className={cn(
-                          "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium",
-                          vehicle.status === 'online' 
-                            ? "bg-blue-600 text-white" 
-                            : "bg-gray-400 text-white"
-                        )}>
-                          <Video className="w-3 h-3" />
-                          Video {vehicle.status === 'offline' && '(Offline)'}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {vehicle.hasVideo ? (
+                          vehicle.cameraOnline ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-300">
+                              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                              <Video className="w-3 h-3" />
+                              Online ({vehicle.cameraCount} cam)
+                            </span>
+                          ) : vehicle.cameraExpired ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700 border border-red-300">
+                              <Video className="w-3 h-3" />
+                              Expired
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 border border-gray-300">
+                              <Video className="w-3 h-3" />
+                              Offline
+                            </span>
+                          )
+                        ) : null}
+                      </div>
                     </div>
                     
                     {vehicle.location ? (

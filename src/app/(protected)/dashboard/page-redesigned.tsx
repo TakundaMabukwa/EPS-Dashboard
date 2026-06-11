@@ -201,7 +201,7 @@ function RoutingSection() {
               {/* Enhanced Timeline */}
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-sm font-semibold text-slate-700">Trip Progress</h4>
+                  {/* <h4 className="text-sm font-semibold text-slate-700">Trip Progress</h4> */}
                   <span className="text-xs text-slate-500">{Math.round(progress)}% Complete</span>
                 </div>
                 <div className="relative">

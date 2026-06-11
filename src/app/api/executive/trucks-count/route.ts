@@ -7,32 +7,38 @@ export async function GET() {
   try {
     const supabase = await createClient()
 
-    // Get all active trips (not completed/delivered/cancelled)
-    const { data: activeTrips, error } = await supabase
+    // Fetch all non-SOLD vehicles with just id and vehicle_type
+    const { data: allVehicles, error } = await supabase
+      .from('vehiclesc')
+      .select('id, vehicle_type')
+      .not('branch_name', 'is', null)
+      .neq('branch_name', 'SOLD')
+
+    if (error) throw error
+
+    // Filter out trailers (TR prefix) in JS
+    const truckIds = (allVehicles || [])
+      .filter(v => !v.vehicle_type?.startsWith('TR'))
+      .map(v => v.id)
+
+    const total = truckIds.length
+
+    // Get active trips vehicle IDs
+    const { data: activeTrips } = await supabase
       .from('trips')
       .select('vehicleassignments')
       .not('status', 'in', '(completed,delivered,cancelled)')
 
-    if (error) throw error
-
-    // Extract unique vehicle names from active trips
-    const activeVehicles = new Set<string>()
-    activeTrips.forEach((trip: any) => {
-      const assignments = trip.vehicleassignments
-      if (!assignments) return
-      const arr = Array.isArray(assignments) ? assignments : JSON.parse(assignments)
+    const activeVehicleIds = new Set<number>()
+    activeTrips?.forEach((trip: any) => {
+      const arr = Array.isArray(trip.vehicleassignments) ? trip.vehicleassignments : []
       arr.forEach((a: any) => {
-        if (a?.vehicle?.name) activeVehicles.add(a.vehicle.name)
+        const id = a?.vehicle?.id
+        if (id) activeVehicleIds.add(Number(id))
       })
     })
 
-    // Get total vehicle count from vehicles table
-    const { count: totalVehicles } = await supabase
-      .from('vehicles')
-      .select('id', { count: 'exact', head: true })
-
-    const total = totalVehicles || 0
-    const booked = activeVehicles.size
+    const booked = truckIds.filter(id => activeVehicleIds.has(id)).length
     const available = Math.max(0, total - booked)
 
     return NextResponse.json({ total, booked, available, unavailable: 0 })

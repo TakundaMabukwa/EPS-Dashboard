@@ -387,7 +387,7 @@ export function RoutePreviewMap({ origin, destination, routeData, stopPoints = [
             bounds.extend({ lat: clientLocation.lat, lng: clientLocation.lng })
           }
 
-          map.current.fitBounds(bounds, 50)
+          if (map.current) map.current.fitBounds(bounds, 50)
         } else if (selectedClient?.coordinates) {
           let coords: number[][] = []
           if (typeof selectedClient.coordinates === 'string') {
@@ -409,7 +409,7 @@ export function RoutePreviewMap({ origin, destination, routeData, stopPoints = [
           if (coords.length > 0) {
             const bounds = new gm.LatLngBounds()
             coords.forEach((c: number[]) => bounds.extend({ lat: c[1], lng: c[0] }))
-            map.current.fitBounds(bounds, 50)
+            if (map.current) map.current.fitBounds(bounds, 50)
           }
         }
 

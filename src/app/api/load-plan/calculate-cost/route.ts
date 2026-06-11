@@ -18,26 +18,133 @@ async function getSupabase() {
   )
 }
 
+// Maps vehiclesc.vehicle_type → costing profile name
+const VEHICLE_TYPE_MAP: Record<string, string> = {
+  TR14M: '14METER',
+  TRS9M: '9METER',
+  TRTR: 'TAUTLINER',
+  TRFLT: 'TAUTLINER',
+  TRFLP: 'TAUTLINER',
+  TRRLT: 'REEFER',
+  TRRLP: 'REEFER',
+  R8T: '8TON',
+  R5T: '5TON',
+  LDV: '1TON',
+  VFD: 'VOLUMAX',
+  vehicle: '14METER',
+}
+
+// Costing profiles from the actual spreadsheet
+// diesel_per_km = already computed (fuel price ÷ consumption rate)
+// fixed_monthly = truck HP + tracking + licence + insurance + trailer fixed + admin + driver basic
+const PROFILES: Record<string, {
+  diesel_per_km: number
+  maintenance: number
+  breakdown: number
+  tolls: number
+  allowance: number
+  cross_border_fee: number
+  fixed_monthly: number
+}> = {
+  TAUTLINER: {
+    diesel_per_km: 15.58765,
+    maintenance: 1.60,
+    breakdown: 0.06,
+    tolls: 1.28,
+    allowance: 2.19,
+    cross_border_fee: 0,
+    fixed_monthly: 28000,  // LINKS rate
+  },
+  '14METER': {
+    diesel_per_km: 13.55448,
+    maintenance: 1.10,
+    breakdown: 0.06,
+    tolls: 0.85,
+    allowance: 1.40,
+    cross_border_fee: 0,
+    fixed_monthly: 22000,
+  },
+  REEFER: {
+    diesel_per_km: 14.35448, // 14METER diesel + R0.80
+    maintenance: 1.10,
+    breakdown: 0.06,
+    tolls: 0.85,
+    allowance: 1.40,
+    cross_border_fee: 0,
+    fixed_monthly: 22000,
+  },
+  '9METER': {
+    diesel_per_km: 8.907229,
+    maintenance: 1.00,
+    breakdown: 0.06,
+    tolls: 0.24,
+    allowance: 4.60,
+    cross_border_fee: 0,
+    fixed_monthly: 16000,
+  },
+  '8TON': {
+    diesel_per_km: 7.793825,
+    maintenance: 1.00,
+    breakdown: 0.06,
+    tolls: 0.15,
+    allowance: 0,
+    cross_border_fee: 0,
+    fixed_monthly: 13620,
+  },
+  '5TON': {
+    diesel_per_km: 5.50,
+    maintenance: 1.00,
+    breakdown: 0.06,
+    tolls: 0.15,
+    allowance: 0,
+    cross_border_fee: 0,
+    fixed_monthly: 13620,
+  },
+  '1TON': {
+    diesel_per_km: 3.11753,
+    maintenance: 1.00,
+    breakdown: 0.06,
+    tolls: 0.15,
+    allowance: 0,
+    cross_border_fee: 0,
+    fixed_monthly: 2500,  // SHUNTER rate
+  },
+  VOLUMAX: {
+    diesel_per_km: 3.11753,
+    maintenance: 1.00,
+    breakdown: 0.06,
+    tolls: 0.15,
+    allowance: 0,
+    cross_border_fee: 0,
+    fixed_monthly: 2500,
+  },
+}
+
+const WORKING_DAYS_PER_MONTH = 25
+const DEFAULT_PROFILE = '14METER'
+
 export async function POST(request: Request) {
   try {
     const body = await request.json()
     const {
       vehicleId,
       distanceKm,
-      manualFuelPrice,
+      manualDieselRate,
+      manualFixedMonthly,
       manualLoadingCost = 0,
       manualPackingCost = 0,
       manualTollCost = 0,
       manualBorderCost = 0,
       loadingWorkers = 0,
       loadingHours = 0,
+      loadingRate = 45,
       packingWorkers = 0,
       packingHours = 0,
+      packingRate = 45,
       casualWorkers = 0,
       casualHours = 0,
       casualRate = 0,
       isCrossBorder = false,
-      profitMargin = 0.20,
     } = body
 
     if (!vehicleId || !distanceKm) {
@@ -46,7 +153,6 @@ export async function POST(request: Request) {
 
     const supabase = await getSupabase()
 
-    // Fetch vehicle
     const { data: vehicle, error: vehicleError } = await supabase
       .from('vehiclesc')
       .select('*')
@@ -57,123 +163,103 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Vehicle not found' }, { status: 404 })
     }
 
-    // Fetch vehicle costing profile
-    const { data: profile, error: profileError } = await supabase
+    // Map vehicle type to costing profile
+    const vehicleType = vehicle.vehicle_type || 'vehicle'
+    const profileName = VEHICLE_TYPE_MAP[vehicleType] || DEFAULT_PROFILE
+
+    // Try DB first, fall back to hardcoded profiles
+    let profile = PROFILES[profileName] || PROFILES[DEFAULT_PROFILE]
+
+    const { data: dbProfile } = await supabase
       .from('vehicle_type_costing')
       .select('*')
-      .eq('vehicle_type', vehicle.vehicle_type)
+      .eq('vehicle_type', profileName)
       .single()
 
-    if (profileError || !profile) {
-      return NextResponse.json({ error: `No costing profile for vehicle type: ${vehicle.vehicle_type}` }, { status: 404 })
+    if (dbProfile) {
+      profile = {
+        diesel_per_km: manualDieselRate ?? Number(dbProfile.diesel_per_km ?? profile.diesel_per_km),
+        maintenance: Number(dbProfile.maintenance_rate ?? profile.maintenance),
+        breakdown: Number(dbProfile.breakdown_rate ?? profile.breakdown),
+        tolls: Number(dbProfile.toll_rate ?? profile.tolls),
+        allowance: Number(dbProfile.allowance_rate ?? profile.allowance),
+        cross_border_fee: Number(dbProfile.cross_border_fee ?? profile.cross_border_fee),
+        fixed_monthly: manualFixedMonthly ?? Number(dbProfile.fixed_daily_cost ? Number(dbProfile.fixed_daily_cost) * WORKING_DAYS_PER_MONTH : profile.fixed_monthly),
+      }
     }
 
-    // Fetch latest fuel price
-    const { data: fuelPriceData } = await supabase
-      .from('fuel_prices')
-      .select('price_per_litre')
-      .eq('effective_date', new Date().toISOString().split('T')[0])
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+    // Allow manual overrides
+    const dieselRate = manualDieselRate ?? profile.diesel_per_km
+    const fixedMonthly = manualFixedMonthly ?? profile.fixed_monthly
 
-    const dieselPrice = manualFuelPrice || fuelPriceData?.price_per_litre || 9.67
+    // --- Calculations per workbook formulas ---
 
-    // --- Calculations ---
-
-    // Fuel
-    const fuelEfficiency = profile.fuel_efficiency
-    const fuelLitres = distanceKm / fuelEfficiency
-    const fuelCost = fuelLitres * dieselPrice
-
-    // Maintenance
-    const maintenanceCost = distanceKm * Number(profile.maintenance_rate)
-
-    // Breakdown reserve
-    const breakdownCost = distanceKm * Number(profile.breakdown_rate)
-
-    // Toll (profile rate + manual override)
-    const tollCost = distanceKm * Number(profile.toll_rate) + manualTollCost
-
-    // Driver cost (hourly)
-    const tripHours = distanceKm / Number(profile.average_speed)
-    const driverCost = vehicle.hourly_rate ? tripHours * Number(vehicle.hourly_rate) : 0
-
-    // Driver allowance
-    const allowanceCost = distanceKm * Number(profile.allowance_rate)
-
-    // Fixed ownership cost
-    const fixedMonthlyCost =
-      Number(vehicle.tracking_prd || 0) +
-      Number(vehicle.insurance_prd || 0) +
-      Number(vehicle.licences_prd || 0) +
-      Number(vehicle.vehicle_payments_prd || 0) +
-      Number(vehicle.wages_prd || 0)
-
-    const hasVehicleCosts = fixedMonthlyCost > 0
-    const dailyFixedCost = hasVehicleCosts ? fixedMonthlyCost / 30 : Number(profile.fixed_daily_cost)
     const tripDays = Math.max(1, Math.ceil(distanceKm / 600))
-    const tripFixedCost = dailyFixedCost * tripDays
 
-    // Loading
-    const loadingCost = loadingWorkers * loadingHours * Number(profile.loading_rate) + manualLoadingCost
+    // Fixed cost: (fixed monthly / 25 working days) × trip days
+    const fixedDaily = fixedMonthly / WORKING_DAYS_PER_MONTH
+    const fixedCost = fixedDaily * tripDays
 
-    // Packing
-    const packingCost = packingWorkers * packingHours * Number(profile.packing_rate) + manualPackingCost
+    // Variable cost: distance × sum of all per-km rates
+    const dieselCost = distanceKm * dieselRate
+    const maintenanceCost = distanceKm * profile.maintenance
+    const breakdownCost = distanceKm * profile.breakdown
+    const tollCost = (distanceKm * profile.tolls) + manualTollCost
+    const allowanceCost = distanceKm * profile.allowance
+    const variableCost = dieselCost + maintenanceCost + breakdownCost + tollCost + allowanceCost
 
-    // Casual labour
+    // Labour
+    const loadingCost = (loadingWorkers * loadingHours * loadingRate) + manualLoadingCost
+    const packingCost = (packingWorkers * packingHours * packingRate) + manualPackingCost
     const casualCost = casualWorkers * casualHours * casualRate
 
     // Cross border
-    const crossBorderCost = isCrossBorder ? Number(profile.cross_border_fee) : 0
+    const crossBorderCost = isCrossBorder ? profile.cross_border_fee + manualBorderCost : 0
 
     // Total
-    const totalTripCost =
-      fuelCost +
-      maintenanceCost +
-      breakdownCost +
-      tollCost +
-      driverCost +
-      allowanceCost +
-      tripFixedCost +
-      loadingCost +
-      packingCost +
-      casualCost +
-      crossBorderCost +
-      manualBorderCost
-
-    // CPK
+    const totalTripCost = fixedCost + variableCost + loadingCost + packingCost + casualCost + crossBorderCost
     const costPerKm = distanceKm > 0 ? totalTripCost / distanceKm : 0
 
-    // Selling price
-    const recommendedSellingPrice = totalTripCost * (1 + profitMargin)
-    const profit = recommendedSellingPrice - totalTripCost
-    const profitMarginPct = recommendedSellingPrice > 0 ? (profit / recommendedSellingPrice) * 100 : 0
-
     return NextResponse.json({
+      // Profile info
+      vehicleType,
+      profileUsed: profileName,
+
+      // Distance & timing
       distanceKm,
-      fuelLitres: Math.round(fuelLitres * 100) / 100,
-      fuelCost: Math.round(fuelCost * 100) / 100,
+      tripDays,
+
+      // Variable cost breakdown (per km rates)
+      dieselRate,
+      maintenanceRate: profile.maintenance,
+      breakdownRate: profile.breakdown,
+      tollRate: profile.tolls,
+      allowanceRate: profile.allowance,
+
+      // Fixed cost breakdown
+      fixedMonthly,
+      fixedDaily: Math.round(fixedDaily * 100) / 100,
+      fixedCost: Math.round(fixedCost * 100) / 100,
+
+      // Variable cost totals
+      dieselCost: Math.round(dieselCost * 100) / 100,
       maintenanceCost: Math.round(maintenanceCost * 100) / 100,
       breakdownCost: Math.round(breakdownCost * 100) / 100,
       tollCost: Math.round(tollCost * 100) / 100,
-      driverCost: Math.round(driverCost * 100) / 100,
       allowanceCost: Math.round(allowanceCost * 100) / 100,
-      tripFixedCost: Math.round(tripFixedCost * 100) / 100,
+      variableCost: Math.round(variableCost * 100) / 100,
+
+      // Labour
       loadingCost: Math.round(loadingCost * 100) / 100,
       packingCost: Math.round(packingCost * 100) / 100,
       casualCost: Math.round(casualCost * 100) / 100,
+
+      // Cross border
       crossBorderCost: Math.round(crossBorderCost * 100) / 100,
+
+      // Totals
       totalTripCost: Math.round(totalTripCost * 100) / 100,
       costPerKm: Math.round(costPerKm * 100) / 100,
-      recommendedSellingPrice: Math.round(recommendedSellingPrice * 100) / 100,
-      profit: Math.round(profit * 100) / 100,
-      profitMargin: Math.round(profitMarginPct * 100) / 100,
-      tripDays,
-      fuelEfficiency,
-      dieselPrice,
-      vehicleType: vehicle.vehicle_type,
-      profileUsed: profile.vehicle_type,
     })
   } catch (error) {
     console.error('Calculate cost error:', error)
