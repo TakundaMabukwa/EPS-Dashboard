@@ -15,6 +15,7 @@ import {
   ArrowRight,
   Calendar,
   CheckCircle,
+  ChevronRight,
   X,
 } from "lucide-react";
 import { useGoogleMaps } from "@/hooks/use-google-maps";
