@@ -501,15 +501,6 @@ export default function Vehicles() {
             Manage your vehicle and trailer fleet
           </p>
         </div>
-        <SecureButton
-          page="vehicles"
-          action="create"
-          onClick={() => setIsAddingVehicle(true)}
-          className="bg-blue-600 hover:bg-blue-700"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Add Vehicle
-        </SecureButton>
       </div>
 
       {/* Add Vehicle Form */}
@@ -1052,8 +1043,8 @@ export default function Vehicles() {
       )}
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {/* Total Vehicles */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        {/* Vehicles */}
         <button
           onClick={() => setCardFilter(null)}
           className={`relative overflow-hidden rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 p-4 text-white shadow-lg transition-all hover:scale-[1.02] hover:shadow-xl text-left ${
@@ -1066,9 +1057,29 @@ export default function Vehicles() {
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-2">
               <Truck className="h-4 w-4" />
             </div>
-            <p className="text-xs font-medium text-blue-100">Total Vehicles</p>
+            <p className="text-xs font-medium text-blue-100">Vehicles</p>
             <p className="text-2xl font-bold mt-0.5">
-              <RollingNumber value={vehicles.length} duration={1000} />
+              <RollingNumber value={vehicles.filter((v) => !(v.vehicle_type || '').toUpperCase().startsWith('TR')).length} duration={1000} />
+            </p>
+          </div>
+        </button>
+
+        {/* Trailers */}
+        <button
+          onClick={() => setCardFilter(null)}
+          className={`relative overflow-hidden rounded-xl bg-gradient-to-br from-purple-500 to-violet-600 p-4 text-white shadow-lg transition-all hover:scale-[1.02] hover:shadow-xl text-left ${
+            cardFilter === null ? 'ring-2 ring-black ring-offset-2' : ''
+          }`}
+        >
+          <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
+          <div className="absolute -bottom-2 -right-2 h-16 w-16 rounded-full bg-white/5" />
+          <div className="relative">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-2">
+              <Truck className="h-4 w-4" />
+            </div>
+            <p className="text-xs font-medium text-purple-100">Trailers</p>
+            <p className="text-2xl font-bold mt-0.5">
+              <RollingNumber value={vehicles.filter((v) => (v.vehicle_type || '').toUpperCase().startsWith('TR')).length} duration={1000} />
             </p>
           </div>
         </button>

@@ -270,62 +270,6 @@ export default function VehicleDetailsPage() {
           <h1 className="text-3xl font-bold">
             {vehicle.make} {vehicle.model}
           </h1>
-          <div className="ml-auto">
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button
-                  variant="destructive"
-                  disabled={deleting}
-                  className="flex items-center gap-2"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  {deleting ? "Deleting..." : "Delete Vehicle"}
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Confirm Deletion</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This action will <strong>archive</strong> the vehicle. It
-                    won’t appear in lists anymore but will remain in the
-                    database for record keeping. You can restore it later if
-                    needed.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={handleDelete}
-                    disabled={deleting}
-                    className="bg-red-600 hover:bg-red-700"
-                  >
-                    {deleting ? "Deleting..." : "Confirm"}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          </div>
-
-          <div>
-            {editing ? (
-              <>
-                <Button onClick={handleUpdate} className="ml-2">
-                  Save
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={cancelEditing}
-                  className="ml-2"
-                >
-                  Cancel
-                </Button>
-              </>
-            ) : (
-              <Button onClick={startEditing} className="ml-2">
-                Edit Vehicle
-              </Button>
-            )}
-          </div>
         </div>
 
         {/* Vehicle Info Card */}
