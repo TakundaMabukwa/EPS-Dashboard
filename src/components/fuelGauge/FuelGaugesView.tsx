@@ -350,7 +350,7 @@ export function FuelGaugesView({}: FuelGaugesViewProps) {
         return ({
         id: vehicle.id || index + 1,
         location: vehicle.plate || vehicle.branch || 'Unknown Location',
-        fuelLevel: percent || 0,
+        fuelLitres: Math.round((percent / 100) * 1000),
         temperature: parseFloat(vehicle.fuel_probe_1_temperature) || 25,
         volume: capacity,
         remaining: `${capacity.toFixed(1)}L / ${remaining.toFixed(1)}L`,
@@ -407,7 +407,7 @@ export function FuelGaugesView({}: FuelGaugesViewProps) {
                 key={data.id}
                 id={data.id}
                 location={data.location}
-                fuelLevel={data.fuelLevel}
+                fuelLitres={data.fuelLitres}
                 temperature={data.temperature}
                 volume={data.volume}
                 remaining={data.remaining}
