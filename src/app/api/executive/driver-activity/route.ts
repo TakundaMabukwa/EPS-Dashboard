@@ -59,13 +59,14 @@ export async function GET() {
           existing.tripCount++
           existing.totalStops += stopsData.length
 
-          // Check for any status aside from "pending" — driver is active if they updated
+          // Count non-pending stops for granular usage
           const nonPendingCount = stopsData.filter((s: any) => {
             const status = s.status?.toLowerCase()
             return status && status !== 'pending'
           }).length
           existing.updatedStops += nonPendingCount
 
+          // Mark as active if any stop was updated
           if (nonPendingCount > 0) {
             existing.activeTrips++
           }
@@ -75,12 +76,12 @@ export async function GET() {
       }
     }
 
-    // Convert to array and calculate usage percentage
+    // Convert to array and calculate usage percentage based on stops updated
     const drivers = Array.from(driverMap.values()).map(d => ({
       ...d,
-      usagePercent: d.tripCount > 0 ? Math.round((d.activeTrips / d.tripCount) * 100) : 0,
+      usagePercent: d.totalStops > 0 ? Math.round((d.updatedStops / d.totalStops) * 100) : 0,
       // Active = has updated at least one stop across their trips
-      isActive: d.activeTrips > 0,
+      isActive: d.updatedStops > 0,
     }))
 
     // Sort: active first, then by usage percent descending
