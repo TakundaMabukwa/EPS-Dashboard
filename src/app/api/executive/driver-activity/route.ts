@@ -7,11 +7,11 @@ export async function GET() {
   try {
     const supabase = await createClient()
 
-    // Fetch all trips (not cancelled) with vehicleassignments and stops_data
+    // Fetch only completed/delivered trips with vehicleassignments and stops_data
     const { data: trips, error } = await supabase
       .from('trips')
       .select('id, trip_id, vehicleassignments, stops_data, status, created_at')
-      .not('status', 'eq', 'cancelled')
+      .in('status', ['completed', 'delivered'])
       .not('vehicleassignments', 'is', null)
 
     if (error) throw error
