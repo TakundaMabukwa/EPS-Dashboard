@@ -51,6 +51,7 @@ export default function ExecutiveReportTab() {
   const [showDriverActivity, setShowDriverActivity] = useState(false);
   const [driverActivity, setDriverActivity] = useState<any>({ drivers: [], activeCount: 0, inactiveCount: 0, total: 0 });
   const [driverActivityTab, setDriverActivityTab] = useState<'active' | 'inactive'>('active');
+  const [driverActivitySort, setDriverActivitySort] = useState<'usage-asc' | 'usage-desc' | 'name-asc' | 'name-desc'>('usage-desc');
   const [driverActivityLoading, setDriverActivityLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -251,6 +252,19 @@ export default function ExecutiveReportTab() {
           >
             Inactive Drivers ({driverActivity.inactiveCount})
           </button>
+          <div className="ml-auto flex items-center gap-2 py-3">
+            <span className="text-xs text-gray-500 font-medium">Sort:</span>
+            <select
+              value={driverActivitySort}
+              onChange={(e) => setDriverActivitySort(e.target.value as any)}
+              className="text-xs border border-gray-200 rounded-md px-2 py-1 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            >
+              <option value="usage-desc">Usage: Highest First</option>
+              <option value="usage-asc">Usage: Lowest First</option>
+              <option value="name-asc">Name: A–Z</option>
+              <option value="name-desc">Name: Z–A</option>
+            </select>
+          </div>
         </div>
 
         {/* Table */}
@@ -273,6 +287,12 @@ export default function ExecutiveReportTab() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {driverActivity.drivers
                   .filter((d: any) => driverActivityTab === 'active' ? d.isActive : !d.isActive)
+                  .sort((a: any, b: any) => {
+                    if (driverActivitySort === 'usage-asc') return a.usagePercent - b.usagePercent;
+                    if (driverActivitySort === 'usage-desc') return b.usagePercent - a.usagePercent;
+                    if (driverActivitySort === 'name-asc') return `${a.firstName} ${a.surname}`.localeCompare(`${b.firstName} ${b.surname}`);
+                    return `${b.firstName} ${b.surname}`.localeCompare(`${a.firstName} ${a.surname}`);
+                  })
                   .map((driver: any, index: number) => (
                   <tr
                     key={driver.driverId}
