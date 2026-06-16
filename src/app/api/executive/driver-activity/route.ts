@@ -27,6 +27,9 @@ export async function GET() {
       updatedStops: number
     }>()
 
+    // Standard stops per trip
+    const STANDARD_STOPS = 12
+
     for (const trip of trips || []) {
       const va = trip.vehicleassignments
       if (!va) continue
@@ -57,7 +60,7 @@ export async function GET() {
           }
 
           existing.tripCount++
-          existing.totalStops += stopsData.length
+          existing.totalStops += STANDARD_STOPS
 
           // Count non-pending stops for granular usage
           const nonPendingCount = stopsData.filter((s: any) => {
