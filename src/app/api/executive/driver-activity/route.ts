@@ -34,6 +34,10 @@ export async function GET() {
       const arr = Array.isArray(va) ? va : JSON.parse(va)
       if (!Array.isArray(arr)) continue
 
+      // Skip trips with empty stops_data
+      const stopsData = trip.stops_data
+      if (!Array.isArray(stopsData) || stopsData.length === 0) continue
+
       for (const assignment of arr) {
         const drivers = assignment?.drivers
         if (!Array.isArray(drivers)) continue
@@ -53,17 +57,14 @@ export async function GET() {
           }
 
           existing.tripCount++
+          existing.totalStops += stopsData.length
 
-          // Check stops_data to see if driver is updating statuses
-          const stopsData = trip.stops_data
-          if (Array.isArray(stopsData) && stopsData.length > 0) {
-            // Any stop with a non-pending status means driver is active
-            const hasUpdated = stopsData.some((s: any) => s.status && s.status !== 'pending')
-            if (hasUpdated) {
-              existing.activeTrips++
-            }
-            existing.totalStops += stopsData.length
-            existing.updatedStops += stopsData.filter((s: any) => s.status && s.status !== 'pending').length
+          // Any stop with a non-pending status means driver is active
+          const updatedCount = stopsData.filter((s: any) => s.status && s.status !== 'pending').length
+          existing.updatedStops += updatedCount
+
+          if (updatedCount > 0) {
+            existing.activeTrips++
           }
 
           driverMap.set(key, existing)
