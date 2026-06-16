@@ -23,7 +23,7 @@ interface FuelGaugeProps {
 const fmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
 const fmt1 = new Intl.NumberFormat('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
-const MAX_TANK = 400;
+const MAX_TANK = 1000;
 
 function getFuelColor(litres: number) {
   const pct = (litres / MAX_TANK) * 100;

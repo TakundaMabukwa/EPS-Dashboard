@@ -36,7 +36,8 @@ export async function GET() {
       .map((vehicle) => {
         const d = vehicle.data || {}
 
-        const fuelLevelLitres = parseNum(d['96']?.value)
+        const fuelLevelPercent = parseNum(d['96']?.value)
+        const fuelLevelLitres = fuelLevelPercent > 0 ? Math.round((fuelLevelPercent / 100) * 1000) : 0
         const totalOdometer = parseNum(d['395']?.value)
         const engineSpeed = parseNum(d['BE']?.value)
         const engineTemp = parseNum(d['6E']?.value)

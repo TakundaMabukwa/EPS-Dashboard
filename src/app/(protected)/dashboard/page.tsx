@@ -310,7 +310,7 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
           {fuelData && fuelData.fuelLevel > 0 ? (
             <div className="flex items-center gap-2">
               {(() => {
-                const MAX_TANK = 400;
+                const MAX_TANK = 1000;
                 const litres = Math.max(0, fuelData.fuelLevel || 0);
                 const fillPct = Math.min(100, (litres / MAX_TANK) * 100);
                 const fuelColor = fillPct <= 10 ? '#ef4444' : fillPct <= 25 ? '#f97316' : fillPct <= 50 ? '#eab308' : '#10b981';
