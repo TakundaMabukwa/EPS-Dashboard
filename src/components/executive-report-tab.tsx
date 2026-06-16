@@ -188,119 +188,144 @@ export default function ExecutiveReportTab() {
 
   const fmt = (v: number) => v.toLocaleString('en-US', { maximumFractionDigits: 0 });
 
-  return (
-    <div className="space-y-4">
-      {/* Driver Activity Drilldown */}
-      {showDriverActivity && (
-        <div className="rounded-xl border border-gray-200 bg-white">
-          <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
-            <div className="flex items-center gap-3">
+  // Driver Activity Drilldown View
+  if (showDriverActivity) {
+    return (
+      <div className="bg-white shadow-sm border border-gray-200 rounded-lg animate-in fade-in slide-in-from-top-2 duration-300">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-gray-50 to-slate-50 p-6 border-gray-200 border-b">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-4">
               <button
                 onClick={() => setShowDriverActivity(false)}
-                className="rounded-lg bg-gray-100 p-1.5 hover:bg-gray-200 transition-colors"
+                className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
               >
-                <X className="h-4 w-4 text-gray-600" />
+                <ChevronRight className="h-4 w-4 rotate-180" />
+                Back to Overview
               </button>
+              <div className="h-6 w-px bg-gray-300" />
               <div>
-                <h3 className="text-lg font-bold text-gray-900">Driver Status Updates</h3>
-                <p className="text-xs text-gray-500">Drivers with active trips — who is updating statuses</p>
+                <h2 className="text-xl font-bold text-gray-900">Driver Status Updates</h2>
+                <p className="text-sm text-gray-500">Drivers with active trips — who is updating statuses</p>
               </div>
             </div>
-            <div className="flex gap-4 text-xs text-gray-500">
-              <span>Active: <span className="font-bold text-emerald-600">{driverActivity.activeCount}</span></span>
-              <span>Inactive: <span className="font-bold text-red-600">{driverActivity.inactiveCount}</span></span>
-              <span>Total: <span className="font-bold text-gray-900">{driverActivity.total}</span></span>
-            </div>
-          </div>
-
-          {/* Tabs */}
-          <div className="flex border-b border-gray-200 px-5">
-            <button
-              onClick={() => setDriverActivityTab('active')}
-              className={`mr-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-                driverActivityTab === 'active'
-                  ? 'border-emerald-500 text-emerald-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Active ({driverActivity.activeCount})
-            </button>
-            <button
-              onClick={() => setDriverActivityTab('inactive')}
-              className={`py-2.5 text-sm font-medium border-b-2 transition-colors ${
-                driverActivityTab === 'inactive'
-                  ? 'border-red-500 text-red-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Inactive ({driverActivity.inactiveCount})
-            </button>
-          </div>
-
-          {/* Table */}
-          <div className="max-h-[50vh] overflow-y-auto">
-            {driverActivityLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
-                <span className="ml-3 text-sm text-gray-500">Loading driver data...</span>
+            <div className="flex items-center gap-6 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                <span className="text-gray-600">Active:</span>
+                <span className="font-bold text-emerald-600">{driverActivity.activeCount}</span>
               </div>
-            ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50">
-                    <th className="px-5 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase">Driver</th>
-                    <th className="px-5 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase">Trips</th>
-                    <th className="px-5 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase">Stops Updated</th>
-                    <th className="px-5 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase">Usage</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {driverActivity.drivers
-                    .filter((d: any) => driverActivityTab === 'active' ? d.isActive : !d.isActive)
-                    .map((driver: any) => (
-                    <tr key={driver.driverId} className="border-b border-gray-50 hover:bg-gray-50">
-                      <td className="px-5 py-3">
-                        <div className="flex items-center gap-2">
-                          <div className="h-7 w-7 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-[10px] font-bold text-white">
-                            {driver.firstName?.[0]}{driver.surname?.[0]}
-                          </div>
-                          <div>
-                            <p className="font-medium text-gray-900">{driver.firstName} {driver.surname}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-5 py-3 text-gray-700">{driver.tripCount}</td>
-                      <td className="px-5 py-3 text-gray-700">{driver.updatedStops} / {driver.totalStops}</td>
-                      <td className="px-5 py-3">
-                        <div className="flex items-center gap-2">
-                          <div className="h-2 w-24 rounded-full bg-gray-200 overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all ${
-                                driver.usagePercent >= 50 ? 'bg-emerald-500' :
-                                driver.usagePercent > 0 ? 'bg-amber-500' : 'bg-red-500'
-                              }`}
-                              style={{ width: `${driver.usagePercent}%` }}
-                            />
-                          </div>
-                          <span className="text-xs font-medium text-gray-600">{driver.usagePercent}%</span>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {driverActivity.drivers.filter((d: any) => driverActivityTab === 'active' ? d.isActive : !d.isActive).length === 0 && (
-                    <tr>
-                      <td colSpan={4} className="px-5 py-12 text-center text-sm text-gray-400">
-                        No {driverActivityTab} drivers found
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            )}
+              <div className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
+                <span className="text-gray-600">Inactive:</span>
+                <span className="font-bold text-red-600">{driverActivity.inactiveCount}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-600">Total:</span>
+                <span className="font-bold text-gray-900">{driverActivity.total}</span>
+              </div>
+            </div>
           </div>
         </div>
-      )}
 
+        {/* Tabs */}
+        <div className="flex border-b border-gray-200 px-6">
+          <button
+            onClick={() => setDriverActivityTab('active')}
+            className={`mr-6 py-3 text-sm font-semibold border-b-2 transition-all ${
+              driverActivityTab === 'active'
+                ? 'border-emerald-500 text-emerald-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Active Drivers ({driverActivity.activeCount})
+          </button>
+          <button
+            onClick={() => setDriverActivityTab('inactive')}
+            className={`py-3 text-sm font-semibold border-b-2 transition-all ${
+              driverActivityTab === 'inactive'
+                ? 'border-red-500 text-red-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Inactive Drivers ({driverActivity.inactiveCount})
+          </button>
+        </div>
+
+        {/* Table */}
+        {driverActivityLoading ? (
+          <div className="flex items-center justify-center py-20">
+            <div className="h-10 w-10 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
+            <span className="ml-4 text-sm text-gray-500">Loading driver data...</span>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gradient-to-r from-gray-50 to-slate-50">
+                <tr>
+                  <th className="px-6 py-4 font-semibold text-gray-600 text-xs text-left uppercase tracking-wider">Driver</th>
+                  <th className="px-6 py-4 font-semibold text-gray-600 text-xs text-left uppercase tracking-wider">Trips</th>
+                  <th className="px-6 py-4 font-semibold text-gray-600 text-xs text-left uppercase tracking-wider">Stops Updated</th>
+                  <th className="px-6 py-4 font-semibold text-gray-600 text-xs text-left uppercase tracking-wider">Usage</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {driverActivity.drivers
+                  .filter((d: any) => driverActivityTab === 'active' ? d.isActive : !d.isActive)
+                  .map((driver: any, index: number) => (
+                  <tr
+                    key={driver.driverId}
+                    className={`${index % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 transition-colors duration-150`}
+                  >
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="h-9 w-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-xs font-bold text-white shadow-sm">
+                          {driver.firstName?.[0]}{driver.surname?.[0]}
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-900 text-sm">{driver.firstName} {driver.surname}</p>
+                          <p className="text-xs text-gray-500">ID: {driver.driverId}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-sm font-medium text-gray-900">{driver.tripCount}</td>
+                    <td className="px-6 py-4 text-sm text-gray-700">{driver.updatedStops} / {driver.totalStops}</td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="h-2.5 w-32 rounded-full bg-gray-200 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-500 ${
+                              driver.usagePercent >= 50 ? 'bg-emerald-500' :
+                              driver.usagePercent > 0 ? 'bg-amber-500' : 'bg-red-500'
+                            }`}
+                            style={{ width: `${driver.usagePercent}%` }}
+                          />
+                        </div>
+                        <span className={`text-xs font-semibold ${
+                          driver.usagePercent >= 50 ? 'text-emerald-600' :
+                          driver.usagePercent > 0 ? 'text-amber-600' : 'text-red-600'
+                        }`}>{driver.usagePercent}%</span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {driverActivity.drivers.filter((d: any) => driverActivityTab === 'active' ? d.isActive : !d.isActive).length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-6 py-16 text-center">
+                      <div className="text-gray-400 text-sm">No {driverActivityTab} drivers found</div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
