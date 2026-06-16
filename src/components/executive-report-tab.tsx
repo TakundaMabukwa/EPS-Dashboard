@@ -47,6 +47,10 @@ export default function ExecutiveReportTab() {
   const [tripHistory, setTripHistory] = useState<any[]>([]);
   const [selectedHistory, setSelectedHistory] = useState<any>(null);
   const [showAllHistory, setShowAllHistory] = useState(false);
+  const [showDriverActivity, setShowDriverActivity] = useState(false);
+  const [driverActivity, setDriverActivity] = useState<any>({ drivers: [], activeCount: 0, inactiveCount: 0, total: 0 });
+  const [driverActivityTab, setDriverActivityTab] = useState<'active' | 'inactive'>('active');
+  const [driverActivityLoading, setDriverActivityLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
@@ -186,6 +190,117 @@ export default function ExecutiveReportTab() {
 
   return (
     <div className="space-y-4">
+      {/* Driver Activity Drilldown */}
+      {showDriverActivity && (
+        <div className="rounded-xl border border-gray-200 bg-white">
+          <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowDriverActivity(false)}
+                className="rounded-lg bg-gray-100 p-1.5 hover:bg-gray-200 transition-colors"
+              >
+                <X className="h-4 w-4 text-gray-600" />
+              </button>
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">Driver Status Updates</h3>
+                <p className="text-xs text-gray-500">Drivers with active trips — who is updating statuses</p>
+              </div>
+            </div>
+            <div className="flex gap-4 text-xs text-gray-500">
+              <span>Active: <span className="font-bold text-emerald-600">{driverActivity.activeCount}</span></span>
+              <span>Inactive: <span className="font-bold text-red-600">{driverActivity.inactiveCount}</span></span>
+              <span>Total: <span className="font-bold text-gray-900">{driverActivity.total}</span></span>
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <div className="flex border-b border-gray-200 px-5">
+            <button
+              onClick={() => setDriverActivityTab('active')}
+              className={`mr-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+                driverActivityTab === 'active'
+                  ? 'border-emerald-500 text-emerald-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Active ({driverActivity.activeCount})
+            </button>
+            <button
+              onClick={() => setDriverActivityTab('inactive')}
+              className={`py-2.5 text-sm font-medium border-b-2 transition-colors ${
+                driverActivityTab === 'inactive'
+                  ? 'border-red-500 text-red-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Inactive ({driverActivity.inactiveCount})
+            </button>
+          </div>
+
+          {/* Table */}
+          <div className="max-h-[50vh] overflow-y-auto">
+            {driverActivityLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
+                <span className="ml-3 text-sm text-gray-500">Loading driver data...</span>
+              </div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50">
+                    <th className="px-5 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase">Driver</th>
+                    <th className="px-5 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase">Trips</th>
+                    <th className="px-5 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase">Stops Updated</th>
+                    <th className="px-5 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase">Usage</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {driverActivity.drivers
+                    .filter((d: any) => driverActivityTab === 'active' ? d.isActive : !d.isActive)
+                    .map((driver: any) => (
+                    <tr key={driver.driverId} className="border-b border-gray-50 hover:bg-gray-50">
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="h-7 w-7 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-[10px] font-bold text-white">
+                            {driver.firstName?.[0]}{driver.surname?.[0]}
+                          </div>
+                          <div>
+                            <p className="font-medium text-gray-900">{driver.firstName} {driver.surname}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3 text-gray-700">{driver.tripCount}</td>
+                      <td className="px-5 py-3 text-gray-700">{driver.updatedStops} / {driver.totalStops}</td>
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="h-2 w-24 rounded-full bg-gray-200 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${
+                                driver.usagePercent >= 50 ? 'bg-emerald-500' :
+                                driver.usagePercent > 0 ? 'bg-amber-500' : 'bg-red-500'
+                              }`}
+                              style={{ width: `${driver.usagePercent}%` }}
+                            />
+                          </div>
+                          <span className="text-xs font-medium text-gray-600">{driver.usagePercent}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {driverActivity.drivers.filter((d: any) => driverActivityTab === 'active' ? d.isActive : !d.isActive).length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="px-5 py-12 text-center text-sm text-gray-400">
+                        No {driverActivityTab} drivers found
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -257,10 +372,28 @@ export default function ExecutiveReportTab() {
         </div>
 
         {/* Driver Acceptance Rate */}
-        <div className="rounded-xl border border-gray-200 bg-white p-4">
+        <div
+          className="rounded-xl border border-gray-200 bg-white p-4 cursor-pointer hover:shadow-md transition-shadow"
+          onClick={async () => {
+            setShowDriverActivity(true);
+            setDriverActivityLoading(true);
+            try {
+              const res = await fetch('/api/executive/driver-activity');
+              if (res.ok) {
+                const data = await res.json();
+                setDriverActivity(data);
+              }
+            } catch (e) {
+              console.error('Failed to fetch driver activity:', e);
+            } finally {
+              setDriverActivityLoading(false);
+            }
+          }}
+        >
           <div className="mb-3 flex items-center gap-2">
             <CheckCircle className="h-4 w-4 text-gray-500" />
             <span className="text-sm font-medium text-gray-700">Driver Acceptance Rate</span>
+            <ArrowRight className="h-3 w-3 text-gray-400 ml-auto" />
           </div>
           <div className="mb-3">
             <span className="text-4xl font-bold text-gray-900">

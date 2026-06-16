@@ -1,0 +1,101 @@
+import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+
+export const dynamic = 'force-dynamic'
+
+export async function GET() {
+  try {
+    const supabase = await createClient()
+
+    // Fetch all trips (not cancelled) with vehicleassignments and stops_data
+    const { data: trips, error } = await supabase
+      .from('trips')
+      .select('id, trip_id, vehicleassignments, stops_data, status, created_at')
+      .not('status', 'eq', 'cancelled')
+      .not('vehicleassignments', 'is', null)
+
+    if (error) throw error
+
+    // Build driver activity map
+    const driverMap = new Map<string, {
+      driverId: string
+      firstName: string
+      surname: string
+      tripCount: number
+      activeTrips: number
+      totalStops: number
+      updatedStops: number
+    }>()
+
+    for (const trip of trips || []) {
+      const va = trip.vehicleassignments
+      if (!va) continue
+
+      const arr = Array.isArray(va) ? va : JSON.parse(va)
+      if (!Array.isArray(arr)) continue
+
+      for (const assignment of arr) {
+        const drivers = assignment?.drivers
+        if (!Array.isArray(drivers)) continue
+
+        for (const driver of drivers) {
+          if (!driver?.id) continue
+
+          const key = String(driver.id)
+          const existing = driverMap.get(key) || {
+            driverId: key,
+            firstName: driver.first_name || driver.name?.split(' ')[0] || '',
+            surname: driver.surname || driver.name || '',
+            tripCount: 0,
+            activeTrips: 0,
+            totalStops: 0,
+            updatedStops: 0,
+          }
+
+          existing.tripCount++
+
+          // Check stops_data to see if driver is updating statuses
+          const stopsData = trip.stops_data
+          if (Array.isArray(stopsData) && stopsData.length > 0) {
+            // Any stop with a non-pending status means driver is active
+            const hasUpdated = stopsData.some((s: any) => s.status && s.status !== 'pending')
+            if (hasUpdated) {
+              existing.activeTrips++
+            }
+            existing.totalStops += stopsData.length
+            existing.updatedStops += stopsData.filter((s: any) => s.status && s.status !== 'pending').length
+          }
+
+          driverMap.set(key, existing)
+        }
+      }
+    }
+
+    // Convert to array and calculate usage percentage
+    const drivers = Array.from(driverMap.values()).map(d => ({
+      ...d,
+      usagePercent: d.tripCount > 0 ? Math.round((d.activeTrips / d.tripCount) * 100) : 0,
+      // Active = has updated at least one stop across their trips
+      isActive: d.activeTrips > 0,
+    }))
+
+    // Sort: active first, then by usage percent descending
+    drivers.sort((a, b) => {
+      if (a.isActive !== b.isActive) return a.isActive ? -1 : 1
+      return b.usagePercent - a.usagePercent
+    })
+
+    const activeCount = drivers.filter(d => d.isActive).length
+    const inactiveCount = drivers.filter(d => !d.isActive).length
+
+    return NextResponse.json({
+      drivers,
+      activeCount,
+      inactiveCount,
+      total: drivers.length,
+    })
+  } catch (error: any) {
+    console.error('Driver activity error:', error)
+    return NextResponse.json({ drivers: [], activeCount: 0, inactiveCount: 0, total: 0 }, { status: 500 })
+  }
+}
