@@ -59,14 +59,14 @@ export async function GET() {
           existing.tripCount++
           existing.totalStops += stopsData.length
 
-          // For completed/delivered trips, check if stops_data has completed or delivered entries
-          const completedCount = stopsData.filter((s: any) => {
+          // Check for any status aside from "pending" — driver is active if they updated
+          const nonPendingCount = stopsData.filter((s: any) => {
             const status = s.status?.toLowerCase()
-            return status === 'completed' || status === 'delivered'
+            return status && status !== 'pending'
           }).length
-          existing.updatedStops += completedCount
+          existing.updatedStops += nonPendingCount
 
-          if (completedCount > 0) {
+          if (nonPendingCount > 0) {
             existing.activeTrips++
           }
 
