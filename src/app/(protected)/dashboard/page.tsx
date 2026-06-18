@@ -336,7 +336,7 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
                       </div>
                     </div>
                     <div className="min-w-0">
-                      <div className="text-[10px] font-medium text-slate-700">{Math.round(fillPct)}%</div>
+                      <div className="text-[10px] font-medium text-slate-700">{Math.round(litres)}L</div>
                       <div className="text-[9px] text-slate-500">Used: {fuelData.totalFuelUsed ? `${(fuelData.totalFuelUsed / 1000).toFixed(1)}k` : '—'}L</div>
                     </div>
                   </>
