@@ -62,15 +62,18 @@ export async function GET() {
           existing.tripCount++
           existing.totalStops += STANDARD_STOPS
 
-          // Count non-pending stops for granular usage
-          const nonPendingCount = stopsData.filter((s: any) => {
+          // Count unique non-pending statuses (deduplicate multiple clicks on same stop)
+          const uniqueStatuses = new Set<string>()
+          for (const s of stopsData) {
             const status = s.status?.toLowerCase()
-            return status && status !== 'pending'
-          }).length
-          existing.updatedStops += nonPendingCount
+            if (status && status !== 'pending') {
+              uniqueStatuses.add(status)
+            }
+          }
+          existing.updatedStops += uniqueStatuses.size
 
           // Mark as active if any stop was updated
-          if (nonPendingCount > 0) {
+          if (uniqueStatuses.size > 0) {
             existing.activeTrips++
           }
 
