@@ -13,7 +13,7 @@ interface FuelGaugeProps {
   engineHours?: number;
   totalFuelUsed?: number;
   status: string;
-  lastUpdated?: string;
+  lastUpdated?: string | null;
   className?: string;
   id?: string | number;
   onRefresh?: (id?: string | number) => void | Promise<void>;
@@ -50,8 +50,9 @@ export function FuelGauge({
   onDownload,
 }: FuelGaugeProps) {
   const litres = Math.max(0, fuelLitres || 0);
-  const fillPct = Math.min(100, (litres / MAX_TANK) * 100);
-  const color = getFuelColor(litres);
+  const noData = status === 'No Data';
+  const fillPct = noData ? 0 : Math.min(100, (litres / MAX_TANK) * 100);
+  const color = noData ? '#cbd5e1' : getFuelColor(litres);
 
   const sw = 8;
   const r = 52;
@@ -73,11 +74,12 @@ export function FuelGauge({
   return (
     <div className={cn(
       'flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md',
+      noData && 'opacity-60 grayscale',
       className
     )}>
       {/* Header */}
       <div className="border-b border-slate-100 bg-slate-50/80 px-3 py-2">
-        <p className="truncate text-sm font-bold text-[#1748d8]">{location}</p>
+        <p className={cn("truncate text-sm font-bold", noData ? 'text-slate-400' : 'text-[#1748d8]')}>{location}</p>
       </div>
 
       {/* Gauge + Litres */}
@@ -93,8 +95,14 @@ export function FuelGauge({
             />
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-2xl font-black leading-none text-[#1748d8]">{fmt.format(litres)}</span>
-            <span className="text-[10px] font-bold text-slate-500">LITRES</span>
+            {noData ? (
+              <span className="text-sm font-semibold text-slate-400">No Data</span>
+            ) : (
+              <>
+                <span className="text-2xl font-black leading-none text-[#1748d8]">{fmt.format(litres)}</span>
+                <span className="text-[10px] font-bold text-slate-500">LITRES</span>
+              </>
+            )}
           </div>
         </div>
       </div>
