@@ -249,10 +249,16 @@ export default function Vehicles() {
         (vehicle.registration_number || '').toLowerCase().includes(searchLower) ||
         (vehicle.vehicle_type || '').toLowerCase().includes(searchLower) ||
         (vehicle.branch_name || '').toLowerCase().includes(searchLower) ||
-        (vehicle.branch_code || '').toLowerCase().includes(searchLower);
+        (vehicle.branch_code || '').toLowerCase().includes(searchLower) ||
+        (vehicle.slmn_name || '').toLowerCase().includes(searchLower) ||
+        (vehicle.department_name || '').toLowerCase().includes(searchLower);
 
       let matchesCard = true;
-      if (cardFilter === 'license-expiring') {
+      if (cardFilter === 'horses') {
+        matchesCard = !(vehicle.vehicle_type || '').toUpperCase().startsWith('TR');
+      } else if (cardFilter === 'trailers') {
+        matchesCard = (vehicle.vehicle_type || '').toUpperCase().startsWith('TR');
+      } else if (cardFilter === 'license-expiring') {
         const exp = vehicle.license_expiry_date ? new Date(vehicle.license_expiry_date) : null;
         matchesCard = !!exp && exp <= in30;
       } else if (cardFilter === 'license-expired') {
@@ -1043,12 +1049,12 @@ export default function Vehicles() {
       )}
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {/* Fleet Total */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        {/* Horses */}
         <button
-          onClick={() => setCardFilter(null)}
+          onClick={() => setCardFilter(cardFilter === 'horses' ? null : 'horses')}
           className={`relative overflow-hidden rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 p-4 text-white shadow-lg transition-all hover:scale-[1.02] hover:shadow-xl text-left ${
-            cardFilter === null ? 'ring-2 ring-black ring-offset-2' : ''
+            cardFilter === 'horses' ? 'ring-2 ring-black ring-offset-2' : ''
           }`}
         >
           <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
@@ -1057,12 +1063,27 @@ export default function Vehicles() {
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-2">
               <Truck className="h-4 w-4" />
             </div>
-            <p className="text-xs font-medium text-blue-100">Vehicles</p>
+            <p className="text-xs font-medium text-blue-100">Horses</p>
             <p className="text-2xl font-bold mt-0.5">
               <RollingNumber value={vehicles.filter((v) => !(v.vehicle_type || '').toUpperCase().startsWith('TR')).length} duration={1000} />
             </p>
-            <div className="h-px bg-white/20 my-2" />
-            <p className="text-xs font-medium text-blue-100">Trailers</p>
+          </div>
+        </button>
+
+        {/* Trailers */}
+        <button
+          onClick={() => setCardFilter(cardFilter === 'trailers' ? null : 'trailers')}
+          className={`relative overflow-hidden rounded-xl bg-gradient-to-br from-purple-500 to-violet-600 p-4 text-white shadow-lg transition-all hover:scale-[1.02] hover:shadow-xl text-left ${
+            cardFilter === 'trailers' ? 'ring-2 ring-black ring-offset-2' : ''
+          }`}
+        >
+          <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
+          <div className="absolute -bottom-2 -right-2 h-16 w-16 rounded-full bg-white/5" />
+          <div className="relative">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-2">
+              <Truck className="h-4 w-4" />
+            </div>
+            <p className="text-xs font-medium text-purple-100">Trailers</p>
             <p className="text-2xl font-bold mt-0.5">
               <RollingNumber value={vehicles.filter((v) => (v.vehicle_type || '').toUpperCase().startsWith('TR')).length} duration={1000} />
             </p>
@@ -1192,7 +1213,9 @@ export default function Vehicles() {
                 <tr className="bg-gradient-to-r from-slate-800 to-slate-900">
                   <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Registration</th>
                   <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Make/Model</th>
+                  <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Operator</th>
                   <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Branch</th>
+                  <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Department</th>
                   <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Type</th>
                   <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Year</th>
                   <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">License Expiry</th>
@@ -1204,7 +1227,7 @@ export default function Vehicles() {
               <tbody className="divide-y divide-gray-100">
                 {paginatedVehicles.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-12 text-center text-gray-500">
+                    <td colSpan={11} className="px-4 py-12 text-center text-gray-500">
                       No vehicles found
                     </td>
                   </tr>
@@ -1228,10 +1251,12 @@ export default function Vehicles() {
                           <div className="text-sm font-medium text-gray-900">{vehicle.make || '-'}</div>
                           <div className="text-xs text-gray-500">{vehicle.model || '-'}</div>
                         </td>
+                        <td className="px-4 py-2.5 text-sm text-gray-600">{vehicle.slmn_name || '-'}</td>
                         <td className="px-4 py-2.5">
                           <div className="text-sm text-gray-900">{vehicle.branch_name || '-'}</div>
                           <div className="text-xs text-gray-500">{vehicle.branch_code || ''}</div>
                         </td>
+                        <td className="px-4 py-2.5 text-sm text-gray-600">{vehicle.department_name || '-'}</td>
                         <td className="px-4 py-2.5 text-sm text-gray-600 capitalize">{vehicle.vehicle_type || '-'}</td>
                         <td className="px-4 py-2.5 text-sm text-gray-600">{vehicle.manufactured_year || '-'}</td>
                         <td className={`px-4 py-2.5 text-sm ${getExpiryStyle(vehicle.license_expiry_date)}`}>
