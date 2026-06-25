@@ -51,7 +51,7 @@ async function getDrivingDistance(
     if (!originCoords || !destCoords) return null
 
     const res = await fetch(
-      `https://api.mapbox.com/directions/v5/mapbox/driving/${originCoords[0]},${originCoords[1]};${destCoords[0]},${destCoords[1]}?access_token=${MAPBOX_TOKEN}&units=metric`
+      `https://api.mapbox.com/directions/v5/mapbox/driving/${originCoords[0]},${originCoords[1]};${destCoords[0]},${destCoords[1]}?access_token=${MAPBOX_TOKEN}`
     )
     const data = await res.json()
     if (data.routes?.length > 0) {
@@ -133,10 +133,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tri
       getTripReport(trip.trip_id || ''),
     ])
 
-    // Distance from Mapbox (loading → dropoff), fallback to trip report odometer
-    const distanceKm = mapboxResult?.distanceKm || tripReport?.distanceKm || 0
-    const distanceSource = mapboxResult ? 'mapbox' : tripReport ? 'trip_report' : 'none'
-    const durationHours = mapboxResult?.durationHours || tripReport?.durationHours || 0
+    // Distance ONLY from Mapbox (loading → dropoff)
+    const distanceKm = mapboxResult?.distanceKm || 0
+    const distanceSource = mapboxResult ? 'mapbox' : 'none'
+    const durationHours = mapboxResult?.durationHours || 0
 
     // Fuel always from trip report (actual litres)
     const fuelLitres = tripReport?.fuelLitres || 0
