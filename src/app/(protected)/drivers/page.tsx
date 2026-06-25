@@ -279,7 +279,6 @@ export default function Drivers() {
         })
 
       setDriverPerformanceData(merged)
-      }
     } catch (err) {
       console.error('Failed to fetch driver performance data', err)
       toast.error('Failed to load driver performance data')
