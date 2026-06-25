@@ -231,6 +231,20 @@ export default function Drivers() {
   const fetchDriverPerformanceData = async () => {
     setPerformanceLoading(true)
     try {
+      // Fetch real driver names from Supabase
+      const { data: dbDrivers } = await supabase
+        .from('drivers')
+        .select('driver_code, first_name, surname')
+        .not('driver_code', 'is', null)
+
+      const nameMap = new Map<string, string>()
+      for (const d of dbDrivers || []) {
+        if (d.driver_code && d.first_name && d.surname) {
+          const code = d.driver_code.replace(/^EPS/i, '')
+          nameMap.set(code, `${d.first_name} ${d.surname}`)
+        }
+      }
+
       const res = await fetch('/api/driver/scorecard')
       const data = await res.json()
       if (data.ok && Array.isArray(data.data)) {
@@ -261,7 +275,21 @@ export default function Drivers() {
           '29933 - SAKHILE ENGCOBO',
           '29956 LUCKY MAKHUBELE',
         ])
-        setDriverPerformanceData(data.data.filter((d: any) => !junkNames.has(d.name || d.full_name || '')))
+        const enriched = data.data
+          .filter((d: any) => !junkNames.has(d.name || d.full_name || ''))
+          .map((d: any) => {
+            // Resolve "Driver 11112" → real name from Supabase
+            const apiName = d.name || d.full_name || ''
+            const codeMatch = apiName.match(/^Driver\s+(\d+)$/)
+            if (codeMatch) {
+              const realName = nameMap.get(codeMatch[1])
+              if (realName) {
+                return { ...d, name: realName, full_name: realName }
+              }
+            }
+            return d
+          })
+        setDriverPerformanceData(enriched)
       }
     } catch (err) {
       console.error('Failed to fetch driver performance data', err)
