@@ -278,7 +278,7 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
     try {
       // Fetch only essential data first, then load others in background
       const [vehiclesResult, driversResult] = await Promise.all([
-        supabase.from('vehiclesc').select('id, registration_number, vehicle_type').eq('veh_dormant_flag', false),
+        supabase.from('vehiclesc').select('id, registration_number, vehicle_type, branch_name, make, model, cof_date').eq('veh_dormant_flag', false).not('branch_name', 'is', null).neq('branch_name', 'SOLD'),
         supabase.from('drivers').select('id, first_name, surname, available')
       ])
       
@@ -291,8 +291,8 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
         available: driver.available
       }))
       
-      // Filter available drivers
-      const availableDriversList = formattedDrivers.filter(d => d.available === true)
+      // Show all drivers (available filter removed - available may not exist in DB)
+      const availableDriversList = formattedDrivers
       
       setVehicles(vehiclesResult.data || [])
       setDrivers(formattedDrivers)
@@ -1106,7 +1106,7 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
               <VehicleDropdown
                 value={selectedVehicleId}
                 onChange={setSelectedVehicleId}
-                vehicles={vehicles.filter(vehicle => vehicle.vehicle_type === 'vehicle')}
+                vehicles={vehicles.filter(vehicle => !vehicle.vehicle_type?.startsWith('TR'))}
                 placeholder="Select horse (vehicle)"
               />
             </div>
@@ -1117,7 +1117,7 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
               <TrailerDropdown
                 value={selectedTrailerId}
                 onChange={setSelectedTrailerId}
-                trailers={vehicles.filter(vehicle => vehicle.vehicle_type !== 'vehicle')}
+                trailers={vehicles.filter(vehicle => vehicle.vehicle_type?.startsWith('TR'))}
                 placeholder="Select trailer"
               />
             </div>
