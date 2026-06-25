@@ -933,6 +933,37 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
     { label: "Delivered", value: "delivered" }
   ]
 
+  // Haversine distance between two lat/lng points (km)
+  const haversineKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371
+    const dLat = ((lat2 - lat1) * Math.PI) / 180
+    const dLon = ((lon2 - lon1) * Math.PI) / 180
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2)
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    return R * c
+  }
+
+  // Extract coordinates from status_history
+  const getCoordsFromHistory = (trip: any) => {
+    const history = trip.status_history || []
+    const coordsMap: Record<string, { lat: number; lng: number }> = {}
+    for (const entry of history) {
+      try {
+        const parsed = typeof entry === 'string' ? JSON.parse(entry) : entry
+        if (parsed.status && parsed.coordinates?.latitude && parsed.coordinates?.longitude) {
+          coordsMap[parsed.status.toLowerCase()] = {
+            lat: parsed.coordinates.latitude,
+            lng: parsed.coordinates.longitude,
+          }
+        }
+      } catch {}
+    }
+    return coordsMap
+  }
+
   const getWaypointsWithStops = (trip: any) => {
     let effectiveStatus = trip.status?.toLowerCase()
     const stopsData = trip.stops_data || []
@@ -957,6 +988,9 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
       }
     }
 
+    // Extract coordinates from status_history
+    const coordsMap = getCoordsFromHistory(trip)
+
     const currentStatusIndex = WORKFLOW_STATUSES.findIndex(s => s.value === effectiveStatus)
 
     // Calculate elapsed time for current status (since last change)
@@ -980,7 +1014,8 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
       isStop: false,
       elapsedSeconds: recordedOrder.includes(status.value) ? (elapsedMap[status.value] ?? null) : null,
       isCurrent: status.value === effectiveStatus,
-      currentElapsed: status.value === effectiveStatus ? currentElapsed : null
+      currentElapsed: status.value === effectiveStatus ? currentElapsed : null,
+      coords: coordsMap[status.value] || null,
     }))
 
     // Insert stops between Loading (index 4) and On Trip (index 5)
@@ -1012,10 +1047,32 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
         swp.position = lastLoadingPos + ((i + 1) / (afterLoadingWaypoints.length + stops.length + 1)) * (100 - lastLoadingPos)
       })
       
-      return { waypoints: [...loadingWaypoints, ...stopWaypoints, ...afterLoadingWaypoints], isStopped }
+      const allWaypoints = [...loadingWaypoints, ...stopWaypoints, ...afterLoadingWaypoints]
+      // Add distances to all waypoints
+      const allWithDistances = allWaypoints.map((wp, i) => {
+        if (i === 0) return { ...wp, distanceKm: null }
+        const prev = allWaypoints[i - 1]
+        if (prev.coords && wp.coords) {
+          const km = haversineKm(prev.coords.lat, prev.coords.lng, wp.coords.lat, wp.coords.lng)
+          return { ...wp, distanceKm: km >= 0.1 ? Math.round(km) : null }
+        }
+        return { ...wp, distanceKm: null }
+      })
+      return { waypoints: allWithDistances, isStopped }
     }
     
-    return { waypoints: baseWaypoints, isStopped }
+    // Calculate distances between consecutive waypoints that have coordinates
+    const withDistances = baseWaypoints.map((wp, i) => {
+      if (i === 0) return { ...wp, distanceKm: null }
+      const prev = baseWaypoints[i - 1]
+      if (prev.coords && wp.coords) {
+        const km = haversineKm(prev.coords.lat, prev.coords.lng, wp.coords.lat, wp.coords.lng)
+        return { ...wp, distanceKm: km >= 0.1 ? Math.round(km) : null }
+      }
+      return { ...wp, distanceKm: null }
+    })
+
+    return { waypoints: withDistances, isStopped }
   }
 
 
@@ -1352,6 +1409,12 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
               )}>
               {waypoint.label.split(' ')[0]}
               </span>
+              {/* Distance to next waypoint */}
+              {waypoint.distanceKm !== null && waypoint.distanceKm > 0 && (
+                <span className="text-[8px] text-blue-500 font-semibold whitespace-nowrap mt-0.5">
+                  {waypoint.distanceKm} km
+                </span>
+              )}
               </div>
               ))}
               </div>
