@@ -1104,7 +1104,7 @@ export default function Vehicles() {
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-2">
               <Shield className="h-4 w-4" />
             </div>
-            <p className="text-xs font-medium text-amber-100">COF Expiring</p>
+            <p className="text-xs font-medium text-amber-100">Licence Expiring</p>
             <p className="text-2xl font-bold mt-0.5">
               <RollingNumber
                 value={vehicles.filter((v) => {
@@ -1121,7 +1121,7 @@ export default function Vehicles() {
           </div>
         </button>
 
-        {/* COF Expiring 30-60 Days */}
+        {/* Licence Expiring 30-60 Days */}
         <button
           onClick={() => setCardFilter(cardFilter === 'cof-expiring' ? null : 'cof-expiring')}
           className={`relative overflow-hidden rounded-xl bg-gradient-to-br from-red-500 to-rose-600 p-4 text-white shadow-lg transition-all hover:scale-[1.02] hover:shadow-xl text-left ${
@@ -1134,7 +1134,7 @@ export default function Vehicles() {
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-2">
               <AlertTriangle className="h-4 w-4" />
             </div>
-            <p className="text-xs font-medium text-red-100">COF Expiring (30–60d)</p>
+            <p className="text-xs font-medium text-red-100">Licence Expiring (30–60d)</p>
             <p className="text-2xl font-bold mt-0.5">
               <RollingNumber
                 value={vehicles.filter((v) => {
@@ -1224,7 +1224,7 @@ export default function Vehicles() {
                   <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Department</th>
                   <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Type</th>
                   <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Year</th>
-                  <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">COF Date</th>
+                  <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Licence Date</th>
                   <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Service Due</th>
                   <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Driver</th>
                   <th className="px-4 py-2 text-right text-[11px] font-semibold text-white uppercase tracking-wider">Actions</th>
