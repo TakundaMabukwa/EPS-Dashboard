@@ -171,7 +171,7 @@ export default function Drivers() {
   const [topSpeedingDrivers, setTopSpeedingDrivers] = useState<any[]>([])
   const [performanceLoading, setPerformanceLoading] = useState(false)
   const [performanceFilter, setPerformanceFilter] = useState<'all' | 'critical' | 'warning' | 'good'>('all')
-  const [selectedDriver, setSelectedDriver] = useState<any>(null)
+  const [selectedPerfDriver, setSelectedPerfDriver] = useState<any>(null)
   const [driverEvents, setDriverEvents] = useState<any[]>([])
   const [eventsLoading, setEventsLoading] = useState(false)
 
@@ -272,7 +272,7 @@ export default function Drivers() {
   }
 
   const fetchDriverEvents = async (driver: any) => {
-    setSelectedDriver(driver)
+    setSelectedPerfDriver(driver)
     setEventsLoading(true)
     setDriverEvents([])
     try {
@@ -2306,15 +2306,15 @@ export default function Drivers() {
           )}
 
           {/* Driver Events Modal */}
-          {selectedDriver && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setSelectedDriver(null)}>
+          {selectedPerfDriver && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setSelectedPerfDriver(null)}>
               <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
                   <div>
-                    <h3 className="text-lg font-bold text-gray-900">{selectedDriver.full_name || selectedDriver.name}</h3>
-                    <p className="text-xs text-gray-500">Score: {selectedDriver.score} · Speeding: {selectedDriver.speeding_count || 0} · KM Today: {parseFloat(selectedDriver.km_today || 0).toFixed(1)}</p>
+                    <h3 className="text-lg font-bold text-gray-900">{selectedPerfDriver.full_name || selectedPerfDriver.name}</h3>
+                    <p className="text-xs text-gray-500">Score: {selectedPerfDriver.score} · Speeding: {selectedPerfDriver.speeding_count || 0} · KM Today: {parseFloat(selectedPerfDriver.km_today || 0).toFixed(1)}</p>
                   </div>
-                  <button onClick={() => setSelectedDriver(null)} className="h-8 w-8 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-gray-50">
+                  <button onClick={() => setSelectedPerfDriver(null)} className="h-8 w-8 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-gray-50">
                     <span className="text-gray-500 text-lg">×</span>
                   </button>
                 </div>
