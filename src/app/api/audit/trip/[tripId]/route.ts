@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || ''
+
 const PROFILES: Record<string, {
   diesel_per_km: number; maintenance: number; breakdown: number;
   tolls: number; allowance: number; cross_border_fee: number; fixed_monthly: number;
@@ -18,6 +20,48 @@ const VEHICLE_TYPE_MAP: Record<string, string> = {
   TR14M: '14METER', TRS9M: '9METER', TRTR: 'TAUTLINER', TRFLT: 'TAUTLINER',
   TRFLP: 'TAUTLINER', TRRLT: 'REEFER', TRRLP: 'REEFER', R8T: '8TON',
   R5T: '5TON', LDV: '1TON', VFD: 'VOLUMAX', vehicle: '14METER',
+}
+
+async function geocode(query: string): Promise<[number, number] | null> {
+  if (!MAPBOX_TOKEN || !query) return null
+  try {
+    const res = await fetch(
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${MAPBOX_TOKEN}&limit=1`
+    )
+    const data = await res.json()
+    if (data.features?.length > 0) {
+      const [lng, lat] = data.features[0].center
+      return [lng, lat]
+    }
+  } catch {}
+  return null
+}
+
+async function getDrivingDistance(
+  origin: string,
+  destination: string
+): Promise<{ distanceKm: number; durationHours: number } | null> {
+  if (!MAPBOX_TOKEN || !origin || !destination) return null
+  try {
+    const [originCoords, destCoords] = await Promise.all([
+      geocode(origin),
+      geocode(destination),
+    ])
+    if (!originCoords || !destCoords) return null
+
+    const res = await fetch(
+      `https://api.mapbox.com/directions/v5/mapbox/driving/${originCoords[0]},${originCoords[1]};${destCoords[0]},${destCoords[1]}?access_token=${MAPBOX_TOKEN}&units=metric`
+    )
+    const data = await res.json()
+    if (data.routes?.length > 0) {
+      const route = data.routes[0]
+      return {
+        distanceKm: Math.round(route.distance / 1000),
+        durationHours: Math.round((route.duration / 3600) * 10) / 10,
+      }
+    }
+  } catch {}
+  return null
 }
 
 function computeCosts(distanceKm: number, vehicleType: string) {
@@ -93,21 +137,28 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tri
     const estimatedDist = Number(trip.estimated_distance || 0)
     const storedTotalDist = Number(trip.total_distance || 0)
 
-    // Determine best distance: mileage > total_distance > estimated_distance
+    // Priority: mileage > Mapbox routing > total_distance > estimated_distance
     let bestDistance = 0
     let distanceSource = 'none'
+
     if (mileageDistance > 0) {
       bestDistance = mileageDistance
       distanceSource = 'mileage'
-    } else if (storedTotalDist > 0) {
-      bestDistance = storedTotalDist
-      distanceSource = 'total_distance'
-    } else if (estimatedDist > 0) {
-      bestDistance = estimatedDist
-      distanceSource = 'estimated_distance'
+    } else {
+      // Try Mapbox routing for real driving distance
+      const mapboxResult = await getDrivingDistance(trip.origin || '', trip.destination || '')
+      if (mapboxResult && mapboxResult.distanceKm > 0) {
+        bestDistance = mapboxResult.distanceKm
+        distanceSource = 'mapbox'
+      } else if (storedTotalDist > 0) {
+        bestDistance = storedTotalDist
+        distanceSource = 'total_distance'
+      } else if (estimatedDist > 0) {
+        bestDistance = estimatedDist
+        distanceSource = 'estimated_distance'
+      }
     }
 
-    // Always recalculate costs from the best distance + profile
     const costs = computeCosts(bestDistance, vehicleType)
 
     let clientName = trip.selectedclient || trip.selected_client || ''
