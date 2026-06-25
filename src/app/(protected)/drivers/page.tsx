@@ -171,6 +171,9 @@ export default function Drivers() {
   const [topSpeedingDrivers, setTopSpeedingDrivers] = useState<any[]>([])
   const [performanceLoading, setPerformanceLoading] = useState(false)
   const [performanceFilter, setPerformanceFilter] = useState<'all' | 'critical' | 'warning' | 'good'>('all')
+  const [selectedDriver, setSelectedDriver] = useState<any>(null)
+  const [driverEvents, setDriverEvents] = useState<any[]>([])
+  const [eventsLoading, setEventsLoading] = useState(false)
 
   const emptyForm: Driver = {
     first_name: '',
@@ -265,6 +268,23 @@ export default function Drivers() {
       toast.error('Failed to load driver performance data')
     } finally {
       setPerformanceLoading(false)
+    }
+  }
+
+  const fetchDriverEvents = async (driver: any) => {
+    setSelectedDriver(driver)
+    setEventsLoading(true)
+    setDriverEvents([])
+    try {
+      const res = await fetch(`/api/driver/${driver.id}/events`)
+      const data = await res.json()
+      if (data.ok && Array.isArray(data.data)) {
+        setDriverEvents(data.data)
+      }
+    } catch (err) {
+      console.error('Failed to fetch driver events', err)
+    } finally {
+      setEventsLoading(false)
     }
   }
 
@@ -2241,7 +2261,7 @@ export default function Drivers() {
                                 statusColor = 'bg-amber-100 text-amber-700'
                               }
                               return (
-                                <tr key={driver.id} className="hover:bg-gray-50/80 transition-colors">
+                                <tr key={driver.id} className="hover:bg-gray-50/80 transition-colors cursor-pointer" onClick={() => fetchDriverEvents(driver)}>
                                   <td className="px-4 py-2.5 text-sm font-medium text-gray-900">{driver.full_name || driver.name}</td>
                                   <td className="px-4 py-2.5 text-center">
                                     <span className={`inline-flex items-center justify-center w-10 h-10 rounded-lg text-sm font-bold ${scoreColor}`}>
@@ -2282,6 +2302,61 @@ export default function Drivers() {
                   </div>
                 </>
               )}
+            </div>
+          )}
+
+          {/* Driver Events Modal */}
+          {selectedDriver && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setSelectedDriver(null)}>
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900">{selectedDriver.full_name || selectedDriver.name}</h3>
+                    <p className="text-xs text-gray-500">Score: {selectedDriver.score} · Speeding: {selectedDriver.speeding_count || 0} · KM Today: {parseFloat(selectedDriver.km_today || 0).toFixed(1)}</p>
+                  </div>
+                  <button onClick={() => setSelectedDriver(null)} className="h-8 w-8 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-gray-50">
+                    <span className="text-gray-500 text-lg">×</span>
+                  </button>
+                </div>
+                <div className="flex-1 overflow-auto px-6 py-4">
+                  {eventsLoading ? (
+                    <div className="flex items-center justify-center py-12">
+                      <div className="animate-spin rounded-full h-6 w-6 border-2 border-gray-200 border-t-blue-600"></div>
+                      <span className="ml-3 text-gray-500 text-sm">Loading events...</span>
+                    </div>
+                  ) : driverEvents.length === 0 ? (
+                    <div className="text-center py-12 text-gray-400 text-sm">No events found for this driver</div>
+                  ) : (
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-200">
+                          <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase">Time</th>
+                          <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase">Event</th>
+                          <th className="px-3 py-2 text-center text-[10px] font-semibold text-gray-500 uppercase">Speed</th>
+                          <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase">Location</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {driverEvents.map((evt: any, i: number) => (
+                          <tr key={i} className="hover:bg-gray-50/80">
+                            <td className="px-3 py-2 text-xs text-gray-600 whitespace-nowrap">
+                              {evt.gps_time ? new Date(evt.gps_time).toLocaleString('en-ZA', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
+                            </td>
+                            <td className="px-3 py-2 text-xs font-medium text-gray-900">{evt.event_name || '—'}</td>
+                            <td className="px-3 py-2 text-xs text-center text-gray-600">{evt.speed ? `${evt.speed} km/h` : '—'}</td>
+                            <td className="px-3 py-2 text-xs text-gray-500">
+                              {evt.latitude && evt.longitude ? `${Number(evt.latitude).toFixed(4)}, ${Number(evt.longitude).toFixed(4)}` : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+                <div className="px-6 py-3 border-t border-gray-200 bg-gray-50/50 rounded-b-2xl">
+                  <p className="text-xs text-gray-500">{driverEvents.length} event{driverEvents.length !== 1 ? 's' : ''}</p>
+                </div>
+              </div>
             </div>
           )}
 
