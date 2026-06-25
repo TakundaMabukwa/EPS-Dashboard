@@ -237,7 +237,6 @@ export default function Vehicles() {
 
   // Filter vehicles based on search and card filter
   const filteredVehicles = useMemo(() => {
-    const now = new Date();
     const in30 = new Date();
     in30.setDate(in30.getDate() + 30);
 
@@ -259,11 +258,13 @@ export default function Vehicles() {
       } else if (cardFilter === 'trailers') {
         matchesCard = (vehicle.vehicle_type || '').toUpperCase().startsWith('TR');
       } else if (cardFilter === 'license-expiring') {
-        const exp = vehicle.license_expiry_date ? new Date(vehicle.license_expiry_date) : null;
+        const exp = vehicle.cof_date ? new Date(vehicle.cof_date) : null;
         matchesCard = !!exp && exp <= in30;
-      } else if (cardFilter === 'license-expired') {
-        const exp = vehicle.license_expiry_date ? new Date(vehicle.license_expiry_date) : null;
-        matchesCard = !!exp && exp <= now;
+      } else if (cardFilter === 'cof-expiring') {
+        const exp = vehicle.cof_date ? new Date(vehicle.cof_date) : null;
+        const in60 = new Date();
+        in60.setDate(in60.getDate() + 60);
+        matchesCard = !!exp && exp > in30 && exp <= in60;
       } else if (cardFilter === 'service-due') {
         matchesCard = vehicle.service_due_flag === true || vehicle.service_due_flag === 'true' || vehicle.service_due_flag === 1;
       }
@@ -1103,12 +1104,12 @@ export default function Vehicles() {
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-2">
               <Shield className="h-4 w-4" />
             </div>
-            <p className="text-xs font-medium text-amber-100">License Expiring</p>
+            <p className="text-xs font-medium text-amber-100">COF Expiring</p>
             <p className="text-2xl font-bold mt-0.5">
               <RollingNumber
                 value={vehicles.filter((v) => {
-                  if (!v.license_expiry_date) return false;
-                  const exp = new Date(v.license_expiry_date);
+                  if (!v.cof_date) return false;
+                  const exp = new Date(v.cof_date);
                   const in30 = new Date();
                   in30.setDate(in30.getDate() + 30);
                   return exp <= in30;
@@ -1116,15 +1117,15 @@ export default function Vehicles() {
                 duration={1000}
               />
             </p>
-            <p className="text-[10px] text-amber-200 mt-0.5">expired or within 30 days</p>
+            <p className="text-[10px] text-amber-200 mt-0.5">within 30 days</p>
           </div>
         </button>
 
-        {/* License Expired */}
+        {/* COF Expiring 30-60 Days */}
         <button
-          onClick={() => setCardFilter(cardFilter === 'license-expired' ? null : 'license-expired')}
+          onClick={() => setCardFilter(cardFilter === 'cof-expiring' ? null : 'cof-expiring')}
           className={`relative overflow-hidden rounded-xl bg-gradient-to-br from-red-500 to-rose-600 p-4 text-white shadow-lg transition-all hover:scale-[1.02] hover:shadow-xl text-left ${
-            cardFilter === 'license-expired' ? 'ring-2 ring-black ring-offset-2' : ''
+            cardFilter === 'cof-expiring' ? 'ring-2 ring-black ring-offset-2' : ''
           }`}
         >
           <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
@@ -1133,12 +1134,17 @@ export default function Vehicles() {
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-2">
               <AlertTriangle className="h-4 w-4" />
             </div>
-            <p className="text-xs font-medium text-red-100">License Expired</p>
+            <p className="text-xs font-medium text-red-100">COF Expiring (30–60d)</p>
             <p className="text-2xl font-bold mt-0.5">
               <RollingNumber
                 value={vehicles.filter((v) => {
-                  if (!v.license_expiry_date) return false;
-                  return new Date(v.license_expiry_date) <= new Date();
+                  if (!v.cof_date) return false;
+                  const exp = new Date(v.cof_date);
+                  const in30 = new Date();
+                  in30.setDate(in30.getDate() + 30);
+                  const in60 = new Date();
+                  in60.setDate(in60.getDate() + 60);
+                  return exp > in30 && exp <= in60;
                 }).length}
                 duration={1000}
               />
@@ -1218,7 +1224,7 @@ export default function Vehicles() {
                   <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Department</th>
                   <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Type</th>
                   <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Year</th>
-                  <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">License Expiry</th>
+                  <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">COF Date</th>
                   <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Service Due</th>
                   <th className="px-4 py-2 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Driver</th>
                   <th className="px-4 py-2 text-right text-[11px] font-semibold text-white uppercase tracking-wider">Actions</th>
@@ -1239,8 +1245,11 @@ export default function Vehicles() {
                       const now = new Date();
                       const in30 = new Date();
                       in30.setDate(in30.getDate() + 30);
+                      const in60 = new Date();
+                      in60.setDate(in60.getDate() + 60);
                       if (exp <= now) return 'animate-pulse text-red-600 font-bold bg-red-50';
                       if (exp <= in30) return 'animate-pulse text-orange-500 font-bold bg-orange-50';
+                      if (exp <= in60) return 'text-red-600 font-semibold bg-red-50';
                       return 'text-gray-600';
                     };
                     const isServiceDue = vehicle.service_due_flag === true || vehicle.service_due_flag === 'true' || vehicle.service_due_flag === 1;
@@ -1259,8 +1268,8 @@ export default function Vehicles() {
                         <td className="px-4 py-2.5 text-sm text-gray-600">{vehicle.department_name || '-'}</td>
                         <td className="px-4 py-2.5 text-sm text-gray-600 capitalize">{vehicle.vehicle_type || '-'}</td>
                         <td className="px-4 py-2.5 text-sm text-gray-600">{vehicle.manufactured_year || '-'}</td>
-                        <td className={`px-4 py-2.5 text-sm ${getExpiryStyle(vehicle.license_expiry_date)}`}>
-                          {vehicle.license_expiry_date ? new Date(vehicle.license_expiry_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
+                        <td className={`px-4 py-2.5 text-sm ${getExpiryStyle(vehicle.cof_date)}`}>
+                          {vehicle.cof_date ? new Date(vehicle.cof_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
                         </td>
                         <td className="px-4 py-2.5">
                           {isServiceDue ? (
