@@ -6,15 +6,14 @@ const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || ''
 const ROUTING_URL = process.env.NEXT_PUBLIC_ROUTING || 'http://164.90.217.196:8800/'
 
 const PROFILES: Record<string, {
-  diesel_per_km: number; maintenance: number; breakdown: number;
-  tolls: number; allowance: number; cross_border_fee: number; fixed_monthly: number;
+  fixed_monthly: number;
 }> = {
-  TAUTLINER: { diesel_per_km: 15.58765, maintenance: 1.60, breakdown: 0.06, tolls: 1.28, allowance: 2.19, cross_border_fee: 0, fixed_monthly: 28000 },
-  '14METER': { diesel_per_km: 13.55448, maintenance: 1.10, breakdown: 0.06, tolls: 0.85, allowance: 1.40, cross_border_fee: 0, fixed_monthly: 22000 },
-  REEFER: { diesel_per_km: 14.35448, maintenance: 1.10, breakdown: 0.06, tolls: 0.85, allowance: 1.40, cross_border_fee: 0, fixed_monthly: 22000 },
-  '9METER': { diesel_per_km: 8.907229, maintenance: 1.00, breakdown: 0.06, tolls: 0.24, allowance: 4.60, cross_border_fee: 0, fixed_monthly: 16000 },
-  '8TON': { diesel_per_km: 7.793825, maintenance: 1.00, breakdown: 0.06, tolls: 0.15, allowance: 0, cross_border_fee: 0, fixed_monthly: 13620 },
-  '1TON': { diesel_per_km: 3.11753, maintenance: 1.00, breakdown: 0.06, tolls: 0.15, allowance: 0, cross_border_fee: 0, fixed_monthly: 2500 },
+  TAUTLINER: { fixed_monthly: 28000 },
+  '14METER': { fixed_monthly: 22000 },
+  REEFER: { fixed_monthly: 22000 },
+  '9METER': { fixed_monthly: 16000 },
+  '8TON': { fixed_monthly: 13620 },
+  '1TON': { fixed_monthly: 2500 },
 }
 
 const VEHICLE_TYPE_MAP: Record<string, string> = {
@@ -22,6 +21,8 @@ const VEHICLE_TYPE_MAP: Record<string, string> = {
   TRFLP: 'TAUTLINER', TRRLT: 'REEFER', TRRLP: 'REEFER', R8T: '8TON',
   R5T: '5TON', LDV: '1TON', VFD: 'VOLUMAX', vehicle: '14METER',
 }
+
+const DIESEL_PRICE_PER_LITRE = 23.50 // Current SA diesel average
 
 async function geocode(query: string): Promise<[number, number] | null> {
   if (!MAPBOX_TOKEN || !query) return null
@@ -31,22 +32,7 @@ async function geocode(query: string): Promise<[number, number] | null> {
     )
     const data = await res.json()
     if (data.features?.length > 0) {
-      const [lng, lat] = data.features[0].center
-      return [lng, lat]
-    }
-  } catch {}
-  return null
-}
-
-async function getTripReportDistance(tripId: string): Promise<{ distanceKm: number; fuelLitres: number } | null> {
-  try {
-    const res = await fetch(`${ROUTING_URL}api/trip/${tripId}/report`, { signal: AbortSignal.timeout(10000) })
-    if (!res.ok) return null
-    const data = await res.json()
-    if (data.ok && data.data) {
-      const distance = Number(data.data.total_distance_km || 0)
-      const fuel = Number(data.data.total_fuel_used_liters || 0)
-      if (distance > 0) return { distanceKm: Math.round(distance), fuelLitres: fuel }
+      return data.features[0].center
     }
   } catch {}
   return null
@@ -79,38 +65,22 @@ async function getDrivingDistance(
   return null
 }
 
-function computeCosts(distanceKm: number, vehicleType: string) {
-  if (distanceKm <= 0) return null
-  const profileName = VEHICLE_TYPE_MAP[vehicleType] || '14METER'
-  const profile = PROFILES[profileName] || PROFILES['14METER']
-  const tripDays = Math.max(1, Math.ceil(distanceKm / 600))
-  const fixedDaily = profile.fixed_monthly / 25
-  const fixedCost = fixedDaily * tripDays
-  const dieselCost = distanceKm * profile.diesel_per_km
-  const maintenanceCost = distanceKm * profile.maintenance
-  const breakdownCost = distanceKm * profile.breakdown
-  const tollCost = distanceKm * profile.tolls
-  const allowanceCost = distanceKm * profile.allowance
-  const variableCost = dieselCost + maintenanceCost + breakdownCost + tollCost + allowanceCost
-  const loadingCost = 2 * 2 * 45
-  const packingCost = 2 * 2 * 45
-  const total = fixedCost + variableCost + loadingCost + packingCost
-  return {
-    profileUsed: profileName, tripDays, distanceKm,
-    dieselRate: profile.diesel_per_km,
-    dieselCost: Math.round(dieselCost * 100) / 100,
-    maintenanceCost: Math.round(maintenanceCost * 100) / 100,
-    breakdownCost: Math.round(breakdownCost * 100) / 100,
-    tollCost: Math.round(tollCost * 100) / 100,
-    allowanceCost: Math.round(allowanceCost * 100) / 100,
-    variableCost: Math.round(variableCost * 100) / 100,
-    fixedMonthly: profile.fixed_monthly,
-    fixedDaily: Math.round(fixedDaily * 100) / 100,
-    fixedCost: Math.round(fixedCost * 100) / 100,
-    loadingCost, packingCost,
-    totalCost: Math.round(total * 100) / 100,
-    costPerKm: distanceKm > 0 ? Math.round((total / distanceKm) * 100) / 100 : 0,
-  }
+async function getTripReport(tripId: string) {
+  try {
+    const res = await fetch(`${ROUTING_URL}api/trip/${tripId}/report`, { signal: AbortSignal.timeout(10000) })
+    if (!res.ok) return null
+    const data = await res.json()
+    if (data.ok && data.data) {
+      return {
+        distanceKm: Number(data.data.total_distance_km || 0),
+        fuelLitres: Number(data.data.total_fuel_used_liters || 0),
+        durationHours: Number(data.data.total_duration_seconds || 0) / 3600,
+        startOdometer: Number(data.data.start_odometer || 0),
+        endOdometer: Number(data.data.end_odometer || 0),
+      }
+    }
+  } catch {}
+  return null
 }
 
 export async function GET(_request: Request, { params }: { params: Promise<{ tripId: string }> }) {
@@ -146,44 +116,35 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tri
       if (v?.vehicle_type) vehicleType = v.vehicle_type
     }
 
-    const startMileage = Number(trip.start_mileage || 0)
-    const endMileage = Number(trip.end_mileage || 0)
-    const mileageDistance = (startMileage > 0 && endMileage > 0) ? endMileage - startMileage : 0
-    const estimatedDist = Number(trip.estimated_distance || 0)
-    const storedTotalDist = Number(trip.total_distance || 0)
+    const profileName = VEHICLE_TYPE_MAP[vehicleType] || '14METER'
+    const profile = PROFILES[profileName] || PROFILES['14METER']
 
-    // Priority: mileage > Mapbox routing (origin→destination) > trip report > total_distance > estimated_distance
-    let bestDistance = 0
-    let distanceSource = 'none'
-    let fuelLitres = 0
+    // Run Mapbox + trip report in parallel
+    const [mapboxResult, tripReport] = await Promise.all([
+      getDrivingDistance(trip.origin || '', trip.destination || ''),
+      getTripReport(trip.trip_id || ''),
+    ])
 
-    if (mileageDistance > 0) {
-      bestDistance = mileageDistance
-      distanceSource = 'mileage'
-    } else {
-      // Use Mapbox routing for real driving distance between loading and dropoff
-      const mapboxResult = await getDrivingDistance(trip.origin || '', trip.destination || '')
-      if (mapboxResult && mapboxResult.distanceKm > 0) {
-        bestDistance = mapboxResult.distanceKm
-        distanceSource = 'mapbox'
-      } else {
-        // Fallback: try trip report endpoint
-        const tripReport = await getTripReportDistance(trip.trip_id || '')
-        if (tripReport) {
-          bestDistance = tripReport.distanceKm
-          fuelLitres = tripReport.fuelLitres
-          distanceSource = 'trip_report'
-        } else if (storedTotalDist > 0) {
-          bestDistance = storedTotalDist
-          distanceSource = 'total_distance'
-        } else if (estimatedDist > 0) {
-          bestDistance = estimatedDist
-          distanceSource = 'estimated_distance'
-        }
-      }
-    }
+    // Distance from Mapbox (loading → dropoff)
+    const distanceKm = mapboxResult?.distanceKm || tripReport?.distanceKm || 0
+    const distanceSource = mapboxResult ? 'mapbox' : tripReport ? 'trip_report' : 'none'
+    const durationHours = mapboxResult?.durationHours || tripReport?.durationHours || 0
 
-    const costs = computeCosts(bestDistance, vehicleType)
+    // Fuel from trip report
+    const fuelLitres = tripReport?.fuelLitres || 0
+    const dieselCost = fuelLitres > 0 ? fuelLitres * DIESEL_PRICE_PER_LITRE : 0
+
+    // Fixed cost
+    const tripDays = Math.max(1, Math.ceil(distanceKm / 600))
+    const fixedDaily = profile.fixed_monthly / 25
+    const fixedCost = fixedDaily * tripDays
+
+    // Loading/packing
+    const loadingCost = 2 * 2 * 45
+    const packingCost = 2 * 2 * 45
+
+    // Total
+    const totalCost = dieselCost + fixedCost + loadingCost + packingCost
 
     let clientName = trip.selectedclient || trip.selected_client || ''
     const cd = trip.clientdetails || trip.client_details
@@ -199,15 +160,30 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tri
         cargo: trip.cargo, cargoWeight: trip.cargo_weight, clientName,
         rate: trip.rate, startDate: trip.startdate || trip.start_date,
         endDate: trip.end_date || trip.enddate,
-        estimatedDistance: estimatedDist, actualDistance: bestDistance,
-        distanceSource,
-        startMileage,
-        endMileage,
-        mileageDistance,
-        actualStartTime: trip.actual_start_time, actualEndTime: trip.actual_end_time,
         vehicleType, driver: trip.driver,
-        costs,
-        tripReportFuelLitres: fuelLitres,
+        distance: {
+          km: distanceKm,
+          source: distanceSource,
+          durationHours,
+        },
+        fuel: {
+          litres: fuelLitres,
+          pricePerLitre: DIESEL_PRICE_PER_LITRE,
+          totalCost: Math.round(dieselCost * 100) / 100,
+        },
+        fixed: {
+          monthly: profile.fixed_monthly,
+          daily: Math.round(fixedDaily * 100) / 100,
+          tripDays,
+          totalCost: Math.round(fixedCost * 100) / 100,
+        },
+        labour: {
+          loading: loadingCost,
+          packing: packingCost,
+          total: loadingCost + packingCost,
+        },
+        totalCost: Math.round(totalCost * 100) / 100,
+        costPerKm: distanceKm > 0 ? Math.round((totalCost / distanceKm) * 100) / 100 : 0,
       }
     })
   } catch (error) {

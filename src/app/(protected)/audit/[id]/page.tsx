@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import {
-  Truck, Users, DollarSign, Clock, Fuel, Activity, TrendingUp,
+  Truck, Users, Fuel, Activity, TrendingUp,
   Calendar, CheckCircle, ArrowLeft, User, Route
 } from 'lucide-react'
 import { RollingNumber } from '@/components/ui/rolling-number'
@@ -47,26 +47,24 @@ export default function AuditTripDetailPage() {
   if (error) return <div className="flex min-h-screen items-center justify-center text-lg text-red-500">{error}</div>
   if (!data) return <div className="flex min-h-screen items-center justify-center text-lg text-gray-500">No data found</div>
 
-  const costs = data.costs
   const rate = toNum(data.rate)
   const hasRate = rate > 0
-  const cpkActual = costs?.costPerKm || 0
-  const totalCost = costs?.totalCost || 0
+  const distance = data.distance
+  const fuel = data.fuel
+  const fixed = data.fixed
+  const labour = data.labour
+  const totalCost = data.totalCost || 0
+  const cpk = data.costPerKm || 0
   const profitLoss = hasRate ? rate - totalCost : 0
 
-  // Cost breakdown for donut / bars
-  const costItems = costs ? [
-    { label: 'Diesel', value: costs.dieselCost, color: '#e74c3c' },
-    { label: 'Maintenance', value: costs.maintenanceCost, color: '#3498db' },
-    { label: 'Breakdown', value: costs.breakdownCost, color: '#f39c12' },
-    { label: 'Tolls', value: costs.tollCost, color: '#2ecc71' },
-    { label: 'Allowance', value: costs.allowanceCost, color: '#9b59b6' },
-    { label: 'Fixed', value: costs.fixedCost, color: '#1abc9c' },
-    { label: 'Loading', value: costs.loadingCost, color: '#e67e22' },
-    { label: 'Packing', value: costs.packingCost, color: '#34495e' },
-  ].filter(c => c.value > 0) : []
+  const costBreakdown = [
+    { label: 'Diesel', value: fuel.totalCost, color: '#e74c3c', detail: `${fmtInt(fuel.litres)}L × R${fmt(fuel.pricePerLitre)}` },
+    { label: 'Fixed', value: fixed.totalCost, color: '#1abc9c', detail: `R${fmtInt(fixed.monthly)}/mo ÷ 25 × ${fixed.tripDays}d` },
+    { label: 'Loading', value: labour.loading, color: '#e67e22', detail: '2 workers × 2hrs × R45' },
+    { label: 'Packing', value: labour.packing, color: '#34495e', detail: '2 workers × 2hrs × R45' },
+  ].filter(c => c.value > 0)
 
-  const pieTotal = costItems.reduce((s, c) => s + c.value, 0)
+  const pieTotal = costBreakdown.reduce((s, c) => s + c.value, 0)
   let cumAngle = -90
 
   return (
@@ -160,14 +158,6 @@ export default function AuditTripDetailPage() {
                     <span className="text-xs font-semibold text-gray-900">{driver.driver_code}</span>
                   </div>
                 )}
-                {driver.license_expiry && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500">License Expiry</span>
-                    <span className={`text-xs font-semibold ${new Date(driver.license_expiry) < new Date() ? 'text-red-600' : 'text-gray-900'}`}>
-                      {new Date(driver.license_expiry).toLocaleDateString('en-ZA')}
-                    </span>
-                  </div>
-                )}
               </div>
             </>
           ) : (
@@ -185,16 +175,16 @@ export default function AuditTripDetailPage() {
             <span className="text-sm font-medium text-gray-700">Cost Per KM</span>
           </div>
           <div className="mb-3">
-            <span className="text-4xl font-bold text-gray-900">R{fmt(cpkActual)}</span>
+            <span className="text-4xl font-bold text-gray-900">R{fmt(cpk)}</span>
           </div>
           <div className="space-y-1">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-gray-600">Profile</span>
-              <span className="text-xs font-semibold text-gray-900">{costs?.profileUsed || '—'}</span>
+              <span className="text-xs text-gray-600">Distance</span>
+              <span className="text-xs font-semibold text-gray-900">{fmtInt(distance.km)} km</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-xs text-gray-600">Diesel Rate</span>
-              <span className="text-xs font-semibold text-gray-900">R{fmt(costs?.dieselRate || 0)}/km</span>
+              <span className="text-xs text-gray-600">Source</span>
+              <span className="text-xs font-semibold text-emerald-600">{distance.source === 'mapbox' ? 'Mapbox' : distance.source}</span>
             </div>
           </div>
         </div>
@@ -202,9 +192,7 @@ export default function AuditTripDetailPage() {
         {/* Revenue */}
         <div className="rounded-xl border border-gray-200 bg-white p-4">
           <div className="mb-2 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-gray-700">Trip Revenue</span>
-            </div>
+            <span className="text-sm font-medium text-gray-700">Trip Revenue</span>
             <TrendingUp className="h-4 w-4 text-gray-400" />
           </div>
           <div className="mb-1">
@@ -216,128 +204,120 @@ export default function AuditTripDetailPage() {
               <span className="text-3xl font-bold text-gray-400">—</span>
             )}
           </div>
-          <div className="mt-1 flex justify-between">
-            {costItems.slice(0, 8).map((c, i) => (
-              <span key={i} className="flex-1 text-center text-[7px] text-gray-400 truncate">{c.label.substring(0, 3)}</span>
-            ))}
-          </div>
+          {hasRate && (
+            <div className={`flex items-center gap-1 text-xs ${profitLoss >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+              <span>{profitLoss >= 0 ? '+' : ''}R{fmt(Math.abs(profitLoss))}</span>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Middle Row - Cost Distribution + Trip Summary | Total Cost Breakdown */}
+      {/* Middle Row */}
       <div className="grid grid-cols-3 gap-4">
-        {/* Left column - Cost Distribution + Trip Summary */}
-        <div className="col-span-1 flex flex-col gap-4">
-          {/* Cost Distribution Donut */}
-          <div className="rounded-xl border border-gray-200 bg-white p-4 flex-1">
-            <div className="mb-2 flex items-center gap-2">
-              <Fuel className="h-4 w-4 text-gray-500" />
-              <span className="text-sm font-medium text-gray-700">Cost Distribution</span>
-            </div>
-            {pieTotal > 0 ? (
-              <div className="flex items-center gap-3">
-                <svg viewBox="0 0 100 100" className="w-[130px] h-[130px] shrink-0">
-                  {costItems.map((c, i) => {
-                    const angle = (c.value / pieTotal) * 360
-                    const startAngle = cumAngle
-                    cumAngle += angle
-                    const endAngle = cumAngle
-                    const startRad = (startAngle * Math.PI) / 180
-                    const endRad = (endAngle * Math.PI) / 180
-                    const x1 = 50 + 42 * Math.cos(startRad)
-                    const y1 = 50 + 42 * Math.sin(startRad)
-                    const x2 = 50 + 42 * Math.cos(endRad)
-                    const y2 = 50 + 42 * Math.sin(endRad)
-                    const ix1 = 50 + 25 * Math.cos(startRad)
-                    const iy1 = 50 + 25 * Math.sin(startRad)
-                    const ix2 = 50 + 25 * Math.cos(endRad)
-                    const iy2 = 50 + 25 * Math.sin(endRad)
-                    const largeArc = angle > 180 ? 1 : 0
-                    return (
-                      <path key={i} d={`M ${x1} ${y1} A 42 42 0 ${largeArc} 1 ${x2} ${y2} L ${ix2} ${iy2} A 25 25 0 ${largeArc} 0 ${ix1} ${iy1} Z`}
-                        fill={c.color} stroke="#fff" strokeWidth="1" />
-                    )
-                  })}
-                  <text x="50" y="48" textAnchor="middle" className="fill-gray-800 text-[9px] font-black">R{fmtInt(Math.round(pieTotal))}</text>
-                  <text x="50" y="56" textAnchor="middle" className="fill-gray-500 text-[4px] font-semibold uppercase">Total</text>
-                </svg>
-                <div className="space-y-1">
-                  {costItems.map((c, i) => (
-                    <div key={i} className="flex items-center gap-1.5 text-[9px]">
-                      <span className="w-2 h-2 rounded-sm shrink-0" style={{ backgroundColor: c.color }} />
-                      <span className="text-gray-700 font-medium uppercase truncate max-w-[70px]">{c.label}</span>
-                      <span className="text-gray-400 ml-auto">{((c.value / pieTotal) * 100).toFixed(0)}%</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="text-xs text-gray-400 text-center py-4">No cost data</div>
-            )}
+        {/* Cost Distribution Donut */}
+        <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <div className="mb-2 flex items-center gap-2">
+            <Fuel className="h-4 w-4 text-gray-500" />
+            <span className="text-sm font-medium text-gray-700">Cost Distribution</span>
           </div>
-
-          {/* Trip Summary */}
-          <div className="rounded-xl border border-gray-200 bg-white p-4 flex-1">
-            <div className="mb-2 flex items-center gap-2">
-              <Route className="h-4 w-4 text-gray-500" />
-              <span className="text-sm font-medium text-gray-700">Trip Summary</span>
+          {pieTotal > 0 ? (
+            <div className="flex items-center gap-3">
+              <svg viewBox="0 0 100 100" className="w-[130px] h-[130px] shrink-0">
+                {costBreakdown.map((c, i) => {
+                  const angle = (c.value / pieTotal) * 360
+                  const startAngle = cumAngle
+                  cumAngle += angle
+                  const endAngle = cumAngle
+                  const startRad = (startAngle * Math.PI) / 180
+                  const endRad = (endAngle * Math.PI) / 180
+                  const x1 = 50 + 42 * Math.cos(startRad)
+                  const y1 = 50 + 42 * Math.sin(startRad)
+                  const x2 = 50 + 42 * Math.cos(endRad)
+                  const y2 = 50 + 42 * Math.sin(endRad)
+                  const ix1 = 50 + 25 * Math.cos(startRad)
+                  const iy1 = 50 + 25 * Math.sin(startRad)
+                  const ix2 = 50 + 25 * Math.cos(endRad)
+                  const iy2 = 50 + 25 * Math.sin(endRad)
+                  const largeArc = angle > 180 ? 1 : 0
+                  return (
+                    <path key={i} d={`M ${x1} ${y1} A 42 42 0 ${largeArc} 1 ${x2} ${y2} L ${ix2} ${iy2} A 25 25 0 ${largeArc} 0 ${ix1} ${iy1} Z`}
+                      fill={c.color} stroke="#fff" strokeWidth="1" />
+                  )
+                })}
+                <text x="50" y="48" textAnchor="middle" className="fill-gray-800 text-[9px] font-black">R{fmtInt(Math.round(pieTotal))}</text>
+                <text x="50" y="56" textAnchor="middle" className="fill-gray-500 text-[4px] font-semibold uppercase">Total</text>
+              </svg>
+              <div className="space-y-1.5">
+                {costBreakdown.map((c, i) => (
+                  <div key={i} className="flex items-center gap-1.5 text-[9px]">
+                    <span className="w-2 h-2 rounded-sm shrink-0" style={{ backgroundColor: c.color }} />
+                    <span className="text-gray-700 font-medium uppercase truncate max-w-[60px]">{c.label}</span>
+                    <span className="text-gray-400 ml-auto">{((c.value / pieTotal) * 100).toFixed(0)}%</span>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="space-y-2">
+          ) : (
+            <div className="text-xs text-gray-400 text-center py-4">No cost data</div>
+          )}
+        </div>
+
+        {/* Trip Summary */}
+        <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <div className="mb-2 flex items-center gap-2">
+            <Route className="h-4 w-4 text-gray-500" />
+            <span className="text-sm font-medium text-gray-700">Trip Summary</span>
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-1.5 text-xs">
+              <span className="text-gray-500">Origin</span>
+              <span className="font-bold text-gray-900 truncate ml-2">{data.origin || 'N/A'}</span>
+            </div>
+            <div className="flex items-center justify-between border-b border-gray-100 pb-1.5 text-xs">
+              <span className="text-gray-500">Destination</span>
+              <span className="font-bold text-gray-900 truncate ml-2">{data.destination || 'N/A'}</span>
+            </div>
+            <div className="flex items-center justify-between border-b border-gray-100 pb-1.5 text-xs">
+              <span className="text-gray-500">Distance</span>
+              <span className="font-bold text-gray-900">{fmtInt(distance.km)} km</span>
+            </div>
+            {distance.durationHours > 0 && (
               <div className="flex items-center justify-between border-b border-gray-100 pb-1.5 text-xs">
-                <span className="text-gray-500">Origin</span>
-                <span className="font-bold text-gray-900 truncate ml-2">{data.origin || 'N/A'}</span>
+                <span className="text-gray-500">Drive Time</span>
+                <span className="font-bold text-gray-900">{distance.durationHours.toFixed(1)} hrs</span>
               </div>
-              <div className="flex items-center justify-between border-b border-gray-100 pb-1.5 text-xs">
-                <span className="text-gray-500">Destination</span>
-                <span className="font-bold text-gray-900 truncate ml-2">{data.destination || 'N/A'}</span>
-              </div>
-              <div className="flex items-center justify-between border-b border-gray-100 pb-1.5 text-xs">
-                <span className="text-gray-500">Distance</span>
-                <span className="font-bold text-gray-900">
-                  {fmtInt(data.actualDistance)} km
-                  {data.distanceSource === 'mileage' && <span className="text-emerald-600 ml-1">(GPS)</span>}
-                </span>
-              </div>
-              <div className="flex items-center justify-between border-b border-gray-100 pb-1.5 text-xs">
-                <span className="text-gray-500">Fixed Monthly</span>
-                <span className="font-bold text-gray-900">R{fmtInt(costs?.fixedMonthly || 0)}</span>
-              </div>
-              <div className="flex items-center justify-between border-b border-gray-100 pb-1.5 text-xs">
-                <span className="text-gray-500">Trip Days</span>
-                <span className="font-bold text-gray-900">{costs?.tripDays || 1}</span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-gray-500">Total Cost</span>
-                <span className="font-black text-[#001e42]">R{fmt(totalCost)}</span>
-              </div>
+            )}
+            <div className="flex items-center justify-between border-b border-gray-100 pb-1.5 text-xs">
+              <span className="text-gray-500">Trip Days</span>
+              <span className="font-bold text-gray-900">{fixed.tripDays}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-gray-500">Total Cost</span>
+              <span className="font-black text-[#001e42]">R{fmt(totalCost)}</span>
             </div>
           </div>
         </div>
 
-        {/* Right column - Cost Breakdown */}
-        <div className="col-span-2 rounded-xl border border-gray-200 bg-white p-4">
+        {/* Cost Breakdown */}
+        <div className="rounded-xl border border-gray-200 bg-white p-4">
           <div className="mb-3 flex items-center gap-2">
             <Activity className="h-4 w-4 text-gray-500" />
             <span className="text-sm font-medium text-gray-700">Cost Breakdown</span>
           </div>
           <div className="space-y-3">
-            {costItems.map((c, i) => {
-              const barMax = Math.max(...costItems.map(x => x.value), 1)
-              const pct = pieTotal > 0 ? (c.value / pieTotal) * 100 : 0
+            {costBreakdown.map((c, i) => {
+              const barMax = Math.max(...costBreakdown.map(x => x.value), 1)
               return (
                 <div key={i} className="space-y-1">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">{c.label}</span>
-                    <span className="text-[10px] font-bold text-gray-700">
-                      R{fmt(Math.round(c.value))} <span className="text-gray-400 font-normal">({pct.toFixed(1)}%)</span>
-                    </span>
+                    <span className="text-[10px] font-bold text-gray-700">R{fmt(Math.round(c.value))}</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full transition-all duration-500"
-                        style={{ width: `${(c.value / barMax) * 100}%`, backgroundColor: c.color }} />
-                    </div>
+                  <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full transition-all duration-500"
+                      style={{ width: `${(c.value / barMax) * 100}%`, backgroundColor: c.color }} />
                   </div>
+                  <span className="text-[9px] text-gray-400">{c.detail}</span>
                 </div>
               )
             })}
@@ -351,20 +331,20 @@ export default function AuditTripDetailPage() {
             </div>
 
             {/* Revenue vs Cost */}
-            <div className="border-t border-gray-200 pt-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase text-gray-700">Revenue</span>
-                <span className="text-sm font-black text-gray-900">{hasRate ? `R${fmt(rate)}` : '—'}</span>
-              </div>
-              {hasRate && (
+            {hasRate && (
+              <div className="border-t border-gray-200 pt-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase text-gray-700">Revenue</span>
+                  <span className="text-sm font-black text-gray-900">R{fmt(rate)}</span>
+                </div>
                 <div className="flex items-center justify-between mt-1">
                   <span className="text-xs font-bold uppercase text-gray-700">Profit / Loss</span>
                   <span className={`text-sm font-black ${profitLoss >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                     {profitLoss >= 0 ? '+' : ''}R{fmt(Math.abs(profitLoss))}
                   </span>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
