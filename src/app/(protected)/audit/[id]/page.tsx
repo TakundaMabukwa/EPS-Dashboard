@@ -49,8 +49,10 @@ export default function AuditTripDetailPage() {
 
   const costs = data.costs
   const rate = toNum(data.rate)
+  const hasRate = rate > 0
   const cpkActual = costs?.costPerKm || 0
   const totalCost = costs?.totalCost || 0
+  const profitLoss = hasRate ? rate - totalCost : 0
 
   // Cost breakdown for donut / bars
   const costItems = costs ? [
@@ -206,9 +208,13 @@ export default function AuditTripDetailPage() {
             <TrendingUp className="h-4 w-4 text-gray-400" />
           </div>
           <div className="mb-1">
-            <span className="text-3xl font-bold text-gray-900">
-              <span className="text-lg">R</span><RollingNumber value={rate} />
-            </span>
+            {hasRate ? (
+              <span className="text-3xl font-bold text-gray-900">
+                <span className="text-lg">R</span><RollingNumber value={rate} />
+              </span>
+            ) : (
+              <span className="text-3xl font-bold text-gray-400">—</span>
+            )}
           </div>
           <div className="mt-1 flex justify-between">
             {costItems.slice(0, 8).map((c, i) => (
@@ -348,14 +354,16 @@ export default function AuditTripDetailPage() {
             <div className="border-t border-gray-200 pt-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase text-gray-700">Revenue</span>
-                <span className="text-sm font-black text-gray-900">R{fmt(rate)}</span>
+                <span className="text-sm font-black text-gray-900">{hasRate ? `R${fmt(rate)}` : '—'}</span>
               </div>
-              <div className="flex items-center justify-between mt-1">
-                <span className="text-xs font-bold uppercase text-gray-700">Profit / Loss</span>
-                <span className={`text-sm font-black ${rate - totalCost >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                  R{fmt(rate - totalCost)}
-                </span>
-              </div>
+              {hasRate && (
+                <div className="flex items-center justify-between mt-1">
+                  <span className="text-xs font-bold uppercase text-gray-700">Profit / Loss</span>
+                  <span className={`text-sm font-black ${profitLoss >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {profitLoss >= 0 ? '+' : ''}R{fmt(Math.abs(profitLoss))}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         </div>
