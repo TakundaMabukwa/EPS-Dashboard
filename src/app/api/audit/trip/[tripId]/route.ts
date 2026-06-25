@@ -67,19 +67,27 @@ async function getDrivingDistance(
 
 async function getTripReport(tripId: string) {
   try {
-    const res = await fetch(`${ROUTING_URL}api/trip/${tripId}/report`, { signal: AbortSignal.timeout(10000) })
-    if (!res.ok) return null
+    console.log(`[audit] Fetching trip report for ${tripId}`)
+    const res = await fetch(`${ROUTING_URL}api/trip/${tripId}/report`, { signal: AbortSignal.timeout(15000) })
+    if (!res.ok) {
+      console.log(`[audit] Trip report returned ${res.status}`)
+      return null
+    }
     const data = await res.json()
     if (data.ok && data.data) {
-      return {
+      const result = {
         distanceKm: Number(data.data.total_distance_km || 0),
         fuelLitres: Number(data.data.total_fuel_used_liters || 0),
         durationHours: Number(data.data.total_duration_seconds || 0) / 3600,
         startOdometer: Number(data.data.start_odometer || 0),
         endOdometer: Number(data.data.end_odometer || 0),
       }
+      console.log(`[audit] Trip report: ${result.distanceKm}km, ${result.fuelLitres}L`)
+      return result
     }
-  } catch {}
+  } catch (e: any) {
+    console.log(`[audit] Trip report failed: ${e.message}`)
+  }
   return null
 }
 
@@ -119,18 +127,18 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tri
     const profileName = VEHICLE_TYPE_MAP[vehicleType] || '14METER'
     const profile = PROFILES[profileName] || PROFILES['14METER']
 
-    // Run Mapbox + trip report in parallel
+    // Run Mapbox + trip report in parallel — Mapbox for distance, trip report for fuel
     const [mapboxResult, tripReport] = await Promise.all([
       getDrivingDistance(trip.origin || '', trip.destination || ''),
       getTripReport(trip.trip_id || ''),
     ])
 
-    // Distance from Mapbox (loading → dropoff)
+    // Distance from Mapbox (loading → dropoff), fallback to trip report odometer
     const distanceKm = mapboxResult?.distanceKm || tripReport?.distanceKm || 0
     const distanceSource = mapboxResult ? 'mapbox' : tripReport ? 'trip_report' : 'none'
     const durationHours = mapboxResult?.durationHours || tripReport?.durationHours || 0
 
-    // Fuel from trip report
+    // Fuel always from trip report (actual litres)
     const fuelLitres = tripReport?.fuelLitres || 0
     const dieselCost = fuelLitres > 0 ? fuelLitres * DIESEL_PRICE_PER_LITRE : 0
 
@@ -184,6 +192,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tri
         },
         totalCost: Math.round(totalCost * 100) / 100,
         costPerKm: distanceKm > 0 ? Math.round((totalCost / distanceKm) * 100) / 100 : 0,
+        _debug: { mapbox: !!mapboxResult, tripReport: !!tripReport, tripId: trip.trip_id },
       }
     })
   } catch (error) {
