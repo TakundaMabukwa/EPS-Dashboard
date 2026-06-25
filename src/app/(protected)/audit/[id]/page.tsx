@@ -175,16 +175,18 @@ export default function AuditTripDetailPage() {
             <span className="text-sm font-medium text-gray-700">Cost Per KM</span>
           </div>
           <div className="mb-3">
-            <span className="text-4xl font-bold text-gray-900">R{fmt(cpk)}</span>
+            <span className="text-4xl font-bold text-gray-900">{distance.km > 0 ? `R${fmt(cpk)}` : '—'}</span>
           </div>
           <div className="space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-xs text-gray-600">Distance</span>
-              <span className="text-xs font-semibold text-gray-900">{fmtInt(distance.km)} km</span>
+              <span className="text-xs font-semibold text-gray-900">{distance.km > 0 ? `${fmtInt(distance.km)} km` : '—'}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-xs text-gray-600">Source</span>
-              <span className="text-xs font-semibold text-emerald-600">{distance.source === 'mapbox' ? 'Mapbox' : distance.source}</span>
+              <span className={`text-xs font-semibold ${distance.source !== 'none' ? 'text-emerald-600' : 'text-gray-400'}`}>
+                {distance.source === 'mapbox' ? 'Mapbox' : distance.source === 'trip_report' ? 'Trip Report' : 'No data'}
+              </span>
             </div>
           </div>
         </div>
@@ -279,7 +281,7 @@ export default function AuditTripDetailPage() {
             </div>
             <div className="flex items-center justify-between border-b border-gray-100 pb-1.5 text-xs">
               <span className="text-gray-500">Distance</span>
-              <span className="font-bold text-gray-900">{fmtInt(distance.km)} km</span>
+              <span className="font-bold text-gray-900">{distance.km > 0 ? `${fmtInt(distance.km)} km` : '—'}</span>
             </div>
             {distance.durationHours > 0 && (
               <div className="flex items-center justify-between border-b border-gray-100 pb-1.5 text-xs">

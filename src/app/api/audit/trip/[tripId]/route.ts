@@ -5,9 +5,7 @@ import { cookies } from 'next/headers'
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || ''
 const ROUTING_URL = process.env.NEXT_PUBLIC_ROUTING || 'http://164.90.217.196:8800/'
 
-const PROFILES: Record<string, {
-  fixed_monthly: number;
-}> = {
+const PROFILES: Record<string, { fixed_monthly: number }> = {
   TAUTLINER: { fixed_monthly: 28000 },
   '14METER': { fixed_monthly: 22000 },
   REEFER: { fixed_monthly: 22000 },
@@ -22,13 +20,17 @@ const VEHICLE_TYPE_MAP: Record<string, string> = {
   R5T: '5TON', LDV: '1TON', VFD: 'VOLUMAX', vehicle: '14METER',
 }
 
-const DIESEL_PRICE_PER_LITRE = 23.50 // Current SA diesel average
+const DIESEL_PRICE_PER_LITRE = 23.50
 
 async function geocode(query: string): Promise<[number, number] | null> {
   if (!MAPBOX_TOKEN || !query) return null
+  // Ensure "South Africa" is in the query for better accuracy
+  const enriched = query.toLowerCase().includes('south africa') || query.toLowerCase().includes(', za')
+    ? query
+    : `${query}, South Africa`
   try {
     const res = await fetch(
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${MAPBOX_TOKEN}&limit=1`
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(enriched)}.json?access_token=${MAPBOX_TOKEN}&limit=1&country=ZA`
     )
     const data = await res.json()
     if (data.features?.length > 0) {
@@ -67,27 +69,17 @@ async function getDrivingDistance(
 
 async function getTripReport(tripId: string) {
   try {
-    console.log(`[audit] Fetching trip report for ${tripId}`)
     const res = await fetch(`${ROUTING_URL}api/trip/${tripId}/report`, { signal: AbortSignal.timeout(15000) })
-    if (!res.ok) {
-      console.log(`[audit] Trip report returned ${res.status}`)
-      return null
-    }
+    if (!res.ok) return null
     const data = await res.json()
     if (data.ok && data.data) {
-      const result = {
+      return {
         distanceKm: Number(data.data.total_distance_km || 0),
         fuelLitres: Number(data.data.total_fuel_used_liters || 0),
         durationHours: Number(data.data.total_duration_seconds || 0) / 3600,
-        startOdometer: Number(data.data.start_odometer || 0),
-        endOdometer: Number(data.data.end_odometer || 0),
       }
-      console.log(`[audit] Trip report: ${result.distanceKm}km, ${result.fuelLitres}L`)
-      return result
     }
-  } catch (e: any) {
-    console.log(`[audit] Trip report failed: ${e.message}`)
-  }
+  } catch {}
   return null
 }
 
@@ -127,16 +119,16 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tri
     const profileName = VEHICLE_TYPE_MAP[vehicleType] || '14METER'
     const profile = PROFILES[profileName] || PROFILES['14METER']
 
-    // Run Mapbox + trip report in parallel — Mapbox for distance, trip report for fuel
+    // Fetch both in parallel — Mapbox for distance, trip report for fuel
     const [mapboxResult, tripReport] = await Promise.all([
       getDrivingDistance(trip.origin || '', trip.destination || ''),
       getTripReport(trip.trip_id || ''),
     ])
 
-    // Distance ONLY from Mapbox (loading → dropoff)
-    const distanceKm = mapboxResult?.distanceKm || 0
-    const distanceSource = mapboxResult ? 'mapbox' : 'none'
-    const durationHours = mapboxResult?.durationHours || 0
+    // Distance: Mapbox first, then trip report, then nothing
+    const distanceKm = mapboxResult?.distanceKm || tripReport?.distanceKm || 0
+    const distanceSource = mapboxResult ? 'mapbox' : tripReport ? 'trip_report' : 'none'
+    const durationHours = mapboxResult?.durationHours || tripReport?.durationHours || 0
 
     // Fuel always from trip report (actual litres)
     const fuelLitres = tripReport?.fuelLitres || 0
@@ -192,7 +184,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tri
         },
         totalCost: Math.round(totalCost * 100) / 100,
         costPerKm: distanceKm > 0 ? Math.round((totalCost / distanceKm) * 100) / 100 : 0,
-        _debug: { mapbox: !!mapboxResult, tripReport: !!tripReport, tripId: trip.trip_id },
       }
     })
   } catch (error) {
