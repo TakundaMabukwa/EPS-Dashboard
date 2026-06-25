@@ -170,6 +170,7 @@ export default function Drivers() {
   const [driverPerformanceData, setDriverPerformanceData] = useState<any[]>([])
   const [topSpeedingDrivers, setTopSpeedingDrivers] = useState<any[]>([])
   const [performanceLoading, setPerformanceLoading] = useState(false)
+  const [performanceFilter, setPerformanceFilter] = useState<'all' | 'critical' | 'warning' | 'good'>('all')
 
   const emptyForm: Driver = {
     first_name: '',
@@ -2115,7 +2116,12 @@ export default function Drivers() {
                   {/* Stat Cards */}
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                     {/* Total Drivers */}
-                    <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 p-4 text-white shadow-lg shadow-blue-500/20">
+                    <button
+                      onClick={() => setPerformanceFilter('all')}
+                      className={`relative overflow-hidden rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 p-4 text-white shadow-lg shadow-blue-500/20 text-left transition-all hover:scale-[1.02] ${
+                        performanceFilter === 'all' ? 'ring-2 ring-black ring-offset-2' : ''
+                      }`}
+                    >
                       <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
                       <div className="absolute -bottom-2 -right-2 h-16 w-16 rounded-full bg-white/5" />
                       <div className="relative">
@@ -2125,10 +2131,15 @@ export default function Drivers() {
                         <p className="text-xs font-medium text-blue-100">Total Drivers</p>
                         <p className="text-2xl font-bold mt-0.5">{driverPerformanceData.length}</p>
                       </div>
-                    </div>
+                    </button>
 
                     {/* Below 25 - Critical */}
-                    <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-red-500 to-rose-600 p-4 text-white shadow-lg shadow-red-500/20">
+                    <button
+                      onClick={() => setPerformanceFilter('critical')}
+                      className={`relative overflow-hidden rounded-xl bg-gradient-to-br from-red-500 to-rose-600 p-4 text-white shadow-lg shadow-red-500/20 text-left transition-all hover:scale-[1.02] ${
+                        performanceFilter === 'critical' ? 'ring-2 ring-black ring-offset-2' : ''
+                      }`}
+                    >
                       <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
                       <div className="absolute -bottom-2 -right-2 h-16 w-16 rounded-full bg-white/5" />
                       <div className="relative">
@@ -2140,10 +2151,15 @@ export default function Drivers() {
                           {driverPerformanceData.filter((d: any) => d.score < 25).length}
                         </p>
                       </div>
-                    </div>
+                    </button>
 
                     {/* 25-75 - Warning */}
-                    <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 p-4 text-white shadow-lg shadow-amber-500/20">
+                    <button
+                      onClick={() => setPerformanceFilter('warning')}
+                      className={`relative overflow-hidden rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 p-4 text-white shadow-lg shadow-amber-500/20 text-left transition-all hover:scale-[1.02] ${
+                        performanceFilter === 'warning' ? 'ring-2 ring-black ring-offset-2' : ''
+                      }`}
+                    >
                       <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
                       <div className="absolute -bottom-2 -right-2 h-16 w-16 rounded-full bg-white/5" />
                       <div className="relative">
@@ -2155,10 +2171,15 @@ export default function Drivers() {
                           {driverPerformanceData.filter((d: any) => d.score >= 25 && d.score < 75).length}
                         </p>
                       </div>
-                    </div>
+                    </button>
 
                     {/* Above 75 - Good */}
-                    <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 p-4 text-white shadow-lg shadow-emerald-500/20">
+                    <button
+                      onClick={() => setPerformanceFilter('good')}
+                      className={`relative overflow-hidden rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 p-4 text-white shadow-lg shadow-emerald-500/20 text-left transition-all hover:scale-[1.02] ${
+                        performanceFilter === 'good' ? 'ring-2 ring-black ring-offset-2' : ''
+                      }`}
+                    >
                       <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
                       <div className="absolute -bottom-2 -right-2 h-16 w-16 rounded-full bg-white/5" />
                       <div className="relative">
@@ -2170,7 +2191,7 @@ export default function Drivers() {
                           {driverPerformanceData.filter((d: any) => d.score >= 75).length}
                         </p>
                       </div>
-                    </div>
+                    </button>
                   </div>
 
                   {/* Performance Table */}
@@ -2195,7 +2216,17 @@ export default function Drivers() {
                               </td>
                             </tr>
                           ) : (
-                            driverPerformanceData.map((driver: any) => {
+                            (() => {
+                              // Filter by category
+                              let filtered = driverPerformanceData
+                              if (performanceFilter === 'critical') {
+                                filtered = driverPerformanceData.filter((d: any) => d.score < 25)
+                              } else if (performanceFilter === 'warning') {
+                                filtered = driverPerformanceData.filter((d: any) => d.score >= 25 && d.score < 75)
+                              } else if (performanceFilter === 'good') {
+                                filtered = driverPerformanceData.filter((d: any) => d.score >= 75)
+                              }
+                              return filtered.map((driver: any) => {
                               const score = driver.score || 0
                               let scoreColor = 'text-emerald-600 bg-emerald-50'
                               let statusLabel = 'Good'
@@ -2228,6 +2259,7 @@ export default function Drivers() {
                                 </tr>
                               )
                             })
+                            })()
                           )}
                         </tbody>
                       </table>
@@ -2235,7 +2267,15 @@ export default function Drivers() {
                     {driverPerformanceData.length > 0 && (
                       <div className="px-4 py-2 border-t border-gray-100 bg-gray-50/50 shrink-0">
                         <p className="text-xs text-gray-500">
-                          Showing <span className="font-medium text-gray-700">{driverPerformanceData.length}</span> drivers
+                          Showing <span className="font-medium text-gray-700">
+                            {performanceFilter === 'all' ? driverPerformanceData.length :
+                             performanceFilter === 'critical' ? driverPerformanceData.filter((d: any) => d.score < 25).length :
+                             performanceFilter === 'warning' ? driverPerformanceData.filter((d: any) => d.score >= 25 && d.score < 75).length :
+                             driverPerformanceData.filter((d: any) => d.score >= 75).length}
+                          </span> drivers
+                          {performanceFilter !== 'all' && (
+                            <button onClick={() => setPerformanceFilter('all')} className="ml-2 text-blue-600 hover:underline">Show all</button>
+                          )}
                         </p>
                       </div>
                     )}
