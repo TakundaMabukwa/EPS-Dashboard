@@ -101,6 +101,17 @@ export default function CostCentresPage() {
   return (
     <div className="min-h-screen bg-gray-100 p-2">
       <div className="max-w-[1100px] mx-auto">
+        {/* Page Header */}
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center shadow-md">
+            <Car className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-gray-900">Cost Centres</h1>
+            <p className="text-xs text-gray-500">EPS COURIER SERVICES - Vehicle Information System</p>
+          </div>
+        </div>
+
         {/* Header Bar */}
         <div className="bg-gray-200 border border-gray-400 px-3 py-1 flex items-center gap-2 text-[11px] font-semibold">
           <Car className="w-3.5 h-3.5" />
