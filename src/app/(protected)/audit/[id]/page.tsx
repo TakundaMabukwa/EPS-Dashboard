@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import {
   Truck, Users, DollarSign, Clock, Fuel, Activity, TrendingUp,
-  Calendar, CheckCircle, AlertTriangle, ArrowLeft, User, Route
+  Calendar, CheckCircle, ArrowLeft, User, Route
 } from 'lucide-react'
 import { RollingNumber } from '@/components/ui/rolling-number'
 
@@ -102,21 +102,6 @@ export default function AuditTripDetailPage() {
           </div>
         </div>
       </div>
-
-      {/* Distance Warning */}
-      {data.distanceUnreasonable && (
-        <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 flex items-start gap-3">
-          <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5 shrink-0" />
-          <div>
-            <p className="text-sm font-semibold text-amber-800">Distance needs review</p>
-            <p className="text-xs text-amber-700 mt-0.5">
-              Estimated distance is {fmtInt(data.actualDistance)} km which seems too high.
-              {!data.mileageDistance && ' No mileage data available to verify.'}
-              {' '}Costs have been recalculated using this distance.
-            </p>
-          </div>
-        </div>
-      )}
 
       {/* Top Row - 4 Stats */}
       <div className="grid grid-cols-4 gap-4">
@@ -302,7 +287,7 @@ export default function AuditTripDetailPage() {
               </div>
               <div className="flex items-center justify-between border-b border-gray-100 pb-1.5 text-xs">
                 <span className="text-gray-500">Distance</span>
-                <span className={`font-bold ${data.distanceUnreasonable ? 'text-amber-600' : 'text-gray-900'}`}>
+                <span className="font-bold text-gray-900">
                   {fmtInt(data.actualDistance)} km
                   {data.distanceSource === 'mileage' && <span className="text-emerald-600 ml-1">(GPS)</span>}
                 </span>

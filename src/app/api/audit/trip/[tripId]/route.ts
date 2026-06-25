@@ -107,9 +107,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tri
       distanceSource = 'estimated_distance'
     }
 
-    // Flag if distance seems unreasonable (>1500km for a single trip without mileage confirmation)
-    const distanceUnreasonable = distanceSource !== 'mileage' && bestDistance > 1500
-
     // Always recalculate costs from the best distance + profile
     const costs = computeCosts(bestDistance, vehicleType)
 
@@ -129,7 +126,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tri
         endDate: trip.end_date || trip.enddate,
         estimatedDistance: estimatedDist, actualDistance: bestDistance,
         distanceSource,
-        distanceUnreasonable,
         startMileage,
         endMileage,
         mileageDistance,
