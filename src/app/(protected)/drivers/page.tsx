@@ -231,65 +231,54 @@ export default function Drivers() {
   const fetchDriverPerformanceData = async () => {
     setPerformanceLoading(true)
     try {
-      // Fetch real driver names from Supabase
+      // Fetch all drivers from Supabase
       const { data: dbDrivers } = await supabase
         .from('drivers')
-        .select('driver_code, first_name, surname')
-        .not('driver_code', 'is', null)
+        .select('id, driver_code, first_name, surname, status')
+        .order('first_name', { ascending: true })
 
-      const nameMap = new Map<string, string>()
-      for (const d of dbDrivers || []) {
-        if (d.driver_code && d.first_name && d.surname) {
-          const code = d.driver_code.replace(/^EPS/i, '')
-          nameMap.set(code, `${d.first_name} ${d.surname}`)
-        }
-      }
-
+      // Build code → API data map
+      const apiDataMap = new Map<string, any>()
       const res = await fetch('/api/driver/scorecard')
       const data = await res.json()
       if (data.ok && Array.isArray(data.data)) {
-        const junkNames = new Set([
-          '08000001216BBB3B 08000001216BBB3B',
-          '08000001746A30BD 08000001746A30BD',
-          '0800000174A972CA 0800000174A972CA',
-          '0800000176515451 0800000176515451',
-          '08000001765433C5 08000001765433C5',
-          '08000001765C3DE8 08000001765C3DE8',
-          '0800000176D27EAD 0800000176D27EAD',
-          '0800000177C3E106 0800000177C3E106',
-          '090 090',
-          '1111 LT58HBGP DRIVER SPARE TAG MKHIZE',
-          '2116 SPARE TAG',
-          '37659 SPARE TAG',
-          '390083 390083',
-          '59722 SPARE TAG',
-          '29251 THOKOZANI MCHUNU',
-          '29308 SENZO WISEMAN',
-          '29348 VELAPHI JAGI THEMBA GAZU',
-          '29596 PHILASANDE ARTHUR MKHIZE',
-          '29621 ADORE LUNGILE NGOMA',
-          '29700 LUNGISANI ANDREAS DIDI',
-          '29704 FRANCIS MKHWANAZI',
-          '29810 INNOCENT MBATHA',
-          '29860-REUBEN ZWANE',
-          '29933 - SAKHILE ENGCOBO',
-          '29956 LUCKY MAKHUBELE',
-        ])
-        const enriched = data.data
-          .filter((d: any) => !junkNames.has(d.name || d.full_name || ''))
-          .map((d: any) => {
-            // Resolve "Driver 11112" → real name from Supabase
-            const apiName = d.name || d.full_name || ''
-            const codeMatch = apiName.match(/^Driver\s+(\d+)$/)
-            if (codeMatch) {
-              const realName = nameMap.get(codeMatch[1])
-              if (realName) {
-                return { ...d, name: realName, full_name: realName }
-              }
-            }
-            return d
-          })
-        setDriverPerformanceData(enriched)
+        for (const d of data.data) {
+          const apiName = d.name || d.full_name || ''
+          const codeMatch = apiName.match(/^Driver\s+(\d+)$/)
+          if (codeMatch) {
+            apiDataMap.set(codeMatch[1], d)
+          }
+        }
+      }
+
+      // Merge: Supabase drivers as primary, API scores where matched
+      const merged = (dbDrivers || [])
+        .filter((d: any) => {
+          const name = ((d.first_name || '') + ' ' + (d.surname || '')).toLowerCase()
+          if (name.includes('spare') || name.includes('spare tag')) return false
+          if (/^0800[0-9a-f]{12,}$/i.test(d.first_name)) return false
+          return true
+        })
+        .map((d: any) => {
+          const code = (d.driver_code || '').replace(/^EPS/i, '')
+          const apiData = apiDataMap.get(code)
+          const fullName = `${d.first_name || ''} ${d.surname || ''}`.trim()
+          return {
+            id: d.id,
+            name: fullName,
+            full_name: fullName,
+            driver_code: d.driver_code,
+            score: apiData?.score || 0,
+            speeding_count: apiData?.speeding_count || 0,
+            excessive_day_count: apiData?.excessive_day_count || 0,
+            excessive_night_count: apiData?.excessive_night_count || 0,
+            km_today: apiData?.km_today || '0',
+            safety_events: (apiData?.speeding_count || 0) + (apiData?.excessive_day_count || 0) + (apiData?.excessive_night_count || 0),
+            deductions: 0,
+          }
+        })
+
+      setDriverPerformanceData(merged)
       }
     } catch (err) {
       console.error('Failed to fetch driver performance data', err)
