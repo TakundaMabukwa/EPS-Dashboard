@@ -152,33 +152,34 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tri
     const estimatedDist = Number(trip.estimated_distance || 0)
     const storedTotalDist = Number(trip.total_distance || 0)
 
-    // Priority: trip report (odometer) > mileage > Mapbox routing > total_distance > estimated_distance
+    // Priority: mileage > Mapbox routing (origin→destination) > trip report > total_distance > estimated_distance
     let bestDistance = 0
     let distanceSource = 'none'
     let fuelLitres = 0
 
-    // 1. Try trip report endpoint for real odometer distance
-    const tripReport = await getTripReportDistance(trip.trip_id || '')
-    if (tripReport) {
-      bestDistance = tripReport.distanceKm
-      fuelLitres = tripReport.fuelLitres
-      distanceSource = 'trip_report'
-    } else if (mileageDistance > 0) {
-      // 2. Use mileage from DB
+    if (mileageDistance > 0) {
       bestDistance = mileageDistance
       distanceSource = 'mileage'
     } else {
-      // 3. Try Mapbox routing
+      // Use Mapbox routing for real driving distance between loading and dropoff
       const mapboxResult = await getDrivingDistance(trip.origin || '', trip.destination || '')
       if (mapboxResult && mapboxResult.distanceKm > 0) {
         bestDistance = mapboxResult.distanceKm
         distanceSource = 'mapbox'
-      } else if (storedTotalDist > 0) {
-        bestDistance = storedTotalDist
-        distanceSource = 'total_distance'
-      } else if (estimatedDist > 0) {
-        bestDistance = estimatedDist
-        distanceSource = 'estimated_distance'
+      } else {
+        // Fallback: try trip report endpoint
+        const tripReport = await getTripReportDistance(trip.trip_id || '')
+        if (tripReport) {
+          bestDistance = tripReport.distanceKm
+          fuelLitres = tripReport.fuelLitres
+          distanceSource = 'trip_report'
+        } else if (storedTotalDist > 0) {
+          bestDistance = storedTotalDist
+          distanceSource = 'total_distance'
+        } else if (estimatedDist > 0) {
+          bestDistance = estimatedDist
+          distanceSource = 'estimated_distance'
+        }
       }
     }
 
