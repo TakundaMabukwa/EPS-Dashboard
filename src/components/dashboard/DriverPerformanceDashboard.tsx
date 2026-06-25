@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Trophy, TrendingUp, AlertTriangle, Star, Search, Calendar } from 'lucide-react'
 import { type DriverPerformanceData } from '@/lib/actions/driver-performance'
+import { createClient } from '@/lib/supabase/client'
 
 export default function DriverPerformanceDashboard() {
   const [drivers, setDrivers] = useState<DriverPerformanceData[]>([])
@@ -15,10 +16,54 @@ export default function DriverPerformanceDashboard() {
   const [searchTerm, setSearchTerm] = useState('')
   const [dateRange, setDateRange] = useState('30')
   const [error, setError] = useState<string | null>(null)
+  const [driverNameMap, setDriverNameMap] = useState<Map<string, string>>(new Map())
 
   useEffect(() => {
+    fetchDriverNames()
     fetchDriverPerformance()
   }, [dateRange])
+
+  // Fetch drivers from Supabase and build code -> name map
+  const fetchDriverNames = async () => {
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('drivers')
+        .select('driver_code, first_name, surname')
+        .not('driver_code', 'is', null)
+
+      if (error) throw error
+
+      const map = new Map<string, string>()
+      for (const d of data || []) {
+        if (d.driver_code && d.first_name && d.surname) {
+          // Strip EPS prefix: "EPS31157" -> "31157"
+          const code = d.driver_code.replace(/^EPS/i, '')
+          map.set(code, `${d.first_name} ${d.surname}`)
+        }
+      }
+      setDriverNameMap(map)
+    } catch (err) {
+      console.error('Error fetching driver names:', err)
+    }
+  }
+
+  // Resolve driver name: if name is a numeric code, look up in map
+  const resolveDriverName = (apiName: string): string => {
+    if (!apiName) return 'Unknown'
+    const trimmed = apiName.trim()
+    // Check if it's a numeric code (like "29806")
+    if (/^\d+$/.test(trimmed)) {
+      return driverNameMap.get(trimmed) || trimmed
+    }
+    // Check if it contains a code like "29806 SOME NAME"
+    const codeMatch = trimmed.match(/^(\d+)\s/)
+    if (codeMatch) {
+      const resolved = driverNameMap.get(codeMatch[1])
+      if (resolved) return resolved
+    }
+    return trimmed
+  }
 
   const fetchDriverPerformance = async () => {
     try {
@@ -46,10 +91,11 @@ export default function DriverPerformanceDashboard() {
     }
   }
 
-  const filteredDrivers = Array.isArray(drivers) ? drivers.filter(driver =>
-    driver.driverName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+  const filteredDrivers = Array.isArray(drivers) ? drivers.filter(driver => {
+    const resolvedName = resolveDriverName(driver.driverName)
+    return resolvedName.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (driver.plate && driver.plate.toLowerCase().includes(searchTerm.toLowerCase()))
-  ) : []
+  }) : []
 
   const getPerformanceLevelColor = (level: string) => {
     switch (level) {
@@ -99,12 +145,14 @@ export default function DriverPerformanceDashboard() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {drivers.map((driver, index) => (
+        {drivers.map((driver, index) => {
+          const resolvedName = resolveDriverName(driver.driverName)
+          return (
           <Card key={`${driver.driverName}-${index}`} className="hover:shadow-lg transition-shadow">
             <CardHeader className="pb-2">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
-                  <CardTitle className="text-sm font-semibold leading-tight break-words">{driver.driverName}</CardTitle>
+                  <CardTitle className="text-sm font-semibold leading-tight break-words">{resolvedName}</CardTitle>
                   <p className="text-xs text-muted-foreground mt-1">{driver.plate || 'No plate'}</p>
                 </div>
                 <Badge className={`${getPerformanceLevelColor(driver.performanceLevel)} text-xs px-2 py-1 shrink-0`}>
@@ -176,7 +224,8 @@ export default function DriverPerformanceDashboard() {
               )}
             </CardContent>
           </Card>
-        ))}
+          )
+        })}
       </div>
 
       {drivers.length === 0 && !loading && (
