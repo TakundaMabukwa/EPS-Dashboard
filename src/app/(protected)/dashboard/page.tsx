@@ -787,6 +787,8 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
   const [trips, setTrips] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [tripSearch, setTripSearch] = useState('')
+  const [operatorFilter, setOperatorFilter] = useState('all')
+  const [vehicleOperators, setVehicleOperators] = useState<Map<string, string>>(new Map())
 
   useEffect(() => {
     async function fetchTrips() {
@@ -812,8 +814,29 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
         setLoading(false)
       }
     }
+
+    async function fetchVehicleOperators() {
+      try {
+        const supabase = createClient()
+        const { data, error } = await supabase
+          .from('vehiclesc')
+          .select('registration_number, slmn_name')
+          .not('registration_number', 'is', null)
+        if (error) throw error
+        const map = new Map<string, string>()
+        for (const v of data || []) {
+          if (v.registration_number && v.slmn_name) {
+            map.set(v.registration_number.toUpperCase(), v.slmn_name)
+          }
+        }
+        setVehicleOperators(map)
+      } catch (err) {
+        console.error('Error fetching vehicle operators:', err)
+      }
+    }
     
     fetchTrips()
+    fetchVehicleOperators()
     
     // Real-time subscription
     const supabase = createClient()
@@ -833,6 +856,14 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
   // Sort trips to put unauthorized stops at the top
   const tripsList = trips
     .filter(trip => trip.status?.toLowerCase() !== 'delivered' && trip.status?.toLowerCase() !== 'completed')
+    .filter(trip => {
+      if (operatorFilter === 'all') return true
+      const assignments = trip.vehicleassignments || trip.vehicle_assignments || []
+      const firstAssignment = Array.isArray(assignments) ? assignments[0] : assignments
+      const vehiclePlate = (firstAssignment?.vehicle?.name || '').toUpperCase()
+      const operator = vehicleOperators.get(vehiclePlate) || ''
+      return operator === operatorFilter
+    })
     .filter(trip => {
       if (!tripSearch.trim()) return true
       const q = tripSearch.toLowerCase()
@@ -1044,22 +1075,34 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
 
   return (
     <div className="space-y-4">
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="Search by trip ID, order, driver, vehicle, destination, client..."
-          value={tripSearch}
-          onChange={(e) => setTripSearch(e.target.value)}
-          className="pl-10 h-10"
-        />
-        {tripSearch && (
-          <button
-            onClick={() => setTripSearch('')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        )}
+      <div className="flex gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search by trip ID, order, driver, vehicle, destination, client..."
+            value={tripSearch}
+            onChange={(e) => setTripSearch(e.target.value)}
+            className="pl-10 h-10"
+          />
+          {tripSearch && (
+            <button
+              onClick={() => setTripSearch('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+        <select
+          value={operatorFilter}
+          onChange={(e) => setOperatorFilter(e.target.value)}
+          className="px-3 py-2 border border-border rounded-lg bg-white text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-ring transition-colors text-gray-700 h-10"
+        >
+          <option value="all">All Operators</option>
+          {Array.from(new Set(Array.from(vehicleOperators.values()))).sort().map(op => (
+            <option key={op} value={op}>{op}</option>
+          ))}
+        </select>
       </div>
       {tripSearch && (
         <div className="text-sm text-muted-foreground">
