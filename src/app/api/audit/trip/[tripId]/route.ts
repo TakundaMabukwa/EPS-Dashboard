@@ -90,29 +90,59 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tri
       if (v?.vehicle_type) vehicleType = v.vehicle_type
     }
 
-    const estimatedDist = Number(trip.estimated_distance || 0)
-    const planned = computePlannedCosts(estimatedDist, vehicleType)
+    // Use mileage difference for actual distance when available
+    const startMileage = Number(trip.start_mileage || 0)
+    const endMileage = Number(trip.end_mileage || 0)
+    const mileageDistance = (startMileage > 0 && endMileage > 0) ? endMileage - startMileage : 0
 
-    const actualDistance = Number(trip.total_distance || trip.estimated_distance || 0)
+    const estimatedDist = Number(trip.estimated_distance || 0)
+
+    // Use mileage distance if available and positive, otherwise use stored distance
+    const actualDistance = mileageDistance > 0
+      ? mileageDistance
+      : Number(trip.total_distance || trip.estimated_distance || 0)
+
+    // Recalculate planned costs with corrected distance
+    const planned = computePlannedCosts(actualDistance > 0 ? actualDistance : estimatedDist, vehicleType)
+    // Recalculate actual costs based on corrected distance
+    const profileName = VEHICLE_TYPE_MAP[vehicleType] || '14METER'
+    const profile = PROFILES[profileName] || PROFILES['14METER']
+    const recalcDiesel = actualDistance * profile.diesel_per_km
+    const recalcMaintenance = actualDistance * profile.maintenance
+    const recalcBreakdown = actualDistance * profile.breakdown
+    const recalcTolls = actualDistance * profile.tolls
+    const recalcAllowance = actualDistance * profile.allowance
+    const recalcVariable = recalcDiesel + recalcMaintenance + recalcBreakdown + recalcTolls + recalcAllowance
+    const recalcTripDays = Math.max(1, Math.ceil(actualDistance / 600))
+    const recalcFixedDaily = profile.fixed_monthly / 25
+    const recalcFixed = recalcFixedDaily * recalcTripDays
+    const recalcLoading = 2 * 2 * 45
+    const recalcPacking = 2 * 2 * 45
+    const recalcTotal = recalcFixed + recalcVariable + recalcLoading + recalcPacking
+
+    // Use stored actual costs if they exist and seem reasonable, otherwise use recalculated
+    const storedTotal = Number(trip.total_trip_cost || 0)
+    const useStored = storedTotal > 0 && storedTotal < recalcTotal * 2
+
     const actual = {
-      dieselCost: Number(trip.diesel_cost || trip.fuel_cost || 0),
-      maintenanceCost: Number(trip.maintenance_cost || 0),
-      breakdownCost: Number(trip.breakdown_cost || 0),
-      tollCost: Number(trip.toll_cost || 0),
-      allowanceCost: Number(trip.allowance_cost || 0),
-      variableCost: Number(trip.variable_cost || 0),
-      fixedCost: Number(trip.fixed_cost || trip.trip_fixed_cost || 0),
-      fixedMonthly: Number(trip.fixed_monthly || 0),
-      fixedDaily: Number(trip.fixed_daily || 0),
-      loadingCost: Number(trip.loading_cost || 0),
-      packingCost: Number(trip.packing_cost || 0),
+      dieselCost: useStored ? Number(trip.diesel_cost || trip.fuel_cost || 0) : Math.round(recalcDiesel * 100) / 100,
+      maintenanceCost: useStored ? Number(trip.maintenance_cost || 0) : Math.round(recalcMaintenance * 100) / 100,
+      breakdownCost: useStored ? Number(trip.breakdown_cost || 0) : Math.round(recalcBreakdown * 100) / 100,
+      tollCost: useStored ? Number(trip.toll_cost || 0) : Math.round(recalcTolls * 100) / 100,
+      allowanceCost: useStored ? Number(trip.allowance_cost || 0) : Math.round(recalcAllowance * 100) / 100,
+      variableCost: useStored ? Number(trip.variable_cost || 0) : Math.round(recalcVariable * 100) / 100,
+      fixedCost: useStored ? Number(trip.fixed_cost || trip.trip_fixed_cost || 0) : Math.round(recalcFixed * 100) / 100,
+      fixedMonthly: profile.fixed_monthly,
+      fixedDaily: Math.round(recalcFixedDaily * 100) / 100,
+      loadingCost: useStored ? Number(trip.loading_cost || 0) : recalcLoading,
+      packingCost: useStored ? Number(trip.packing_cost || 0) : recalcPacking,
       casualCost: Number(trip.casual_cost || 0),
       crossBorderCost: Number(trip.cross_border_cost || 0),
-      totalCost: Number(trip.total_trip_cost || 0),
-      costPerKm: Number(trip.cost_per_km || 0),
+      totalCost: useStored ? storedTotal : Math.round(recalcTotal * 100) / 100,
+      costPerKm: actualDistance > 0 ? Math.round(((useStored ? storedTotal : recalcTotal) / actualDistance) * 100) / 100 : 0,
       fuelLitres: Number(trip.fuel_litres || 0),
-      dieselRate: Number(trip.diesel_rate || 0),
-      profileUsed: trip.profile_used || '',
+      dieselRate: profile.diesel_per_km,
+      profileUsed: profileName,
       distanceKm: actualDistance,
     }
 
@@ -131,8 +161,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tri
         rate: trip.rate, startDate: trip.startdate || trip.start_date,
         endDate: trip.end_date || trip.enddate,
         estimatedDistance: estimatedDist, actualDistance,
-        startMileage: Number(trip.start_mileage || 0),
-        endMileage: Number(trip.end_mileage || 0),
+        startMileage,
+        endMileage,
+        mileageDistance,
         actualStartTime: trip.actual_start_time, actualEndTime: trip.actual_end_time,
         vehicleType, driver: trip.driver,
         planned, actual,

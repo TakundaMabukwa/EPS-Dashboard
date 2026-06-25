@@ -50,7 +50,6 @@ export default function AuditTripDetailPage() {
   const { planned, actual } = data
   const rate = toNum(data.rate)
   const profit = rate - actual.totalCost
-  const profitMargin = rate > 0 ? (profit / rate) * 100 : 0
   const totalDiff = actual.totalCost - (planned?.totalPlanned || 0)
   const cpkPlanned = planned?.costPerKm || 0
   const cpkActual = actual.costPerKm
@@ -202,7 +201,7 @@ export default function AuditTripDetailPage() {
             <span className="text-sm font-medium text-gray-700">Cost Per KM</span>
           </div>
           <div className="mb-3">
-            <span className="text-4xl font-bold text-gray-900">R{fmtInt(Math.round(cpkActual))}</span>
+            <span className="text-4xl font-bold text-gray-900">R{fmt(cpkActual)}</span>
           </div>
           <div className="space-y-1">
             <div className="flex items-center justify-between">
@@ -247,10 +246,6 @@ export default function AuditTripDetailPage() {
               <span className="text-lg">R</span><RollingNumber value={rate} />
             </span>
           </div>
-          <div className={`mb-3 flex items-center gap-1 text-xs ${profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-            {profit >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingUp className="h-3 w-3 rotate-180" />}
-            <span>{profitMargin >= 0 ? '+' : ''}{profitMargin.toFixed(1)}% margin</span>
-          </div>
           {/* Mini cost bars */}
           <div className="flex items-end gap-[3px]">
             {costItems.slice(0, 12).map((c, i) => {
@@ -260,7 +255,7 @@ export default function AuditTripDetailPage() {
                   <div className="rounded-sm transition-all hover:opacity-80"
                     style={{ height: `${h}px`, backgroundColor: c.color }} />
                   <div className="pointer-events-none absolute bottom-full left-1/2 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-1.5 py-0.5 text-[10px] text-white group-hover:block">
-                    {c.label}: R{fmtInt(Math.round(c.actual))}
+                    {c.label}: R{fmt(Math.round(c.actual))}
                   </div>
                 </div>
               )
@@ -347,7 +342,7 @@ export default function AuditTripDetailPage() {
               </div>
               <div className="flex items-center justify-between border-b border-gray-100 pb-1.5 text-xs">
                 <span className="text-gray-500">Actual Distance</span>
-                <span className="font-bold text-gray-900">{fmtInt(actual.distanceKm || data.estimatedDistance)} km</span>
+                <span className={`font-bold ${actual.distanceKm > 3000 ? 'text-amber-600' : 'text-gray-900'}`}>{fmtInt(actual.distanceKm || data.estimatedDistance)} km</span>
               </div>
               <div className="flex items-center justify-between border-b border-gray-100 pb-1.5 text-xs">
                 <span className="text-gray-500">Fixed Monthly</span>
@@ -389,7 +384,7 @@ export default function AuditTripDetailPage() {
                     <div className="flex-1 h-2 bg-blue-100 rounded-full overflow-hidden">
                       <div className="h-full bg-blue-400 rounded-full" style={{ width: `${(c.planned / barMax) * 100}%` }} />
                     </div>
-                    <span className="text-[9px] font-medium text-gray-600 w-16 text-right">R{fmtInt(Math.round(c.planned))}</span>
+                    <span className="text-[9px] font-medium text-gray-600 w-16 text-right">R{fmt(Math.round(c.planned))}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-[9px] text-emerald-500 w-8 text-right">Act</span>
@@ -397,7 +392,7 @@ export default function AuditTripDetailPage() {
                       <div className={`h-full rounded-full ${c.actual <= c.planned ? 'bg-emerald-500' : 'bg-red-500'}`}
                         style={{ width: `${(c.actual / barMax) * 100}%` }} />
                     </div>
-                    <span className="text-[9px] font-medium text-gray-600 w-16 text-right">R{fmtInt(Math.round(c.actual))}</span>
+                    <span className="text-[9px] font-medium text-gray-600 w-16 text-right">R{fmt(Math.round(c.actual))}</span>
                   </div>
                 </div>
               )
