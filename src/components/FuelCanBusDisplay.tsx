@@ -46,16 +46,16 @@ export default function FuelCanBusDisplay() {
       // Fetch all horses (non-TR vehicle types, not sold)
       const { data: vehicleData, error: vehicleError } = await supabase
         .from('vehiclesc')
-        .select('registration_number, make, model, branch_name')
+        .select('registration_number, make, model, branch_name, vehicle_type')
         .not('branch_name', 'is', null)
         .neq('branch_name', 'SOLD')
         .not('registration_number', 'is', null)
 
       if (vehicleError) throw vehicleError
 
-      // Filter to horses only (non-TR prefix) in JS
+      // Filter to horses only (non-TR vehicle_type) in JS
       const horseList = (vehicleData || []).filter(
-        (v) => !(v.registration_number || '').toUpperCase().startsWith('TR')
+        (v) => !(v.vehicle_type || '').toUpperCase().startsWith('TR')
       )
       setHorses(horseList)
 
