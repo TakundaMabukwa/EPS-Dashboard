@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || ''
+const ROUTING_URL = process.env.NEXT_PUBLIC_ROUTING || 'http://164.90.217.196:8800/'
 
 const PROFILES: Record<string, {
   diesel_per_km: number; maintenance: number; breakdown: number;
@@ -32,6 +33,20 @@ async function geocode(query: string): Promise<[number, number] | null> {
     if (data.features?.length > 0) {
       const [lng, lat] = data.features[0].center
       return [lng, lat]
+    }
+  } catch {}
+  return null
+}
+
+async function getTripReportDistance(tripId: string): Promise<{ distanceKm: number; fuelLitres: number } | null> {
+  try {
+    const res = await fetch(`${ROUTING_URL}api/trip/${tripId}/report`, { signal: AbortSignal.timeout(10000) })
+    if (!res.ok) return null
+    const data = await res.json()
+    if (data.ok && data.data) {
+      const distance = Number(data.data.total_distance_km || 0)
+      const fuel = Number(data.data.total_fuel_used_liters || 0)
+      if (distance > 0) return { distanceKm: Math.round(distance), fuelLitres: fuel }
     }
   } catch {}
   return null
@@ -137,15 +152,23 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tri
     const estimatedDist = Number(trip.estimated_distance || 0)
     const storedTotalDist = Number(trip.total_distance || 0)
 
-    // Priority: mileage > Mapbox routing > total_distance > estimated_distance
+    // Priority: trip report (odometer) > mileage > Mapbox routing > total_distance > estimated_distance
     let bestDistance = 0
     let distanceSource = 'none'
+    let fuelLitres = 0
 
-    if (mileageDistance > 0) {
+    // 1. Try trip report endpoint for real odometer distance
+    const tripReport = await getTripReportDistance(trip.trip_id || '')
+    if (tripReport) {
+      bestDistance = tripReport.distanceKm
+      fuelLitres = tripReport.fuelLitres
+      distanceSource = 'trip_report'
+    } else if (mileageDistance > 0) {
+      // 2. Use mileage from DB
       bestDistance = mileageDistance
       distanceSource = 'mileage'
     } else {
-      // Try Mapbox routing for real driving distance
+      // 3. Try Mapbox routing
       const mapboxResult = await getDrivingDistance(trip.origin || '', trip.destination || '')
       if (mapboxResult && mapboxResult.distanceKm > 0) {
         bestDistance = mapboxResult.distanceKm
@@ -183,6 +206,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tri
         actualStartTime: trip.actual_start_time, actualEndTime: trip.actual_end_time,
         vehicleType, driver: trip.driver,
         costs,
+        tripReportFuelLitres: fuelLitres,
       }
     })
   } catch (error) {
