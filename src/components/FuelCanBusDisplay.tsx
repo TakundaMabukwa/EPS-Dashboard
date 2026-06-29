@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { FuelGauge } from '@/components/ui/fuel-gauge'
 import { Button } from '@/components/ui/button'
-import { RefreshCw, Fuel } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { RefreshCw, Fuel, Search } from 'lucide-react'
 import { toast } from '@/hooks/use-toast'
 import { createClient } from '@/lib/supabase/client'
 
@@ -32,14 +33,17 @@ export default function FuelCanBusDisplay() {
   const [fuelMap, setFuelMap] = useState<Map<string, FuelData>>(new Map())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [staleWarning, setStaleWarning] = useState(false)
   const notifiedVehicles = useRef<Set<string>>(new Set())
+  const lastGoodFuelMap = useRef<Map<string, FuelData>>(new Map())
+  const fetchedRef = useRef(false)
 
   const LOW_FUEL_THRESHOLD = 100 // litres
 
   const fetchData = async () => {
     try {
       setLoading(true)
-      setError(null)
 
       const supabase = createClient()
 
@@ -61,7 +65,16 @@ export default function FuelCanBusDisplay() {
 
       // Single fetch to fuel endpoint
       const response = await fetch('/api/fuel')
-      if (!response.ok) throw new Error('Failed to fetch fuel data')
+      if (!response.ok) {
+        console.warn('Fuel API returned', response.status, '— using cached data if available')
+        if (lastGoodFuelMap.current.size > 0) {
+          setStaleWarning(true)
+          setFuelMap(lastGoodFuelMap.current)
+        } else {
+          setError('Fuel data temporarily unavailable. Try again in a moment.')
+        }
+        return
+      }
 
       const fuelData: FuelData[] = await response.json()
 
@@ -70,15 +83,25 @@ export default function FuelCanBusDisplay() {
         map.set(v.plate.toUpperCase(), v)
       })
       setFuelMap(map)
+      lastGoodFuelMap.current = map
+      setStaleWarning(false)
+      setError(null)
     } catch (err) {
       console.error('Fetch error:', err)
-      setError('Failed to fetch data')
+      if (lastGoodFuelMap.current.size > 0) {
+        setStaleWarning(true)
+        setFuelMap(lastGoodFuelMap.current)
+      } else {
+        setError('Failed to fetch data')
+      }
     } finally {
       setLoading(false)
     }
   }
 
   useEffect(() => {
+    if (fetchedRef.current) return
+    fetchedRef.current = true
     fetchData()
   }, [])
 
@@ -111,7 +134,7 @@ export default function FuelCanBusDisplay() {
   }, [fuelMap])
 
   // Build merged list: all horses, with fuel data where available
-  const gaugeData = horses
+  const allGaugeData = horses
     .map((horse) => {
       const reg = (horse.registration_number || '').toUpperCase()
       const fuel = fuelMap.get(reg)
@@ -151,7 +174,14 @@ export default function FuelCanBusDisplay() {
         hasData: false,
       }
     })
-    .sort((a, b) => a.plate.localeCompare(b.plate))
+    .sort((a, b) => {
+      if (a.hasData !== b.hasData) return a.hasData ? -1 : 1
+      return a.fuelLitres - b.fuelLitres
+    })
+
+  const gaugeData = allGaugeData.filter((g) =>
+    g.plate.toLowerCase().includes(searchTerm.toLowerCase())
+  )
 
   if (loading) {
     return (
@@ -181,19 +211,35 @@ export default function FuelCanBusDisplay() {
 
   return (
     <div className="h-full bg-slate-50">
-      <div className="flex items-center justify-between p-4 pb-0">
+      <div className="flex items-center justify-between p-4 pb-0 gap-3">
         <div className="flex items-center gap-2">
           <span className="inline-flex h-6 min-w-[24px] items-center justify-center rounded-full bg-[#1748d8] px-2 text-xs font-bold text-white">
             {gaugeData.length}
           </span>
           <p className="text-xs text-slate-400">
-            horses &middot; {gaugeData.filter((g) => g.hasData).length} with fuel data &middot; {gaugeData.filter((g) => !g.hasData).length} no data
+            horses &middot; {allGaugeData.filter((g) => g.hasData).length} with fuel data &middot; {allGaugeData.filter((g) => !g.hasData).length} no data
           </p>
+          {staleWarning && (
+            <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 rounded-full border border-amber-200">
+              Showing cached data — fuel API temporarily unavailable
+            </span>
+          )}
         </div>
-        <Button onClick={fetchData} variant="outline" size="sm" className="h-8 text-xs">
-          <RefreshCw className="mr-1 h-3 w-3" />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+            <Input
+              placeholder="Search by reg..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="h-8 w-48 pl-7 text-xs"
+            />
+          </div>
+          <Button onClick={fetchData} variant="outline" size="sm" className="h-8 text-xs">
+            <RefreshCw className="mr-1 h-3 w-3" />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       <div className="p-4">

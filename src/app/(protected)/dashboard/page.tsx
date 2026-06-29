@@ -105,7 +105,7 @@ const vehicleDataCache = {
     
     try {
       const response = await Promise.race([
-        fetch('/api/eps-vehicles'),
+        fetch('/api/vehicle/live/all'),
         new Promise<any>((_, reject) =>
           setTimeout(() => reject(new Error('timeout')), 4000)
         ),
@@ -115,7 +115,7 @@ const vehicleDataCache = {
       
       try {
         const data = await response.json();
-        vehicles = data.data || [];
+        vehicles = Array.isArray(data) ? data : (data.data || []);
       } catch (e) {}
       
       this.data = vehicles;
@@ -132,6 +132,51 @@ const vehicleDataCache = {
   },
   
   findVehicle(plate: string): any {
+    if (!this.data) return null;
+    const lower = plate.toLowerCase();
+    return this.data.find((v: any) =>
+      v.plate?.toLowerCase() === lower ||
+      v.registration?.toLowerCase() === lower ||
+      v.reg?.toLowerCase() === lower
+    );
+  }
+};
+
+// Shared fuel data cache (same pattern as vehicleDataCache)
+const fuelDataCache = {
+  data: null as any[] | null,
+  timestamp: 0,
+  cacheDuration: 60_000,
+  isLoading: false,
+  pendingCallbacks: [] as ((data: any[]) => void)[],
+
+  async fetch(): Promise<any[]> {
+    const now = Date.now();
+    if (this.data && now - this.timestamp < this.cacheDuration) {
+      return this.data;
+    }
+    if (this.isLoading) {
+      return new Promise((resolve) => {
+        this.pendingCallbacks.push(resolve);
+      });
+    }
+    this.isLoading = true;
+    try {
+      const response = await fetch('/api/fuel');
+      const data = await response.json();
+      this.data = Array.isArray(data) ? data : [];
+      this.timestamp = now;
+      this.pendingCallbacks.forEach(cb => cb(this.data!));
+      this.pendingCallbacks = [];
+      return this.data;
+    } catch {
+      return this.data || [];
+    } finally {
+      this.isLoading = false;
+    }
+  },
+
+  findByPlate(plate: string): any {
     if (!this.data) return null;
     return this.data.find((v: any) => v.plate?.toLowerCase() === plate.toLowerCase());
   }
@@ -220,10 +265,9 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
             })
             .catch(() => {})
         )
-        // Fetch fuel data for this vehicle
+        // Fetch fuel data for this vehicle (shared cache)
         promises.push(
-          fetch('/api/fuel')
-            .then(r => r.json())
+          fuelDataCache.fetch()
             .then((fuelVehicles: any[]) => {
               const match = fuelVehicles.find((v: any) => v.plate === assignment.vehicle.name)
               if (match) setFuelData(match)
@@ -394,9 +438,18 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
           <span className="text-xs text-slate-500">{vehicleLocation ? `${vehicleLocation.speed} km/h` : ''}</span>
         </div>
         {vehicleLocation && (
-          <div className="mt-1 text-xs text-slate-600 truncate">
-            {vehicleLocation.address}
-          </div>
+          <>
+            {vehicleLocation.address && (
+              <div className="mt-1 text-xs text-slate-600 truncate">
+                {vehicleLocation.address}
+              </div>
+            )}
+            {vehicleLocation.geozone && (
+              <div className="mt-0.5 text-xs text-blue-600 truncate">
+                Geozone: {vehicleLocation.geozone}
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -449,12 +502,12 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
                   vehicleLocationData = {
                     latitude: parseFloat(found.latitude),
                     longitude: parseFloat(found.longitude),
-                    plate: found.plate || vehicleInfo.registration_number,
+                    plate: found.plate || found.registration || vehicleInfo.registration_number,
                     speed: found.speed || 0,
                     address: found.address || 'GPS location available',
-                    loc_time: found.loc_time || new Date().toISOString(),
-                    mileage: found.mileage || 0,
-                    geozone: found.geozone,
+                    loc_time: found.loc_time || found.gps_time || new Date().toISOString(),
+                    mileage: found.mileage || found.odometer || 0,
+                    geozone: found.geozone || found.zone || null,
                     company: found.company || 'EPS'
                   };
                   console.log('Track button: Found vehicle GPS from cache:', vehicleLocationData);
@@ -493,55 +546,59 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
                 const dropoffCoords = await geocodeAddress(dropoff);
                 
                 if (!pickupCoords || !dropoffCoords) {
-                  console.error('Failed to geocode addresses');
-                  throw new Error('Geocoding failed');
+                  console.warn('Geocoding failed — showing vehicle location without route');
                 }
                 
-                let waypoints = [{ location: { lat: pickupCoords[1], lng: pickupCoords[0] }, stopover: true }];
-                
-                const selectedStopPoints = trip.selected_stop_points || trip.selectedstoppoints || [];
-                if (selectedStopPoints.length > 0) {
-                  const stopPointIds = selectedStopPoints.map(stop => typeof stop === 'object' ? stop.id : stop);
-                  const { data: stopPointsData } = await supabase
-                    .from('stop_points')
-                    .select('coordinates')
-                    .in('id', stopPointIds);
+                let waypoints = [];
+                if (pickupCoords && dropoffCoords) {
+                  waypoints = [{ location: { lat: pickupCoords[1], lng: pickupCoords[0] }, stopover: true }];
                   
-                  (stopPointsData || []).forEach(point => {
-                    if (point.coordinates) {
-                      const coords = point.coordinates.split(' ')[0].split(',');
-                      waypoints.push({ location: { lat: parseFloat(coords[1]), lng: parseFloat(coords[0]) }, stopover: true });
-                    }
-                  });
+                  const selectedStopPoints = trip.selected_stop_points || trip.selectedstoppoints || [];
+                  if (selectedStopPoints.length > 0) {
+                    const stopPointIds = selectedStopPoints.map(stop => typeof stop === 'object' ? stop.id : stop);
+                    const { data: stopPointsData } = await supabase
+                      .from('stop_points')
+                      .select('coordinates')
+                      .in('id', stopPointIds);
+                    
+                    (stopPointsData || []).forEach(point => {
+                      if (point.coordinates) {
+                        const coords = point.coordinates.split(' ')[0].split(',');
+                        waypoints.push({ location: { lat: parseFloat(coords[1]), lng: parseFloat(coords[0]) }, stopover: true });
+                      }
+                    });
+                  }
+                  
+                  waypoints.push({ location: { lat: dropoffCoords[1], lng: dropoffCoords[0] }, stopover: true });
                 }
                 
-                waypoints.push({ location: { lat: dropoffCoords[1], lng: dropoffCoords[0] }, stopover: true });
-                
-                // Use Google Directions Service
-                const gm = window.google?.maps;
-                if (gm) {
-                  const directionsService = new gm.DirectionsService();
-                  const result = await new Promise((resolve) => {
-                    directionsService.route(
-                      {
-                        origin: waypoints[0].location,
-                        destination: waypoints[waypoints.length - 1].location,
-                        waypoints: waypoints.slice(1, -1),
-                        travelMode: gm.TravelMode.DRIVING,
-                      },
-                      (res, status) => {
-                        if (status === 'OK' && res.routes?.[0]) {
-                          const path = res.routes[0].overview_path.map(p => [p.lng(), p.lat()]);
-                          resolve(path);
-                        } else {
-                          resolve(null);
+                if (waypoints.length >= 2) {
+                  // Use Google Directions Service
+                  const gm = window.google?.maps;
+                  if (gm) {
+                    const directionsService = new gm.DirectionsService();
+                    const result = await new Promise((resolve) => {
+                      directionsService.route(
+                        {
+                          origin: waypoints[0].location,
+                          destination: waypoints[waypoints.length - 1].location,
+                          waypoints: waypoints.slice(1, -1),
+                          travelMode: gm.TravelMode.DRIVING,
+                        },
+                        (res, status) => {
+                          if (status === 'OK' && res.routes?.[0]) {
+                            const path = res.routes[0].overview_path.map(p => [p.lng(), p.lat()]);
+                            resolve(path);
+                          } else {
+                            resolve(null);
+                          }
                         }
-                      }
-                    );
-                  });
-                  if (result) {
-                    routeCoords = result;
-                    console.log('Generated preplanned route with', routeCoords.length, 'points');
+                      );
+                    });
+                    if (result) {
+                      routeCoords = result;
+                      console.log('Generated preplanned route with', routeCoords.length, 'points');
+                    }
                   }
                 }
               } catch (error) {
@@ -915,23 +972,6 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
     { label: "Delivered", value: "delivered" },
   ]
 
-  // Main workflow statuses for progress tracking
-  const WORKFLOW_STATUSES = [
-    { label: "Pending", value: "pending" },
-    { label: "Accept", value: "accepted" },
-    { label: "Departing", value: "departing" },
-    { label: "Arrived at Loading", value: "arrived-at-loading" },
-    { label: "Queuing at Loading", value: "queuing-at-loading" },
-    { label: "Staging at Loading", value: "staging-at-loading" },
-    { label: "Loading", value: "loading" },
-    { label: "On Trip", value: "on-trip" },
-    { label: "Arrived at Offloading", value: "arrived-at-offloading" },
-    { label: "Offloading", value: "offloading" },
-    { label: "Weighing In/Out", value: "weighing" },
-    { label: "Depo", value: "depo" },
-    { label: "Handover", value: "handover" },
-    { label: "Delivered", value: "delivered" }
-  ]
 
   // Haversine distance between two lat/lng points (km)
   const haversineKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
@@ -975,6 +1015,9 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
       effectiveStatus = lastRecorded.status?.toLowerCase() || effectiveStatus
     }
 
+    // Use trip's progress_stops as the single source
+    const tripStops = trip.progress_stops || []
+
     // Build elapsed map from stops_data (preserves order)
     const elapsedMap: Record<string, number> = {}
     const timestampMap: Record<string, string> = {}
@@ -991,25 +1034,23 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
     // Extract coordinates from status_history
     const coordsMap = getCoordsFromHistory(trip)
 
-    const currentStatusIndex = WORKFLOW_STATUSES.findIndex(s => s.value === effectiveStatus)
-
     // Calculate elapsed time for current status (since last change)
     const currentElapsed = effectiveStatus && timestampMap[effectiveStatus]
       ? Math.floor((Date.now() - new Date(timestampMap[effectiveStatus]).getTime()) / 1000)
       : 0
 
-    // Build ordered statuses: recorded ones first (in stops_data order), then unrecorded ones
-    const unrecordedStatuses = WORKFLOW_STATUSES.filter(s => !recordedOrder.includes(s.value))
+    // Build ordered statuses from trip's progress_stops: recorded ones first, then remaining
+    const unrecordedStatuses = tripStops.filter((s: any) => !recordedOrder.includes(s.value))
     const orderedStatuses = [
-      ...recordedOrder.map(v => WORKFLOW_STATUSES.find(s => s.value === v)).filter(Boolean),
+      ...recordedOrder.map(v => tripStops.find((s: any) => s.value === v)).filter(Boolean),
       ...unrecordedStatuses
     ]
 
-    // Build base waypoints in the new dynamic order
-    const baseWaypoints = orderedStatuses.map((status, index) => ({
+    // Build base waypoints in the dynamic order
+    const baseWaypoints = orderedStatuses.map((status: any, index: number) => ({
       position: (index / (orderedStatuses.length - 1)) * 100,
       label: status.label,
-      completed: recordedOrder.includes(status.value) && status.value !== effectiveStatus,
+      completed: status.isComplete === true || (recordedOrder.includes(status.value) && status.value !== effectiveStatus),
       current: status.value === effectiveStatus,
       isStop: false,
       elapsedSeconds: recordedOrder.includes(status.value) ? (elapsedMap[status.value] ?? null) : null,
@@ -1077,7 +1118,7 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
 
 
 
-  const getTripProgress = (status: string, stopsData?: any[]) => {
+  const getTripProgress = (status: string, stopsData?: any[], progressStops?: any[]) => {
     let effectiveStatus = status?.toLowerCase()
     // For "stopped", use the last recorded status from stops_data
     if (effectiveStatus === 'stopped' && stopsData && stopsData.length > 0) {
@@ -1089,9 +1130,15 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
       const s = entry.status?.toLowerCase()
       if (s && !recordedOrder.includes(s)) recordedOrder.push(s)
     }
-    if (recordedOrder.length === 0) return 0
-    // Progress is based on how many statuses have been recorded vs total possible
-    return (recordedOrder.length / WORKFLOW_STATUSES.length) * 100
+    // Use progress_stops as the single source
+    const totalStops = (progressStops && progressStops.length > 0)
+      ? progressStops.length
+      : 0
+    if (totalStops === 0) return 0
+    // Count completed: isComplete from progress_stops OR recorded in stops_data
+    const isCompleteCount = (progressStops || []).filter((s: any) => s.isComplete === true).length
+    const completedCount = Math.max(recordedOrder.length, isCompleteCount)
+    return (completedCount / totalStops) * 100
   }
 
   const formatElapsed = (seconds: number | null | undefined) => {
@@ -1174,7 +1221,7 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
       <div className="space-y-6">
       {tripsList.map((trip: any) => {
         const { waypoints, isStopped } = getWaypointsWithStops(trip)
-        const progress = getTripProgress(trip.status, trip.stops_data)
+        const progress = getTripProgress(trip.status, trip.stops_data, trip.progress_stops)
 
         const clientDetails = typeof trip.clientdetails === 'string' ? JSON.parse(trip.clientdetails) : trip.clientdetails
         const title = clientDetails?.name || trip.selectedClient || trip.clientDetails?.name || `Trip ${trip.trip_id || trip.id}`
@@ -1709,22 +1756,7 @@ function TripReportsSection() {
                 <CardContent className="pt-0">
                   {(() => {
                     const stopsData = trip.stops_data || []
-                    const WORKFLOW = [
-                      { label: "Pending", value: "pending" },
-                      { label: "Accept", value: "accepted" },
-                      { label: "Departing", value: "departing" },
-                      { label: "Arrived at Loading", value: "arrived-at-loading" },
-                      { label: "Queuing at Loading", value: "queuing-at-loading" },
-                      { label: "Staging at Loading", value: "staging-at-loading" },
-                      { label: "Loading", value: "loading" },
-                      { label: "On Trip", value: "on-trip" },
-                      { label: "Arrived at Offloading", value: "arrived-at-offloading" },
-                      { label: "Offloading", value: "offloading" },
-                      { label: "Weighing", value: "weighing" },
-                      { label: "Depo", value: "depo" },
-                      { label: "Handover", value: "handover" },
-                      { label: "Delivered", value: "delivered" }
-                    ]
+                    const WORKFLOW = trip.progress_stops || []
                     const elapsedMap: Record<string, number> = {}
                     const timestampMap: Record<string, string> = {}
                     for (const entry of stopsData) {
@@ -1760,7 +1792,7 @@ function TripReportsSection() {
                     ]
                     const wpData = orderedWorkflow.map((w, i) => ({
                       ...w,
-                      completed: recordedOrder.includes(w.value) && w.value !== trip.status?.toLowerCase(),
+                      completed: w.isComplete === true || (recordedOrder.includes(w.value) && w.value !== trip.status?.toLowerCase()),
                       current: w.value === trip.status?.toLowerCase(),
                       elapsed: recordedOrder.includes(w.value) ? (elapsedMap[w.value] ?? null) : null,
                       timestamp: recordedOrder.includes(w.value) ? (timestampMap[w.value] ?? null) : null,

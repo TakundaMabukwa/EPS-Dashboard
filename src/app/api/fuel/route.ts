@@ -19,13 +19,26 @@ export async function GET() {
 
     const url = endpoint.replace(/\/+$/, '') + '/api/vehicle/fuel'
     console.log('Fetching fuel data from:', url)
-    const response = await fetch(url, {
-      headers: { Accept: 'application/json' },
-    })
 
-    if (!response.ok) {
-      console.error(`API error: ${response.status} ${response.statusText}`)
-      throw new Error(`API error: ${response.status}`)
+    let response: Response | null = null
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        response = await fetch(url, {
+          headers: { Accept: 'application/json' },
+          signal: AbortSignal.timeout(10000),
+        })
+        if (response.ok) break
+        console.error(`Fuel API attempt ${attempt}: ${response.status} ${response.statusText}`)
+      } catch (fetchErr: any) {
+        console.error(`Fuel API attempt ${attempt} failed:`, fetchErr?.name || fetchErr)
+      }
+      if (attempt < 3) await new Promise((r) => setTimeout(r, 1000 * attempt))
+    }
+
+    if (!response || !response.ok) {
+      const status = response?.status || 'timeout'
+      console.error(`Fuel API exhausted retries, last status: ${status}`)
+      return NextResponse.json({ error: `Upstream API unavailable (${status})` }, { status: 502 })
     }
 
     const json = await response.json()

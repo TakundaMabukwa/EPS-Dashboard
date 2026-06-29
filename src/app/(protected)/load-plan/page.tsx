@@ -12,7 +12,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose, DialogPortal, DialogOverlay } from '@/components/ui/dialog'
-import { X, FileText, TrendingUp, Plus, Route, MapPin } from 'lucide-react'
+import { X, FileText, TrendingUp, Plus, Route, MapPin, CheckCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { LocationAutocomplete } from '@/components/ui/location-autocomplete'
@@ -130,6 +130,25 @@ export default function LoadPlanPage() {
   const [isLoadingStopPoints, setIsLoadingStopPoints] = useState(false)
   const [customStopPoints, setCustomStopPoints] = useState([])
   const [isManuallyOrdered, setIsManuallyOrdered] = useState(false)
+
+  // Progress stops
+  const DEFAULT_PROGRESS_STOPS = [
+    { label: "Accept",     value: "accepted" },
+    { label: "Departing",  value: "departing" },
+    { label: "Arrived",    value: "arrived-at-loading" },
+    { label: "Queuing",    value: "queuing-at-loading" },
+    { label: "Staging",    value: "staging-at-loading" },
+    { label: "Loading",    value: "loading" },
+    { label: "On Trip",    value: "on-trip" },
+    { label: "Arrived",    value: "arrived-at-offloading" },
+    { label: "Offloading", value: "offloading" },
+    { label: "Weighing",   value: "weighing" },
+    { label: "Depo",       value: "depo" },
+    { label: "Handover",   value: "handover" },
+    { label: "Delivered",  value: "delivered" },
+  ]
+  const [selectedStops, setSelectedStops] = useState<Set<string>>(new Set())
+  const [useDefaultStops, setUseDefaultStops] = useState(false)
 
   // New costing inputs
   const [loadingWorkers, setLoadingWorkers] = useState(2)
@@ -1300,6 +1319,9 @@ export default function LoadPlanPage() {
         trip_type: tripType,
         selected_stop_points: stopPoints,
         selected_vehicle_type: selectedVehicleType,
+        progress_stops: DEFAULT_PROGRESS_STOPS
+          .filter(s => selectedStops.has(s.value))
+          .map((s, i) => ({ order: i + 1, label: s.label, value: s.value, isComplete: false })),
         updated_at: new Date().toISOString()
       }
       
@@ -1441,7 +1463,10 @@ export default function LoadPlanPage() {
         cost_per_km: costPerKm,
         goods_in_transit_premium: parseFloat(goodsInTransitPremium) || null,
         estimated_distance: estimatedDistance,
-        profile_used: profileUsed
+        profile_used: profileUsed,
+        progress_stops: DEFAULT_PROGRESS_STOPS
+          .filter(s => selectedStops.has(s.value))
+          .map((s, i) => ({ order: i + 1, label: s.label, value: s.value, isComplete: false }))
       }
       
       console.log('Inserting trip data:', tripData)
@@ -1483,6 +1508,8 @@ export default function LoadPlanPage() {
       setCustomStopPoints([])
       setGoodsInTransitPremium('')
       setSelectedVehicleType('')
+      setSelectedStops(new Set())
+      setUseDefaultStops(false)
       setShowSecondSection(false)
       setOptimizedRoute(null)
       
@@ -1502,96 +1529,10 @@ export default function LoadPlanPage() {
     <div className="p-6 space-y-6 w-full">
       <h1 className="text-2xl font-bold mb-6">Load Plan</h1>
       
-      <Tabs defaultValue="loads" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="loads">Loads</TabsTrigger>
+      <Tabs defaultValue="create" className="w-full">
+        <TabsList className="grid w-full grid-cols-1">
           <TabsTrigger value="create">Create Load</TabsTrigger>
         </TabsList>
-
-        <TabsContent value="loads" className="space-y-6">
-          <div className="bg-white rounded-xl border shadow-sm">
-            <div className="p-4 space-y-4">
-              <div className="flex items-center justify-end">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => showToast('Datatims integration coming soon')}
-                >
-                  Datatims
-                </Button>
-              </div>
-
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-blue-100">
-                    <TableHead>Client</TableHead>
-                    <TableHead>Commodity</TableHead>
-                    <TableHead>Rate</TableHead>
-                    <TableHead>Pickup</TableHead>
-                    <TableHead>Drop Off</TableHead>
-                    <TableHead>Assignments</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loads.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="text-center py-8 text-gray-500">
-                        No trips available. Total loads: {loads.length}
-                      </TableCell>
-                    </TableRow>
-                  ) : loads.map((row) => (
-                    <TableRow key={row.id} className="hover:bg-muted/50">
-                      <TableCell>{row.client}</TableCell>
-                      <TableCell>{row.commodity}</TableCell>
-                      <TableCell>{row.rate}</TableCell>
-                      <TableCell>
-                        {row.etaPickup ? (
-                          row.etaPickup.includes('T') ? new Date(row.etaPickup).toLocaleString() : row.etaPickup
-                        ) : (row.startdate || '-')}
-                      </TableCell>
-                      <TableCell>
-                        {row.etaDropoff ? (
-                          row.etaDropoff.includes('T') ? new Date(row.etaDropoff).toLocaleString() : row.etaDropoff
-                        ) : (row.enddate || '-')}
-                      </TableCell>
-                      <TableCell className="max-w-xs truncate">
-                        {(() => {
-                          const assignments = parseJsonField(row.vehicleassignments) || []
-                          if (!assignments.length) return 'Unassigned'
-                          return assignments.map(assignment => {
-                            const vehicleName = assignment.vehicle?.name || 'Unknown Vehicle'
-                            const driverNames = assignment.drivers?.map(d => d.name).filter(Boolean).join(', ') || 'No Driver'
-                            return `${vehicleName} (${driverNames})`
-                          }).join('; ')
-                        })()
-                        }
-                      </TableCell>
-                      <TableCell>
-                        <span className={cn(
-                          "px-2 py-1 rounded-full text-xs font-medium",
-                          row.status === "completed" ? "bg-green-100 text-green-800" :
-                          row.status === "in-transit" ? "bg-blue-100 text-blue-800" :
-                          row.status === "pending" ? "bg-yellow-100 text-yellow-800" :
-                          "bg-red-100 text-red-800"
-                        )}>
-                          {row.status || 'pending'}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <Button variant="ghost" size="sm">
-                          <FileText className="h-4 w-4" />
-                          Summary
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-        </TabsContent>
 
         <TabsContent value="create" className="space-y-6">
           <div className="space-y-6">
@@ -1709,6 +1650,71 @@ export default function LoadPlanPage() {
                       }, [clients, client])
                       }
                     />
+                  </div>
+                </div>
+
+                {/* Progress Stops */}
+                <div className="space-y-3 p-4 bg-slate-50 rounded-lg border border-slate-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <Label className="text-lg font-medium">Trip Progress Stops</Label>
+                    <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={useDefaultStops}
+                        onChange={(e) => {
+                          setUseDefaultStops(e.target.checked)
+                          setSelectedStops(
+                            e.target.checked
+                              ? new Set(DEFAULT_PROGRESS_STOPS.map(s => s.value))
+                              : new Set()
+                          )
+                        }}
+                        className="w-4 h-4 rounded border-slate-300"
+                      />
+                      Use Default (All Stops)
+                    </label>
+                  </div>
+                  <div className="relative">
+                    <div className="flex justify-between items-center">
+                      {DEFAULT_PROGRESS_STOPS.map((stop, index) => {
+                        const isSelected = selectedStops.has(stop.value)
+                        return (
+                          <button
+                            key={stop.value}
+                            type="button"
+                            onClick={() => {
+                              if (useDefaultStops) return
+                              const next = new Set(selectedStops)
+                              if (next.has(stop.value)) {
+                                next.delete(stop.value)
+                              } else {
+                                next.add(stop.value)
+                              }
+                              setSelectedStops(next)
+                            }}
+                            className="flex flex-col items-center relative group"
+                          >
+                            <div className={cn(
+                              "w-7 h-7 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all duration-200",
+                              isSelected
+                                ? "bg-emerald-600 border-emerald-700 text-white animate-pulse"
+                                : "bg-slate-100 border-slate-200 text-slate-400",
+                              !useDefaultStops && "hover:scale-110 cursor-pointer"
+                            )}>
+                              {isSelected
+                                ? <CheckCircle className="w-3 h-3" />
+                                : <span className="text-[9px]">{index + 1}</span>}
+                            </div>
+                            <span className={cn(
+                              "text-[10px] mt-1 text-center max-w-[52px] leading-tight",
+                              isSelected ? "text-emerald-700 font-medium" : "text-gray-400"
+                            )}>
+                              {stop.value}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
                   </div>
                 </div>
 
@@ -2192,177 +2198,6 @@ export default function LoadPlanPage() {
               </form>
             </CardContent>
             </Card>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="routing" className="space-y-6">
-          <div className="space-y-6">
-            {/* Route Optimization for All Loads */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Route Optimization Overview</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-gray-600 mb-4">
-                  View and track optimized truck routes for all loads. Routes are automatically optimized considering truck restrictions, traffic conditions, and delivery schedules.
-                </p>
-              </CardContent>
-            </Card>
-
-            {/* Trip Routes Display */}
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-              {loads.filter(trip => trip.status?.toLowerCase() !== 'delivered').map((trip) => {
-                const assignments = parseJsonField(trip.vehicleassignments) || []
-                const pickupLocations = parseJsonField(trip.pickuplocations) || []
-                const dropoffLocations = parseJsonField(trip.dropofflocations) || []
-                
-                return (
-                  <div key={trip.id} className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-                    {/* Header */}
-                    <div className="p-6 border-b border-slate-100">
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-slate-100 rounded-lg">
-                            <Route className="h-5 w-5 text-slate-600" />
-                          </div>
-                          <div>
-                            <h3 className="font-semibold text-slate-900">{trip.trip_id}</h3>
-                            <p className="text-sm text-slate-500">{trip.ordernumber}</p>
-                          </div>
-                        </div>
-                        <span className={cn(
-                          "px-3 py-1.5 rounded-full text-xs font-medium uppercase tracking-wide",
-                          trip.status === "completed" ? "bg-emerald-100 text-emerald-700" :
-                          trip.status === "in-transit" ? "bg-blue-100 text-blue-700" :
-                          trip.status === "pending" ? "bg-amber-100 text-amber-700" :
-                          "bg-slate-100 text-slate-700"
-                        )}>
-                          {trip.status || 'pending'}
-                        </span>
-                      </div>
-                      
-                      {/* Client & Commodity */}
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Client</p>
-                          <p className="text-sm font-medium text-slate-900">{trip.clientdetails?.name || 'N/A'}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Commodity</p>
-                          <p className="text-sm font-medium text-slate-900">{trip.cargo || 'N/A'}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Timeline */}
-                    <div className="p-6 border-b border-slate-100">
-                      <h4 className="text-sm font-semibold text-slate-900 mb-4">Progress Timeline</h4>
-                      <div className="relative">
-                        <div className="flex items-center justify-between mb-2">
-                          {[
-                            { label: 'Created', completed: true },
-                            { label: 'Assigned', completed: assignments.length > 0 },
-                            { label: 'In Transit', completed: trip.status === 'in-transit' || trip.status === 'completed' },
-                            { label: 'Completed', completed: trip.status === 'completed' }
-                          ].map((step, index, array) => (
-                            <div key={step.label} className="flex flex-col items-center relative">
-                              <div className={cn(
-                                "w-8 h-8 rounded-full border-2 flex items-center justify-center text-xs font-medium transition-colors",
-                                step.completed 
-                                  ? "bg-slate-600 border-slate-600 text-white" 
-                                  : "bg-white border-slate-300 text-slate-400"
-                              )}>
-                                {index + 1}
-                              </div>
-                              <span className={cn(
-                                "text-xs mt-2 font-medium",
-                                step.completed ? "text-slate-900" : "text-slate-400"
-                              )}>
-                                {step.label}
-                              </span>
-                              {index < array.length - 1 && (
-                                <div className={cn(
-                                  "absolute top-4 left-8 w-full h-0.5 -z-10",
-                                  step.completed && array[index + 1].completed 
-                                    ? "bg-slate-600" 
-                                    : "bg-slate-200"
-                                )} style={{ width: 'calc(100% + 2rem)' }} />
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Locations */}
-                    <div className="p-6 border-b border-slate-100">
-                      <h4 className="text-sm font-semibold text-slate-900 mb-4">Route Details</h4>
-                      <div className="space-y-3">
-                        {pickupLocations.map((pickup, index) => (
-                          <div key={index} className="flex items-start gap-3 p-3 bg-emerald-50 rounded-lg border border-emerald-200">
-                            <div className="p-1.5 bg-emerald-100 rounded-full">
-                              <MapPin className="h-3.5 w-3.5 text-emerald-600" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="text-xs font-medium text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">PICKUP</span>
-                              </div>
-                              <p className="text-sm font-medium text-slate-900 truncate">{pickup.location || pickup.address}</p>
-                              <p className="text-xs text-slate-500">{pickup.scheduled_time ? new Date(pickup.scheduled_time).toLocaleString() : 'Time TBD'}</p>
-                            </div>
-                          </div>
-                        ))}
-                        {dropoffLocations.map((dropoff, index) => (
-                          <div key={index} className="flex items-start gap-3 p-3 bg-red-50 rounded-lg border border-red-200">
-                            <div className="p-1.5 bg-red-100 rounded-full">
-                              <MapPin className="h-3.5 w-3.5 text-red-600" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="text-xs font-medium text-red-700 bg-red-100 px-2 py-0.5 rounded">DROP-OFF</span>
-                              </div>
-                              <p className="text-sm font-medium text-slate-900 truncate">{dropoff.location || dropoff.address}</p>
-                              <p className="text-xs text-slate-500">{dropoff.scheduled_time ? new Date(dropoff.scheduled_time).toLocaleString() : 'Time TBD'}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Assignments */}
-                    <div className="p-6">
-                      <h4 className="text-sm font-semibold text-slate-900 mb-4">Assignments</h4>
-                      {assignments.length > 0 ? (
-                        <div className="space-y-3">
-                          {assignments.map((assignment, index) => (
-                            <div key={index} className="p-4 bg-slate-50 rounded-lg border border-slate-200">
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div>
-                                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Vehicle</p>
-                                  <p className="text-sm font-medium text-slate-900">{assignment.vehicle?.name || assignment.vehicle?.registration_number || 'Unassigned'}</p>
-                                </div>
-                                <div>
-                                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Driver(s)</p>
-                                  <div className="space-y-1">
-                                    {assignment.drivers?.filter(d => d.name).map((driver, dIndex) => (
-                                      <p key={dIndex} className="text-sm font-medium text-slate-900">{driver.name}</p>
-                                    )) || <p className="text-sm text-slate-500">Unassigned</p>}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 text-center">
-                          <p className="text-sm text-slate-500">No assignments yet</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
           </div>
         </TabsContent>
       </Tabs>
