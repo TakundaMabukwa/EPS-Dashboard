@@ -183,7 +183,7 @@ const fuelDataCache = {
 };
 
 // Driver Card Component with fetched driver info
-function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setNoteText, setNoteOpen, setAvailableDrivers, setCurrentTripForChange, setChangeDriverOpen, setCurrentTripForClose, setCloseReason, setCloseTripOpen, setCurrentTripForEdit, setEditTripOpen, setCurrentTripForApproval, setApprovalModalOpen, setVideoModalOpen, setCurrentTripForVideo, isVisible = true }: any) {
+function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setNoteText, setNoteOpen, setAvailableDrivers, setCurrentTripForChange, setChangeDriverOpen, setCurrentTripForClose, setCloseReason, setCloseTripOpen, setCurrentTripForEdit, setEditTripOpen, setCurrentTripForApproval, setApprovalModalOpen, setVideoModalOpen, setCurrentTripForVideo, isVisible = true, driversMap }: any) {
   const router = useRouter()
   const [driverInfo, setDriverInfo] = useState<any>(null)
   const [vehicleInfo, setVehicleInfo] = useState<any>(null)
@@ -242,18 +242,13 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
       // Render card now, fill in details later
       setLoading(false)
 
-      // Fire driver details and vehicle location in parallel
+      // Fire vehicle location in parallel (driver from batch map, no query needed)
       const promises: Promise<any>[] = []
 
-      if (driverToFetch?.id) {
-        const supabase = createClient()
-        promises.push(
-          supabase.from('drivers').select('*').eq('id', driverToFetch.id).single()
-            .then(({ data: driver }) => {
-              if (driver) setDriverInfo(driver)
-            })
-            .catch(() => {})
-        )
+      // Use pre-fetched drivers map instead of individual query
+      if (driverToFetch?.id && driversMap?.has(driverToFetch.id)) {
+        const driver = driversMap.get(driverToFetch.id)
+        setDriverInfo(driver)
       }
 
       if (assignment.vehicle?.name) {
@@ -280,7 +275,7 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
     }
 
     fetchAssignmentInfo()
-  }, [trip.id, JSON.stringify(trip.vehicleassignments || trip.vehicle_assignments), isVisible])
+  }, [trip.id, JSON.stringify(trip.vehicleassignments || trip.vehicle_assignments), isVisible, driversMap])
 
   const driverName = driverInfo ? `${driverInfo.first_name || ''} ${driverInfo.surname || ''}`.trim() || 'Unassigned' : 'Unassigned'
   const initials = driverName !== 'Unassigned' ? driverName.split(' ').map((s: string) => s[0]).slice(0,2).join('') : 'DR'
@@ -775,10 +770,8 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
           size="sm"
           variant="link"
           className="h-8 text-xs border"
-          onClick={async () => {
-            const supabase = createClient();
-            const { data: drivers } = await supabase.from('drivers').select('*');
-            setAvailableDrivers(drivers || []);
+          onClick={() => {
+            setAvailableDrivers(Array.from(driversMap?.values() || []));
             setCurrentTripForChange(trip);
             setChangeDriverOpen(true);
           }}
@@ -846,6 +839,7 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
   const [tripSearch, setTripSearch] = useState('')
   const [operatorFilter, setOperatorFilter] = useState('all')
   const [vehicleOperators, setVehicleOperators] = useState<Map<string, string>>(new Map())
+  const [driversMap, setDriversMap] = useState<Map<string, any>>(new Map())
 
   useEffect(() => {
     async function fetchTrips() {
@@ -854,6 +848,20 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
         const { data, error } = await supabase.from('trips').select('*')
         if (error) throw error
         setTrips(data || [])
+
+        // Batch-fetch all drivers in one query
+        try {
+          const { data: allDrivers } = await supabase.from('drivers').select('*')
+          if (allDrivers) {
+            const map = new Map<string, any>()
+            for (const d of allDrivers) {
+              if (d.id) map.set(d.id, d)
+            }
+            setDriversMap(map)
+          }
+        } catch (e) {
+          console.error('Error batch-fetching drivers:', e)
+        }
         
         // Check for most recent unauthorized stop
         const recentUnauthorized = (data || [])
@@ -1018,16 +1026,34 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
     // Use trip's progress_stops as the single source
     const tripStops = trip.progress_stops || []
 
-    // Build elapsed map from stops_data (preserves order)
-    const elapsedMap: Record<string, number> = {}
+    // Build timestamp map from stops_data and recorded order
     const timestampMap: Record<string, string> = {}
     const recordedOrder: string[] = []
     for (const entry of stopsData) {
       const s = entry.status?.toLowerCase()
       if (s && !recordedOrder.includes(s)) recordedOrder.push(s)
-      if (s) {
-        if (typeof entry.elapsed_seconds === 'number') elapsedMap[s] = entry.elapsed_seconds
-        if (entry.timestamp) timestampMap[s] = entry.timestamp
+      if (s && entry.timestamp) timestampMap[s] = entry.timestamp
+    }
+
+    // Calculate elapsed from timestamps: time between this stop and the next
+    const elapsedFromTimestamps: Record<string, number> = {}
+    for (let i = 0; i < recordedOrder.length; i++) {
+      const currentStatus = recordedOrder[i]
+      const currentTs = timestampMap[currentStatus]
+      if (!currentTs) continue
+      if (i < recordedOrder.length - 1) {
+        // Completed stop: elapsed = next stop's timestamp - this stop's timestamp
+        const nextTs = timestampMap[recordedOrder[i + 1]]
+        if (nextTs) {
+          elapsedFromTimestamps[currentStatus] = Math.floor(
+            (new Date(nextTs).getTime() - new Date(currentTs).getTime()) / 1000
+          )
+        }
+      } else {
+        // Current (last) stop: elapsed = now - this stop's timestamp
+        elapsedFromTimestamps[currentStatus] = Math.floor(
+          (Date.now() - new Date(currentTs).getTime()) / 1000
+        )
       }
     }
 
@@ -1039,12 +1065,8 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
       ? Math.floor((Date.now() - new Date(timestampMap[effectiveStatus]).getTime()) / 1000)
       : 0
 
-    // Build ordered statuses from trip's progress_stops: recorded ones first, then remaining
-    const unrecordedStatuses = tripStops.filter((s: any) => !recordedOrder.includes(s.value))
-    const orderedStatuses = [
-      ...recordedOrder.map(v => tripStops.find((s: any) => s.value === v)).filter(Boolean),
-      ...unrecordedStatuses
-    ]
+    // Always order by progress_stops order (Pending = 1 always first)
+    const orderedStatuses = [...tripStops].sort((a: any, b: any) => (a.order || 0) - (b.order || 0))
 
     // Build base waypoints in the dynamic order
     const baseWaypoints = orderedStatuses.map((status: any, index: number) => ({
@@ -1053,7 +1075,7 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
       completed: status.isComplete === true || (recordedOrder.includes(status.value) && status.value !== effectiveStatus),
       current: status.value === effectiveStatus,
       isStop: false,
-      elapsedSeconds: recordedOrder.includes(status.value) ? (elapsedMap[status.value] ?? null) : null,
+      elapsedSeconds: recordedOrder.includes(status.value) ? (elapsedFromTimestamps[status.value] ?? null) : null,
       isCurrent: status.value === effectiveStatus,
       currentElapsed: status.value === effectiveStatus ? currentElapsed : null,
       coords: coordsMap[status.value] || null,
@@ -1142,7 +1164,8 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
   }
 
   const formatElapsed = (seconds: number | null | undefined) => {
-    if (!seconds || seconds <= 0) return null
+    if (seconds === null || seconds === undefined) return null
+    if (seconds <= 0) return '0m'
     if (seconds < 60) return `${seconds}s`
     if (seconds < 3600) {
       const m = Math.floor(seconds / 60)
@@ -1152,6 +1175,42 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
     const h = Math.floor(seconds / 3600)
     const m = Math.floor((seconds % 3600) / 60)
     return m > 0 ? `${h}h ${m}m` : `${h}h`
+  }
+
+  const getExpectedDuration = (statusValue: string, trip?: any): number => {
+    const s = statusValue?.toLowerCase().replace(/_/g, '-') || ''
+    const DURATIONS: Record<string, number> = {
+      pending: 1800,
+      accepted: 3600,
+      departing: 3600,
+      'arrived-at-loading': 1800,
+      'queuing-at-loading': 3600,
+      'staging-at-loading': 3600,
+      loading: 7200,
+      'on-trip': 0,
+      'truck-stop': 18000,
+      refueling: 3600,
+      'arrived-at-offloading': 1800,
+      'queuing-at-offloading': 3600,
+      offloading: 7200,
+      weighing: 1800,
+      depot: 3600,
+      handover: 3600,
+      delivered: Infinity,
+    }
+    if (s === 'on-trip' && trip) {
+      const distKm = trip.estimated_distance || trip.distance_km || 0
+      if (distKm > 0) return Math.ceil((distKm / 60) * 3600)
+      return 14400
+    }
+    return DURATIONS[s] ?? 0
+  }
+
+  const getElapsedColor = (elapsed: number, expected: number) => {
+    if (expected <= 0 || expected === Infinity) return 'green'
+    if (elapsed > expected) return 'red'
+    if (elapsed > expected / 2) return 'orange'
+    return 'green'
   }
 
   const getAcceptanceWarning = (trip: any) => {
@@ -1168,8 +1227,10 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
     }
     const duration = formatElapsed(elapsedSeconds)
     if (!duration) return null
-    if (elapsedSeconds > 1800) return { level: 'red', bg: 'bg-red-50 border-red-200', text: 'text-red-700', icon: 'text-red-500', label: 'Overdue', message: `Not accepted for ${duration}` }
-    if (elapsedSeconds > 900) return { level: 'orange', bg: 'bg-orange-50 border-orange-200', text: 'text-orange-700', icon: 'text-orange-500', label: 'Delayed', message: `Awaiting acceptance for ${duration}` }
+    const expected = getExpectedDuration(status, trip)
+    const color = getElapsedColor(elapsedSeconds, expected)
+    if (color === 'red') return { level: 'red', bg: 'bg-red-50 border-red-200', text: 'text-red-700', icon: 'text-red-500', label: 'Overdue', message: `Not accepted for ${duration}` }
+    if (color === 'orange') return { level: 'orange', bg: 'bg-orange-50 border-orange-200', text: 'text-orange-700', icon: 'text-orange-500', label: 'Delayed', message: `Awaiting acceptance for ${duration}` }
     return null
   }
 
@@ -1248,6 +1309,7 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
               setEditTripOpen={setEditTripOpen}
               setCurrentTripForApproval={setCurrentTripForApproval}
               setApprovalModalOpen={setApprovalModalOpen}
+              driversMap={driversMap}
             />
             {/* Trip Card - 70% */}
             <div className={cn(
@@ -1402,39 +1464,51 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
               <div key={index} className="flex flex-col items-center relative">
               {/* Elapsed time — absolutely positioned so it never shifts the circles */}
               <div className="absolute -top-5 left-1/2 -translate-x-1/2 h-4 flex items-end justify-center">
-              {waypoint.completed && waypoint.elapsedSeconds !== null && waypoint.elapsedSeconds > 0 && (
+              {waypoint.completed && waypoint.elapsedSeconds !== null && (() => {
+                const expected = getExpectedDuration(waypoint.value, trip)
+                const color = getElapsedColor(waypoint.elapsedSeconds, expected)
+                return (
                 <span className={cn(
                   "text-[9px] whitespace-nowrap font-medium",
-                  waypoint.elapsedSeconds > 1800 ? "text-red-500" :
-                  waypoint.elapsedSeconds > 900 ? "text-orange-500" :
+                  color === 'red' ? "text-red-500" :
+                  color === 'orange' ? "text-orange-500" :
                   "text-gray-500"
                 )}>
-                  {formatElapsed(waypoint.elapsedSeconds)}
+                  {formatElapsed(waypoint.elapsedSeconds) || '0m'}
                 </span>
-              )}
-              {waypoint.isCurrent && waypoint.currentElapsed !== null && waypoint.currentElapsed > 0 && (
+                )
+              })()}
+              {waypoint.isCurrent && waypoint.currentElapsed !== null && (() => {
+                const expected = getExpectedDuration(waypoint.value, trip)
+                const color = getElapsedColor(waypoint.currentElapsed, expected)
+                return (
                 <span className={cn(
                   "text-[9px] whitespace-nowrap font-semibold",
-                  waypoint.currentElapsed > 1800 ? "text-red-500" :
-                  waypoint.currentElapsed > 900 ? "text-orange-500" :
+                  color === 'red' ? "text-red-500" :
+                  color === 'orange' ? "text-orange-500" :
                   "text-blue-500"
                 )}>
-                  {formatElapsed(waypoint.currentElapsed)}
+                  {formatElapsed(waypoint.currentElapsed) || '0m'}
                 </span>
-              )}
+                )
+              })()}
               </div>
               <div className={cn(
               "w-7 h-7 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all duration-300",
-              waypoint.current ? (
-                (waypoint.currentElapsed || 0) > 1800 ? "bg-red-500 border-red-600 text-white" :
-                (waypoint.currentElapsed || 0) > 900 ? "bg-orange-500 border-orange-600 text-white" :
-                "bg-blue-500 border-blue-700 text-white"
-              ) :
-              waypoint.completed ? (
-                (waypoint.elapsedSeconds || 0) > 1800 ? "bg-red-500 border-red-600 text-white" :
-                (waypoint.elapsedSeconds || 0) > 900 ? "bg-orange-500 border-orange-600 text-white" :
-                "bg-emerald-600 border-emerald-700 text-white"
-              ) :
+              waypoint.current ? (() => {
+                const expected = getExpectedDuration(waypoint.value, trip)
+                const color = getElapsedColor(waypoint.currentElapsed || 0, expected)
+                return color === 'red' ? "bg-red-500 border-red-600 text-white" :
+                       color === 'orange' ? "bg-orange-500 border-orange-600 text-white" :
+                       "bg-blue-500 border-blue-700 text-white"
+              })() :
+              waypoint.completed ? (() => {
+                const expected = getExpectedDuration(waypoint.value, trip)
+                const color = getElapsedColor(waypoint.elapsedSeconds || 0, expected)
+                return color === 'red' ? "bg-red-500 border-red-600 text-white" :
+                       color === 'orange' ? "bg-orange-500 border-orange-600 text-white" :
+                       "bg-emerald-600 border-emerald-700 text-white"
+              })() :
               "bg-slate-100 border-slate-200 text-slate-600"
               )}>
               {waypoint.completed ? <CheckCircle className="w-3 h-3" /> :
@@ -1443,16 +1517,20 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
               </div>
               <span className={cn(
               "text-[10px] mt-1 text-center max-w-[52px] leading-tight",
-              waypoint.current ? (
-                (waypoint.currentElapsed || 0) > 1800 ? "text-red-600 font-semibold" :
-                (waypoint.currentElapsed || 0) > 900 ? "text-orange-600 font-semibold" :
-                "text-blue-600 font-semibold"
-              ) :
-              waypoint.completed ? (
-                (waypoint.elapsedSeconds || 0) > 1800 ? "text-red-600 font-medium" :
-                (waypoint.elapsedSeconds || 0) > 900 ? "text-orange-600 font-medium" :
-                "text-emerald-700 font-medium"
-              ) : "text-gray-500"
+              waypoint.current ? (() => {
+                const expected = getExpectedDuration(waypoint.value, trip)
+                const color = getElapsedColor(waypoint.currentElapsed || 0, expected)
+                return color === 'red' ? "text-red-600 font-semibold" :
+                       color === 'orange' ? "text-orange-600 font-semibold" :
+                       "text-blue-600 font-semibold"
+              })() :
+              waypoint.completed ? (() => {
+                const expected = getExpectedDuration(waypoint.value, trip)
+                const color = getElapsedColor(waypoint.elapsedSeconds || 0, expected)
+                return color === 'red' ? "text-red-600 font-medium" :
+                       color === 'orange' ? "text-orange-600 font-medium" :
+                       "text-emerald-700 font-medium"
+              })() : "text-gray-500"
               )}>
               {waypoint.label.split(' ')[0]}
               </span>
@@ -1757,46 +1835,61 @@ function TripReportsSection() {
                   {(() => {
                     const stopsData = trip.stops_data || []
                     const WORKFLOW = trip.progress_stops || []
-                    const elapsedMap: Record<string, number> = {}
                     const timestampMap: Record<string, string> = {}
-                    for (const entry of stopsData) {
-                      const s = entry.status?.toLowerCase()
-                      if (s) {
-                        if (typeof entry.elapsed_seconds === 'number') elapsedMap[s] = entry.elapsed_seconds
-                        if (entry.timestamp) timestampMap[s] = entry.timestamp
-                      }
-                    }
-                    const currentIdx = WORKFLOW.findIndex(s => s.value === trip.status?.toLowerCase())
-                    const totalTime = stopsData.reduce((sum: number, e: any) => sum + (e.elapsed_seconds || 0), 0)
-                    const stepsCompleted = stopsData.length
-                    // Dynamic progress based on recorded statuses
                     const recordedOrder: string[] = []
                     for (const entry of stopsData) {
                       const s = entry.status?.toLowerCase()
                       if (s && !recordedOrder.includes(s)) recordedOrder.push(s)
+                      if (s && entry.timestamp) timestampMap[s] = entry.timestamp
                     }
+                    // Calculate elapsed from timestamps: time between this stop and the next
+                    const elapsedFromTimestamps: Record<string, number> = {}
+                    for (let i = 0; i < recordedOrder.length; i++) {
+                      const currentStatus = recordedOrder[i]
+                      const currentTs = timestampMap[currentStatus]
+                      if (!currentTs) continue
+                      if (i < recordedOrder.length - 1) {
+                        const nextTs = timestampMap[recordedOrder[i + 1]]
+                        if (nextTs) {
+                          elapsedFromTimestamps[currentStatus] = Math.floor(
+                            (new Date(nextTs).getTime() - new Date(currentTs).getTime()) / 1000
+                          )
+                        }
+                      } else {
+                        elapsedFromTimestamps[currentStatus] = Math.floor(
+                          (Date.now() - new Date(currentTs).getTime()) / 1000
+                        )
+                      }
+                    }
+                    const currentIdx = WORKFLOW.findIndex(s => s.value === trip.status?.toLowerCase())
+                    const totalTime = Object.values(elapsedFromTimestamps).reduce((sum, secs) => sum + secs, 0)
+                    const stepsCompleted = recordedOrder.length
                     const progress = recordedOrder.length > 0 ? (recordedOrder.length / WORKFLOW.length) * 100 : (currentIdx >= 0 ? ((currentIdx + 1) / WORKFLOW.length) * 100 : 0)
                     const fmtElapsed = (secs: number | null | undefined) => {
-                      if (!secs || secs <= 0) return 'No data'
+                      if (secs === null || secs === undefined) return 'No data'
+                      if (secs <= 0) return '0m'
                       if (secs < 60) return `${secs}s`
                       if (secs < 3600) { const m = Math.floor(secs / 60); const s = secs % 60; return s > 0 ? `${m}m ${s}s` : `${m}m` }
                       const h = Math.floor(secs / 3600); const m = Math.floor((secs % 3600) / 60); return m > 0 ? `${h}h ${m}m` : `${h}h`
                     }
-                    const segColor = (secs: number) => secs > 1800 ? '#ef4444' : secs > 900 ? '#f97316' : '#10b981'
-                    const segLabel = (secs: number) => secs > 1800 ? 'Overdue' : secs > 900 ? 'Delayed' : 'On Time'
-                    // Dynamic order: recorded statuses first (in stops_data order), then unrecorded
-                    const unrecorded = WORKFLOW.filter(w => !recordedOrder.includes(w.value))
-                    const orderedWorkflow = [
-                      ...recordedOrder.map(v => WORKFLOW.find(w => w.value === v)).filter(Boolean),
-                      ...unrecorded
-                    ]
-                    const wpData = orderedWorkflow.map((w, i) => ({
+                    const segColor = (secs: number, statusValue: string) => {
+                      const expected = getExpectedDuration(statusValue, trip)
+                      const c = getElapsedColor(secs, expected)
+                      return c === 'red' ? '#ef4444' : c === 'orange' ? '#f97316' : '#10b981'
+                    }
+                    const segLabel = (secs: number, statusValue: string) => {
+                      const expected = getExpectedDuration(statusValue, trip)
+                      const c = getElapsedColor(secs, expected)
+                      return c === 'red' ? 'Overdue' : c === 'orange' ? 'Delayed' : 'On Time'
+                    }
+                    // Always order by progress_stops order (Pending = 1 always first)
+                    const wpData = WORKFLOW.map((w: any) => ({
                       ...w,
                       completed: w.isComplete === true || (recordedOrder.includes(w.value) && w.value !== trip.status?.toLowerCase()),
                       current: w.value === trip.status?.toLowerCase(),
-                      elapsed: recordedOrder.includes(w.value) ? (elapsedMap[w.value] ?? null) : null,
+                      elapsed: recordedOrder.includes(w.value) ? (elapsedFromTimestamps[w.value] ?? null) : null,
                       timestamp: recordedOrder.includes(w.value) ? (timestampMap[w.value] ?? null) : null,
-                    }))
+                    })).sort((a: any, b: any) => (a.order || 0) - (b.order || 0))
                     return (
                     <div className="bg-white rounded-xl border border-slate-200 p-5 mb-4">
                       {/* Header */}
@@ -1846,27 +1939,35 @@ function TripReportsSection() {
                               <div key={i} className="flex flex-col items-center relative">
                                 {/* Elapsed time — absolutely positioned above */}
                                 <div className="absolute -top-5 left-1/2 -translate-x-1/2 h-4 flex items-end justify-center">
-                                  {wp.elapsed !== null && wp.elapsed > 0 && (
+                                  {wp.elapsed !== null && wp.elapsed > 0 && (() => {
+                                    const expected = getExpectedDuration(wp.value, trip)
+                                    const color = getElapsedColor(wp.elapsed, expected)
+                                    return (
                                     <span className={cn(
                                       "text-[9px] whitespace-nowrap font-medium",
-                                      wp.elapsed > 1800 ? "text-red-500" :
-                                      wp.elapsed > 900 ? "text-orange-500" :
+                                      color === 'red' ? "text-red-500" :
+                                      color === 'orange' ? "text-orange-500" :
                                       "text-gray-500"
                                     )}>{fmtElapsed(wp.elapsed)}</span>
-                                  )}
+                                    )
+                                  })()}
                                 </div>
                                 <div className={cn(
                                   "w-7 h-7 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all duration-300",
-                                  wp.current ? (
-                                    (wp.elapsed || 0) > 1800 ? "bg-red-500 border-red-600 text-white" :
-                                    (wp.elapsed || 0) > 900 ? "bg-orange-500 border-orange-600 text-white" :
-                                    "bg-blue-500 border-blue-700 text-white"
-                                  ) :
-                                  wp.completed ? (
-                                    (wp.elapsed || 0) > 1800 ? "bg-red-500 border-red-600 text-white" :
-                                    (wp.elapsed || 0) > 900 ? "bg-orange-500 border-orange-600 text-white" :
-                                    "bg-emerald-600 border-emerald-700 text-white"
-                                  ) :
+                                  wp.current ? (() => {
+                                    const expected = getExpectedDuration(wp.value, trip)
+                                    const color = getElapsedColor(wp.elapsed || 0, expected)
+                                    return color === 'red' ? "bg-red-500 border-red-600 text-white" :
+                                           color === 'orange' ? "bg-orange-500 border-orange-600 text-white" :
+                                           "bg-blue-500 border-blue-700 text-white"
+                                  })() :
+                                  wp.completed ? (() => {
+                                    const expected = getExpectedDuration(wp.value, trip)
+                                    const color = getElapsedColor(wp.elapsed || 0, expected)
+                                    return color === 'red' ? "bg-red-500 border-red-600 text-white" :
+                                           color === 'orange' ? "bg-orange-500 border-orange-600 text-white" :
+                                           "bg-emerald-600 border-emerald-700 text-white"
+                                  })() :
                                   "bg-slate-100 border-slate-200 text-slate-600"
                                 )}>
                                   {wp.completed ? <CheckCircle className="w-3 h-3" /> :
@@ -1875,16 +1976,20 @@ function TripReportsSection() {
                                 </div>
                                 <span className={cn(
                                   "text-[10px] mt-1 text-center max-w-[52px] leading-tight",
-                                  wp.current ? (
-                                    (wp.elapsed || 0) > 1800 ? "text-red-600 font-semibold" :
-                                    (wp.elapsed || 0) > 900 ? "text-orange-600 font-semibold" :
-                                    "text-blue-600 font-semibold"
-                                  ) :
-                                  wp.completed ? (
-                                    (wp.elapsed || 0) > 1800 ? "text-red-600 font-medium" :
-                                    (wp.elapsed || 0) > 900 ? "text-orange-600 font-medium" :
-                                    "text-emerald-700 font-medium"
-                                  ) : "text-gray-500"
+                                  wp.current ? (() => {
+                                    const expected = getExpectedDuration(wp.value, trip)
+                                    const color = getElapsedColor(wp.elapsed || 0, expected)
+                                    return color === 'red' ? "text-red-600 font-semibold" :
+                                           color === 'orange' ? "text-orange-600 font-semibold" :
+                                           "text-blue-600 font-semibold"
+                                  })() :
+                                  wp.completed ? (() => {
+                                    const expected = getExpectedDuration(wp.value, trip)
+                                    const color = getElapsedColor(wp.elapsed || 0, expected)
+                                    return color === 'red' ? "text-red-600 font-medium" :
+                                           color === 'orange' ? "text-orange-600 font-medium" :
+                                           "text-emerald-700 font-medium"
+                                  })() : "text-gray-500"
                                 )}>{wp.label}</span>
                               </div>
                             ))}
@@ -1904,14 +2009,14 @@ function TripReportsSection() {
                         <div className="space-y-2">
                           {wpData.map((wp, i) => (
                             <div key={i} className="flex items-center gap-3">
-                              <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: wp.elapsed !== null && wp.elapsed > 0 ? segColor(wp.elapsed) : '#cbd5e1' }} />
+                              <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: wp.elapsed !== null && wp.elapsed > 0 ? segColor(wp.elapsed, wp.value) : '#cbd5e1' }} />
                               <span className="text-xs font-medium text-slate-700 w-20">{wp.label}</span>
                               <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                                 <div
                                   className="h-full rounded-full transition-all duration-500"
                                   style={{
                                     width: wp.elapsed !== null && wp.elapsed > 0 && totalTime > 0 ? `${(wp.elapsed / totalTime) * 100}%` : '0%',
-                                    backgroundColor: wp.elapsed !== null && wp.elapsed > 0 ? segColor(wp.elapsed) : '#e2e8f0'
+                                    backgroundColor: wp.elapsed !== null && wp.elapsed > 0 ? segColor(wp.elapsed, wp.value) : '#e2e8f0'
                                   }}
                                 />
                               </div>
@@ -1920,12 +2025,14 @@ function TripReportsSection() {
                               </span>
                               <span className={cn(
                                 "text-[10px] font-medium px-1.5 py-0.5 rounded min-w-[60px] text-center",
-                                wp.elapsed !== null && wp.elapsed > 0 ? (
-                                  wp.elapsed > 1800 ? 'bg-red-50 text-red-600' :
-                                  wp.elapsed > 900 ? 'bg-orange-50 text-orange-600' :
-                                  'bg-emerald-50 text-emerald-600'
-                                ) : 'bg-slate-50 text-slate-400'
-                              )}>{wp.elapsed !== null && wp.elapsed > 0 ? segLabel(wp.elapsed) : 'No data'}</span>
+                                wp.elapsed !== null && wp.elapsed > 0 ? (() => {
+                                  const expected = getExpectedDuration(wp.value, trip)
+                                  const c = getElapsedColor(wp.elapsed, expected)
+                                  return c === 'red' ? 'bg-red-50 text-red-600' :
+                                         c === 'orange' ? 'bg-orange-50 text-orange-600' :
+                                         'bg-emerald-50 text-emerald-600'
+                                })() : 'bg-slate-50 text-slate-400'
+                              )}>{wp.elapsed !== null && wp.elapsed > 0 ? segLabel(wp.elapsed, wp.value) : 'No data'}</span>
                             </div>
                           ))}
                         </div>

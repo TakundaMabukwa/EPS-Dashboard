@@ -140,10 +140,12 @@ export default function LoadPlanPage() {
     { label: "Staging",    value: "staging-at-loading" },
     { label: "Loading",    value: "loading" },
     { label: "On Trip",    value: "on-trip" },
+    { label: "Truck Stop", value: "truck-stop" },
+    { label: "Refueling",  value: "refueling" },
     { label: "Arrived",    value: "arrived-at-offloading" },
     { label: "Offloading", value: "offloading" },
     { label: "Weighing",   value: "weighing" },
-    { label: "Depo",       value: "depo" },
+    { label: "Depot",      value: "depot" },
     { label: "Handover",   value: "handover" },
     { label: "Delivered",  value: "delivered" },
   ]

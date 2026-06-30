@@ -237,21 +237,21 @@ export default function Drivers() {
         .select('id, driver_code, first_name, surname, status')
         .order('first_name', { ascending: true })
 
-      // Build code → API data map
+      // Build name → API data map (key = normalized "first_name last_name")
       const apiDataMap = new Map<string, any>()
       const res = await fetch('/api/driver/scorecard')
       const data = await res.json()
       if (data.ok && Array.isArray(data.data)) {
         for (const d of data.data) {
-          const apiName = d.name || d.full_name || ''
-          const codeMatch = apiName.match(/^Driver\s+(\d+)$/)
-          if (codeMatch) {
-            apiDataMap.set(codeMatch[1], d)
+          const firstName = (d.first_name || '').trim().toLowerCase()
+          const lastName = (d.last_name || '').trim().toLowerCase()
+          if (firstName || lastName) {
+            apiDataMap.set(`${firstName}|${lastName}`, d)
           }
         }
       }
 
-      // Merge: Supabase drivers as primary, API scores where matched
+      // Merge: match Supabase drivers to API by first_name + surname
       const merged = (dbDrivers || [])
         .filter((d: any) => {
           const name = ((d.first_name || '') + ' ' + (d.surname || '')).toLowerCase()
@@ -260,23 +260,29 @@ export default function Drivers() {
           return true
         })
         .map((d: any) => {
-          const code = (d.driver_code || '').replace(/^EPS/i, '')
-          const apiData = apiDataMap.get(code)
+          const firstName = (d.first_name || '').trim().toLowerCase()
+          const lastName = (d.surname || '').trim().toLowerCase()
+          const apiData = apiDataMap.get(`${firstName}|${lastName}`)
           const fullName = `${d.first_name || ''} ${d.surname || ''}`.trim()
           return {
             id: d.id,
+            api_id: apiData?.id || null,
             name: fullName,
             full_name: fullName,
             driver_code: d.driver_code,
-            score: apiData?.score || 0,
+            score: apiData?.score ?? null,
             speeding_count: apiData?.speeding_count || 0,
+            acceleration_count: apiData?.acceleration_count || 0,
+            braking_count: apiData?.braking_count || 0,
             excessive_day_count: apiData?.excessive_day_count || 0,
             excessive_night_count: apiData?.excessive_night_count || 0,
             km_today: apiData?.km_today || '0',
-            safety_events: (apiData?.speeding_count || 0) + (apiData?.excessive_day_count || 0) + (apiData?.excessive_night_count || 0),
+            safety_events: (apiData?.speeding_count || 0) + (apiData?.acceleration_count || 0) + (apiData?.braking_count || 0) + (apiData?.excessive_day_count || 0) + (apiData?.excessive_night_count || 0),
             deductions: 0,
+            has_api_data: !!apiData,
           }
         })
+        .filter((d: any) => d.has_api_data)
 
       setDriverPerformanceData(merged)
     } catch (err) {
@@ -292,7 +298,12 @@ export default function Drivers() {
     setEventsLoading(true)
     setDriverEvents([])
     try {
-      const res = await fetch(`/api/driver/${driver.id}/events`)
+      const uuid = driver.api_id
+      if (!uuid) {
+        setEventsLoading(false)
+        return
+      }
+      const res = await fetch(`/api/driver/${uuid}/events`)
       const data = await res.json()
       if (data.ok && Array.isArray(data.data)) {
         setDriverEvents(data.data)
@@ -2324,59 +2335,72 @@ export default function Drivers() {
           {/* Driver Events Modal */}
           {selectedPerfDriver && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setSelectedPerfDriver(null)}>
-              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
                   <div>
                     <h3 className="text-lg font-bold text-gray-900">{selectedPerfDriver.full_name || selectedPerfDriver.name}</h3>
-                    <p className="text-xs text-gray-500">Score: {selectedPerfDriver.score} · Speeding: {selectedPerfDriver.speeding_count || 0} · KM Today: {parseFloat(selectedPerfDriver.km_today || 0).toFixed(1)}</p>
+                    <p className="text-xs text-gray-500">
+                      Score: {selectedPerfDriver.score} · Driver Code: {selectedPerfDriver.driver_code} · KM Today: {parseFloat(selectedPerfDriver.km_today || 0).toFixed(1)}
+                    </p>
                   </div>
                   <button onClick={() => setSelectedPerfDriver(null)} className="h-8 w-8 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-gray-50">
                     <span className="text-gray-500 text-lg">×</span>
                   </button>
                 </div>
                 <div className="flex-1 overflow-auto px-6 py-4">
-                  {eventsLoading ? (
-                    <div className="flex items-center justify-center py-12">
-                      <div className="animate-spin rounded-full h-6 w-6 border-2 border-gray-200 border-t-blue-600"></div>
-                      <span className="ml-3 text-gray-500 text-sm">Loading events...</span>
-                    </div>
-                  ) : driverEvents.length === 0 ? (
-                    <div className="text-center py-12 text-gray-400 text-sm">No events found for this driver</div>
-                  ) : (
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-gray-200">
-                          <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase">Time</th>
-                          <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase">Event</th>
-                          <th className="px-3 py-2 text-center text-[10px] font-semibold text-gray-500 uppercase">Speed</th>
-                          <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase">Location</th>
+                  {/* Monitoring Categories Table */}
+                  <table className="w-full text-sm mb-6">
+                    <thead>
+                      <tr className="border-b border-gray-200">
+                        <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase">Criterion</th>
+                        <th className="px-3 py-2 text-center text-[10px] font-semibold text-gray-500 uppercase">Weight</th>
+                        <th className="px-3 py-2 text-center text-[10px] font-semibold text-gray-500 uppercase">Incidents</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {[
+                        { label: 'Speeding', count: selectedPerfDriver.speeding_count || 0, weighting: '50%' },
+                        { label: 'Harsh Accelerating', count: selectedPerfDriver.acceleration_count || 0, weighting: '10%' },
+                        { label: 'Harsh Braking', count: selectedPerfDriver.braking_count || 0, weighting: '10%' },
+                        { label: 'Night Time Driving', count: selectedPerfDriver.excessive_night_count || 0, weighting: '10%' },
+                        { label: 'Excessive Day', count: selectedPerfDriver.excessive_day_count || 0, weighting: '10%' },
+                      ].map((cat) => (
+                        <tr key={cat.label} className="hover:bg-gray-50/80">
+                          <td className="px-3 py-2 text-xs font-medium text-gray-900">{cat.label}</td>
+                          <td className="px-3 py-2 text-xs text-center text-gray-600">{cat.weighting}</td>
+                          <td className="px-3 py-2 text-center">
+                            <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold ${cat.count > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-400'}`}>
+                              {cat.count}
+                            </span>
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {driverEvents.map((evt: any, i: number) => (
-                          <tr key={i} className="hover:bg-gray-50/80">
-                            <td className="px-3 py-2 text-xs text-gray-600 whitespace-nowrap">
-                              {evt.gps_time ? new Date(evt.gps_time).toLocaleString('en-ZA', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
-                            </td>
-                            <td className="px-3 py-2 text-xs font-medium text-gray-900">{evt.event_name || '—'}</td>
-                            <td className="px-3 py-2 text-xs text-center text-gray-600">{evt.speed ? `${evt.speed} km/h` : '—'}</td>
-                            <td className="px-3 py-2 text-xs text-gray-500">
-                              {evt.latitude && evt.longitude ? `${Number(evt.latitude).toFixed(4)}, ${Number(evt.longitude).toFixed(4)}` : '—'}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
                 <div className="px-6 py-3 border-t border-gray-200 bg-gray-50/50 rounded-b-2xl">
-                  <p className="text-xs text-gray-500">{driverEvents.length} event{driverEvents.length !== 1 ? 's' : ''}</p>
+                  <p className="text-xs text-gray-500">
+                    Speeding: {selectedPerfDriver.speeding_count || 0} · Accelerating: {selectedPerfDriver.acceleration_count || 0} · Braking: {selectedPerfDriver.braking_count || 0} · Night: {selectedPerfDriver.excessive_night_count || 0} · Day: {selectedPerfDriver.excessive_day_count || 0}
+                  </p>
                 </div>
               </div>
             </div>
           )}
 
-          {activeTab === 'driver-monitoring-config' && (
+          {activeTab === 'driver-monitoring-config' && (() => {
+            const totalSpeeding = driverPerformanceData.reduce((sum: number, d: any) => sum + (d.speeding_count || 0), 0)
+            const totalAccel = driverPerformanceData.reduce((sum: number, d: any) => sum + (d.acceleration_count || 0), 0)
+            const totalBraking = driverPerformanceData.reduce((sum: number, d: any) => sum + (d.braking_count || 0), 0)
+            const totalNight = driverPerformanceData.reduce((sum: number, d: any) => sum + (d.excessive_night_count || 0), 0)
+            const totalDay = driverPerformanceData.reduce((sum: number, d: any) => sum + (d.excessive_day_count || 0), 0)
+            const configRows = [
+              { criterion: 'Speeding', selectedWeight: '50.0', actualWeight: '50.0', riskTiers: 4, incidents: totalSpeeding, statuses: ['Speed Exception 1', 'Speed Exception 2'] },
+              { criterion: 'Harsh Accelerating', selectedWeight: '10.0', actualWeight: '10.0', riskTiers: 4, incidents: totalAccel, statuses: ['Safety - Acceleration - Aggressive', 'Safety - Acceleration - Dangerous'] },
+              { criterion: 'Night Time Driving', selectedWeight: '10.0', actualWeight: '10.0', riskTiers: 4, incidents: totalNight, statuses: [] },
+              { criterion: 'Excessive day', selectedWeight: '10.0', actualWeight: '10.0', riskTiers: 4, incidents: totalDay, statuses: [] },
+              { criterion: 'Harsh Braking', selectedWeight: '10.0', actualWeight: '10.0', riskTiers: 4, incidents: totalBraking, statuses: ['Safety - Braking - Dangerous', 'Safety - Braking - Aggressive'] },
+            ]
+            return (
             <div className="bg-white shadow-sm border border-gray-200 rounded-lg">
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -2406,198 +2430,56 @@ export default function Drivers() {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    <tr className="bg-white hover:bg-cyan-50 transition-colors duration-150">
-                      <td className="px-6 py-4 font-medium text-gray-900 text-sm whitespace-nowrap">
-                        Speeding
-                      </td>
-                      <td className="px-6 py-4 text-gray-900 text-sm whitespace-nowrap">
-                        50.0
-                      </td>
-                      <td className="px-6 py-4 text-gray-900 text-sm whitespace-nowrap">
-                        50.0
-                      </td>
-                      <td className="px-6 py-4 text-gray-900 text-sm whitespace-nowrap">
-                        4
-                      </td>
-                      <td className="px-6 py-4 text-gray-900 text-sm whitespace-nowrap">
-                        <span className="inline-flex items-center bg-red-100 px-2.5 py-0.5 rounded-full font-medium text-red-800 text-xs">
-                          4
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-gray-900 text-sm">
-                        <div className="space-y-1">
-                          <div className="bg-blue-100 px-2 py-1 rounded-md text-blue-800 text-xs">
-                            Speed Exception 1
+                    {configRows.map((row, idx) => (
+                      <tr key={row.criterion} className={idx % 2 === 0 ? 'bg-white hover:bg-cyan-50 transition-colors duration-150' : 'bg-slate-50 hover:bg-cyan-50 transition-colors duration-150'}>
+                        <td className="px-6 py-4 font-medium text-gray-900 text-sm whitespace-nowrap">
+                          {row.criterion}
+                        </td>
+                        <td className="px-6 py-4 text-gray-900 text-sm whitespace-nowrap">
+                          {row.selectedWeight}
+                        </td>
+                        <td className="px-6 py-4 text-gray-900 text-sm whitespace-nowrap">
+                          {row.actualWeight}
+                        </td>
+                        <td className="px-6 py-4 text-gray-900 text-sm whitespace-nowrap">
+                          {row.riskTiers}
+                        </td>
+                        <td className="px-6 py-4 text-gray-900 text-sm whitespace-nowrap">
+                          <span className="inline-flex items-center bg-red-100 px-2.5 py-0.5 rounded-full font-medium text-red-800 text-xs">
+                            {row.incidents}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-gray-900 text-sm">
+                          {row.statuses.length > 0 ? (
+                            <div className="space-y-1">
+                              {row.statuses.map((s) => (
+                                <div key={s} className="bg-blue-100 px-2 py-1 rounded-md text-blue-800 text-xs">
+                                  {s}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 font-medium text-sm whitespace-nowrap">
+                          <div className="flex items-center space-x-2">
+                            <Button
+                              size="sm"
+                              className="bg-emerald-500 hover:bg-emerald-600 shadow-md hover:shadow-lg p-0 rounded-full w-8 h-8 text-white transition-all duration-200"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
                           </div>
-                          <div className="bg-blue-100 px-2 py-1 rounded-md text-blue-800 text-xs">
-                            Speed Exception 2
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 font-medium text-sm whitespace-nowrap">
-                        <div className="flex items-center space-x-2">
-                          <Button
-                            size="sm"
-                            className="bg-emerald-500 hover:bg-emerald-600 shadow-md hover:shadow-lg p-0 rounded-full w-8 h-8 text-white transition-all duration-200"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                    <tr className="bg-slate-50 hover:bg-cyan-50 transition-colors duration-150">
-                      <td className="px-6 py-4 font-medium text-gray-900 text-sm whitespace-nowrap">
-                        Harsh Accelerating
-                      </td>
-                      <td className="px-6 py-4 text-gray-900 text-sm whitespace-nowrap">
-                        10.0
-                      </td>
-                      <td className="px-6 py-4 text-gray-900 text-sm whitespace-nowrap">
-                        10.0
-                      </td>
-                      <td className="px-6 py-4 text-gray-900 text-sm whitespace-nowrap">
-                        4
-                      </td>
-                      <td className="px-6 py-4 text-gray-900 text-sm whitespace-nowrap">
-                        <span className="inline-flex items-center bg-red-100 px-2.5 py-0.5 rounded-full font-medium text-red-800 text-xs">
-                          8
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-gray-900 text-sm">
-                        <div className="space-y-1">
-                          <div className="bg-blue-100 px-2 py-1 rounded-md text-blue-800 text-xs">
-                            Safety - Acceleration - Aggressive
-                          </div>
-                          <div className="bg-blue-100 px-2 py-1 rounded-md text-blue-800 text-xs">
-                            Safety - Acceleration - Dangerous
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 font-medium text-sm whitespace-nowrap">
-                        <div className="flex items-center space-x-2">
-                          <Button
-                            size="sm"
-                            className="bg-emerald-500 hover:bg-emerald-600 shadow-md hover:shadow-lg p-0 rounded-full w-8 h-8 text-white transition-all duration-200"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                    <tr className="bg-white hover:bg-cyan-50 transition-colors duration-150">
-                      <td className="px-6 py-4 font-medium text-gray-900 text-sm whitespace-nowrap">
-                        Night Time Driving
-                      </td>
-                      <td className="px-6 py-4 text-gray-900 text-sm whitespace-nowrap">
-                        10.0
-                      </td>
-                      <td className="px-6 py-4 text-gray-900 text-sm whitespace-nowrap">
-                        10.0
-                      </td>
-                      <td className="px-6 py-4 text-gray-900 text-sm whitespace-nowrap">
-                        4
-                      </td>
-                      <td className="px-6 py-4 text-gray-900 text-sm whitespace-nowrap">
-                        <span className="inline-flex items-center bg-red-100 px-2.5 py-0.5 rounded-full font-medium text-red-800 text-xs">
-                          4
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-gray-900 text-sm">
-                        <span className="text-gray-400">-</span>
-                      </td>
-                      <td className="px-6 py-4 font-medium text-sm whitespace-nowrap">
-                        <div className="flex items-center space-x-2">
-                          <Button
-                            size="sm"
-                            className="bg-emerald-500 hover:bg-emerald-600 shadow-md hover:shadow-lg p-0 rounded-full w-8 h-8 text-white transition-all duration-200"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                    <tr className="bg-slate-50 hover:bg-cyan-50 transition-colors duration-150">
-                      <td className="px-6 py-4 font-medium text-gray-900 text-sm whitespace-nowrap">
-                        Excessive day
-                      </td>
-                      <td className="px-6 py-4 text-gray-900 text-sm whitespace-nowrap">
-                        10.0
-                      </td>
-                      <td className="px-6 py-4 text-gray-900 text-sm whitespace-nowrap">
-                        10.0
-                      </td>
-                      <td className="px-6 py-4 text-gray-900 text-sm whitespace-nowrap">
-                        4
-                      </td>
-                      <td className="px-6 py-4 text-gray-900 text-sm whitespace-nowrap">
-                        <span className="inline-flex items-center bg-red-100 px-2.5 py-0.5 rounded-full font-medium text-red-800 text-xs">
-                          15
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-gray-900 text-sm">
-                        <span className="text-gray-400">-</span>
-                      </td>
-                      <td className="px-6 py-4 font-medium text-sm whitespace-nowrap">
-                        <div className="flex items-center space-x-2">
-                          <Button
-                            size="sm"
-                            className="bg-emerald-500 hover:bg-emerald-600 shadow-md hover:shadow-lg p-0 rounded-full w-8 h-8 text-white transition-all duration-200"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                    <tr className="bg-white hover:bg-cyan-50 transition-colors duration-150">
-                      <td className="px-6 py-4 font-medium text-gray-900 text-sm whitespace-nowrap">
-                        Harsh Braking
-                      </td>
-                      <td className="px-6 py-4 text-gray-900 text-sm whitespace-nowrap">
-                        10.0
-                      </td>
-                      <td className="px-6 py-4 text-gray-900 text-sm whitespace-nowrap">
-                        10.0
-                      </td>
-                      <td className="px-6 py-4 text-gray-900 text-sm whitespace-nowrap">
-                        4
-                      </td>
-                      <td className="px-6 py-4 text-gray-900 text-sm whitespace-nowrap">
-                        <span className="inline-flex items-center bg-red-100 px-2.5 py-0.5 rounded-full font-medium text-red-800 text-xs">
-                          20
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-gray-900 text-sm">
-                        <div className="space-y-1">
-                          <div className="bg-blue-100 px-2 py-1 rounded-md text-blue-800 text-xs">
-                            Safety - Braking - Dangerous
-                          </div>
-                          <div className="bg-blue-100 px-2 py-1 rounded-md text-blue-800 text-xs">
-                            Safety - Braking - Aggressive
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 font-medium text-sm whitespace-nowrap">
-                        <div className="flex items-center space-x-2">
-                          <Button
-                            size="sm"
-                            className="bg-emerald-500 hover:bg-emerald-600 shadow-md hover:shadow-lg p-0 rounded-full w-8 h-8 text-white transition-all duration-200"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            className="bg-cyan-500 hover:bg-cyan-600 shadow-md hover:shadow-lg p-0 rounded-full w-8 h-8 text-white transition-all duration-200"
-                          >
-                            <Plus className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
             </div>
-          )}
+            )
+          })()}
 
           {activeTab === 'exec-dash' && (
             <ExecDashTab />
