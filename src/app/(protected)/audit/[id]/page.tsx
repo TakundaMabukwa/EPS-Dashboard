@@ -19,6 +19,7 @@ export default function AuditTripDetailPage() {
   const [data, setData] = useState<any>(null)
   const [driver, setDriver] = useState<any>(null)
   const [error, setError] = useState('')
+  const [tab, setTab] = useState<'planned' | 'actual'>('planned')
 
   useEffect(() => {
     const load = async () => {
@@ -47,22 +48,22 @@ export default function AuditTripDetailPage() {
   if (error) return <div className="flex min-h-screen items-center justify-center text-lg text-red-500">{error}</div>
   if (!data) return <div className="flex min-h-screen items-center justify-center text-lg text-gray-500">No data found</div>
 
-  const rate = toNum(data.rate)
+  const d = tab === 'planned' ? data.planned : data.actual
+  const rate = d?.sellingRatePerKm || 0
   const hasRate = rate > 0
-  const distance = data.distance
-  const fuel = data.fuel
-  const fixed = data.fixed
-  const labour = data.labour
-  const totalCost = data.totalCost || 0
-  const cpk = data.costPerKm || 0
-  const profitLoss = hasRate ? rate - totalCost : 0
+  const distance = d?.distance || 0
+  const totalCost = d?.totalCost || 0
+  const cpk = d?.costPerKm || 0
+  const revenue = d?.revenue || 0
+  const profitLoss = d?.profit || 0
 
-  const costBreakdown = [
-    { label: 'Diesel', value: fuel.totalCost, color: '#e74c3c', detail: `${fmtInt(fuel.litres)}L × R${fmt(fuel.pricePerLitre)}` },
-    { label: 'Fixed', value: fixed.totalCost, color: '#1abc9c', detail: `R${fmtInt(fixed.monthly)}/mo ÷ 25 × ${fixed.tripDays}d` },
-    { label: 'Loading', value: labour.loading, color: '#e67e22', detail: '2 workers × 2hrs × R45' },
-    { label: 'Packing', value: labour.packing, color: '#34495e', detail: '2 workers × 2hrs × R45' },
-  ].filter(c => c.value > 0)
+  const costBreakdown = d ? [
+    { label: 'Driver', value: d.driverCost, color: '#3b82f6', detail: `${d.tripDays} days × R${fmt(23453.14 / 25 / d.tripDays * d.tripDays)}` },
+    { label: 'Fixed - Asset', value: d.fixedAssetCost, color: '#1abc9c', detail: `R${fmt(d.fixedAssetCost / d.tripDays)}/day × ${d.tripDays}d` },
+    { label: 'Fuel', value: d.fuelCost, color: '#e74c3c', detail: `R${fmt(d.fuelLinkRate)}/km × ${fmtInt(distance)}km` },
+    { label: 'R&M', value: d.rmCost, color: '#e67e22', detail: `R${fmt(d.rmRatePerKm)}/km × ${fmtInt(distance)}km` },
+    ...(d.crossBorderCost > 0 ? [{ label: 'Cross Border', value: d.crossBorderCost, color: '#9b59b6', detail: 'One-time trip charge' }] : []),
+  ].filter(c => c.value > 0) : []
 
   const pieTotal = costBreakdown.reduce((s, c) => s + c.value, 0)
   let cumAngle = -90
@@ -101,6 +102,28 @@ export default function AuditTripDetailPage() {
             </span>
           </div>
         </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 rounded-lg border border-gray-200 bg-white p-1 w-fit">
+        <button
+          onClick={() => setTab('planned')}
+          className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+            tab === 'planned' ? 'bg-[#001e42] text-white' : 'text-gray-600 hover:bg-gray-100'
+          }`}
+        >
+          <CheckCircle className="h-4 w-4" />
+          Planned
+        </button>
+        <button
+          onClick={() => setTab('actual')}
+          className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+            tab === 'actual' ? 'bg-[#001e42] text-white' : 'text-gray-600 hover:bg-gray-100'
+          }`}
+        >
+          <Fuel className="h-4 w-4" />
+          Actual
+        </button>
       </div>
 
       {/* Top Row - 4 Stats */}
@@ -175,19 +198,21 @@ export default function AuditTripDetailPage() {
             <span className="text-sm font-medium text-gray-700">Cost Per KM</span>
           </div>
           <div className="mb-3">
-            <span className="text-4xl font-bold text-gray-900">{distance.km > 0 ? `R${fmt(cpk)}` : '—'}</span>
+            <span className="text-4xl font-bold text-gray-900">{distance > 0 ? `R${fmt(cpk)}` : '—'}</span>
           </div>
           <div className="space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-xs text-gray-600">Distance</span>
-              <span className="text-xs font-semibold text-gray-900">{distance.km > 0 ? `${fmtInt(distance.km)} km` : '—'}</span>
+              <span className="text-xs font-semibold text-gray-900">{distance > 0 ? `${fmtInt(distance)} km` : '—'}</span>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-gray-600">Source</span>
-              <span className={`text-xs font-semibold ${distance.source !== 'none' ? 'text-emerald-600' : 'text-gray-400'}`}>
-                {distance.source === 'mapbox' ? 'Mapbox' : distance.source === 'trip_report' ? 'Trip Report' : 'No data'}
-              </span>
-            </div>
+            {tab === 'actual' && (
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-600">Source</span>
+                <span className={`text-xs font-semibold ${d?.distanceSource !== 'none' ? 'text-emerald-600' : 'text-gray-400'}`}>
+                  {d?.distanceSource === 'mapbox' ? 'Mapbox' : d?.distanceSource === 'trip_report' ? 'Trip Report' : 'No data'}
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -200,7 +225,7 @@ export default function AuditTripDetailPage() {
           <div className="mb-1">
             {hasRate ? (
               <span className="text-3xl font-bold text-gray-900">
-                <span className="text-lg">R</span><RollingNumber value={rate} />
+                <span className="text-lg">R</span><RollingNumber value={revenue} />
               </span>
             ) : (
               <span className="text-3xl font-bold text-gray-400">—</span>
@@ -281,17 +306,17 @@ export default function AuditTripDetailPage() {
             </div>
             <div className="flex items-center justify-between border-b border-gray-100 pb-1.5 text-xs">
               <span className="text-gray-500">Distance</span>
-              <span className="font-bold text-gray-900">{distance.km > 0 ? `${fmtInt(distance.km)} km` : '—'}</span>
+              <span className="font-bold text-gray-900">{distance > 0 ? `${fmtInt(distance)} km` : '—'}</span>
             </div>
-            {distance.durationHours > 0 && (
+            {tab === 'actual' && d?.durationHours > 0 && (
               <div className="flex items-center justify-between border-b border-gray-100 pb-1.5 text-xs">
                 <span className="text-gray-500">Drive Time</span>
-                <span className="font-bold text-gray-900">{distance.durationHours.toFixed(1)} hrs</span>
+                <span className="font-bold text-gray-900">{d.durationHours.toFixed(1)} hrs</span>
               </div>
             )}
             <div className="flex items-center justify-between border-b border-gray-100 pb-1.5 text-xs">
               <span className="text-gray-500">Trip Days</span>
-              <span className="font-bold text-gray-900">{fixed.tripDays}</span>
+              <span className="font-bold text-gray-900">{d?.tripDays || '—'}</span>
             </div>
             <div className="flex items-center justify-between text-xs">
               <span className="text-gray-500">Total Cost</span>
@@ -337,7 +362,7 @@ export default function AuditTripDetailPage() {
               <div className="border-t border-gray-200 pt-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase text-gray-700">Revenue</span>
-                  <span className="text-sm font-black text-gray-900">R{fmt(rate)}</span>
+                  <span className="text-sm font-black text-gray-900">R{fmt(revenue)}</span>
                 </div>
                 <div className="flex items-center justify-between mt-1">
                   <span className="text-xs font-bold uppercase text-gray-700">Profit / Loss</span>

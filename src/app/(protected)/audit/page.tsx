@@ -490,7 +490,7 @@ export default function AuditPage() {
                           size="sm"
                           variant="outline"
                           className="h-7 px-2 text-xs"
-                          onClick={() => router.push(`/audit/${record.id}`)}
+                          onClick={() => router.push(`/audit/${record.trip_id}`)}
                         >
                           View
                         </Button>

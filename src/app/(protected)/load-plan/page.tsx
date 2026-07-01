@@ -109,6 +109,7 @@ export default function LoadPlanPage() {
   const [fuelMonths, setFuelMonths] = useState<{ month_label: string; link_rate: number }[]>([])
   const [fuelMonthLabel, setFuelMonthLabel] = useState('')
   const [fuelLinkRate, setFuelLinkRate] = useState(0)
+  const [sellingRatePerKm, setSellingRatePerKm] = useState('')
   const [costBreakdown, setCostBreakdown] = useState<any>({ driverCost: 0, fixedAssetCost: 0, fuelCost: 0, rmCost: 0, crossBorderCost: 0, totalCost: 0, tripDays: 0 })
   const [detectedVehicleType, setDetectedVehicleType] = useState('')
   const [vehicleTypeNotFound, setVehicleTypeNotFound] = useState(false)
@@ -1444,6 +1445,7 @@ export default function LoadPlanPage() {
         }).filter(Boolean),
         selected_vehicle_type: selectedVehicleType,
         estimated_distance: estimatedDistance,
+        estimated_duration: optimizedRoute?.route?.duration || optimizedRoute?.duration || 0,
         // Cost engine data
         driver_cost: costBreakdown?.driverCost || 0,
         fuel_cost: costBreakdown?.fuelCost || 0,
@@ -1454,6 +1456,8 @@ export default function LoadPlanPage() {
         diesel_rate: fuelLinkRate || 0,
         fixed_cost: costBreakdown?.fixedAssetCost || 0,
         cost_per_km: costBreakdown?.totalCost && estimatedDistance ? Math.round((costBreakdown.totalCost / estimatedDistance) * 100) / 100 : 0,
+        selling_rate_per_km: Number(sellingRatePerKm) || 0,
+        trip_days: tripDays || 0,
         progress_stops: DEFAULT_PROGRESS_STOPS
           .filter(s => selectedStops.has(s.value))
           .map((s, i) => ({ order: i + 1, label: s.label, value: s.value, isComplete: false }))
@@ -1496,7 +1500,6 @@ export default function LoadPlanPage() {
       setTripType('local')
       setStopPoints([])
       setCustomStopPoints([])
-      setGoodsInTransitPremium('')
       setSelectedVehicleType('')
       setSelectedStops(new Set())
       setUseDefaultStops(false)
@@ -1955,7 +1958,7 @@ export default function LoadPlanPage() {
                     ) : (
 
                     <>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-3 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="fuelMonth" className="text-sm font-medium text-slate-700">Fuel Month</Label>
                         <select
@@ -1970,6 +1973,20 @@ export default function LoadPlanPage() {
                             </option>
                           ))}
                         </select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="sellingRate" className="text-sm font-medium text-slate-700">Rate (R) *</Label>
+                        <Input
+                          id="sellingRate"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          required
+                          placeholder="e.g. 4000"
+                          value={sellingRatePerKm}
+                          onChange={(e) => setSellingRatePerKm(e.target.value)}
+                        />
                       </div>
 
                       <div className="space-y-2">
@@ -2012,6 +2029,20 @@ export default function LoadPlanPage() {
                             <span className="font-bold">TOTAL COST</span>
                             <span className="font-bold">R{costBreakdown.totalCost.toFixed(2)}</span>
                           </div>
+                          {sellingRatePerKm && Number(sellingRatePerKm) > 0 && (
+                            <>
+                              <div className="border-t pt-2 mt-2 flex justify-between">
+                                <span className="font-bold">REVENUE</span>
+                                <span className="font-bold">R{Number(sellingRatePerKm).toFixed(2)}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className={`font-bold ${(Number(sellingRatePerKm) - costBreakdown.totalCost) >= 0 ? 'text-green-600' : 'text-red-600'}`}>PROFIT</span>
+                                <span className={`font-bold ${(Number(sellingRatePerKm) - costBreakdown.totalCost) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                  R{(Number(sellingRatePerKm) - costBreakdown.totalCost).toFixed(2)}
+                                </span>
+                              </div>
+                            </>
+                          )}
                         </div>
                       </div>
                     )}

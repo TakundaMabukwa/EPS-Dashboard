@@ -1,30 +1,15 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { resolveProfileKey, VEHICLE_COST_PROFILES, WORKING_DAYS_PER_MONTH } from '@/lib/cost-engine'
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || ''
 const ROUTING_URL = process.env.NEXT_PUBLIC_ROUTING || 'http://164.90.217.196:8800/'
-
-const PROFILES: Record<string, { fixed_monthly: number }> = {
-  TAUTLINER: { fixed_monthly: 28000 },
-  '14METER': { fixed_monthly: 22000 },
-  REEFER: { fixed_monthly: 22000 },
-  '9METER': { fixed_monthly: 16000 },
-  '8TON': { fixed_monthly: 13620 },
-  '1TON': { fixed_monthly: 2500 },
-}
-
-const VEHICLE_TYPE_MAP: Record<string, string> = {
-  TR14M: '14METER', TRS9M: '9METER', TRTR: 'TAUTLINER', TRFLT: 'TAUTLINER',
-  TRFLP: 'TAUTLINER', TRRLT: 'REEFER', TRRLP: 'REEFER', R8T: '8TON',
-  R5T: '5TON', LDV: '1TON', VFD: 'VOLUMAX', vehicle: '14METER',
-}
-
-const DIESEL_PRICE_PER_LITRE = 23.50
+const DRIVER_MONTHLY_SALARY = 23453.14
+const DAILY_DRIVER_COST = DRIVER_MONTHLY_SALARY / WORKING_DAYS_PER_MONTH
 
 async function geocode(query: string): Promise<[number, number] | null> {
   if (!MAPBOX_TOKEN || !query) return null
-  // Ensure "South Africa" is in the query for better accuracy
   const enriched = query.toLowerCase().includes('south africa') || query.toLowerCase().includes(', za')
     ? query
     : `${query}, South Africa`
@@ -40,18 +25,11 @@ async function geocode(query: string): Promise<[number, number] | null> {
   return null
 }
 
-async function getDrivingDistance(
-  origin: string,
-  destination: string
-): Promise<{ distanceKm: number; durationHours: number } | null> {
+async function getDrivingDistance(origin: string, destination: string) {
   if (!MAPBOX_TOKEN || !origin || !destination) return null
   try {
-    const [originCoords, destCoords] = await Promise.all([
-      geocode(origin),
-      geocode(destination),
-    ])
+    const [originCoords, destCoords] = await Promise.all([geocode(origin), geocode(destination)])
     if (!originCoords || !destCoords) return null
-
     const res = await fetch(
       `https://api.mapbox.com/directions/v5/mapbox/driving/${originCoords[0]},${originCoords[1]};${destCoords[0]},${destCoords[1]}?access_token=${MAPBOX_TOKEN}`
     )
@@ -83,6 +61,27 @@ async function getTripReport(tripId: string) {
   return null
 }
 
+function recalcCost(profileKey: string, distanceKm: number, tripDays: number, fuelLinkRate: number) {
+  const profile = VEHICLE_COST_PROFILES[profileKey]
+  if (!profile) return null
+
+  const driverCost = Math.round(DAILY_DRIVER_COST * tripDays * 100) / 100
+  const monthlyFixed = profile.truckHp + profile.tracking + profile.truckLicence + profile.truckInsurance +
+    profile.trailerHp + profile.trailerLicence + profile.trailerInsurance + profile.admin
+  const fixedAssetCost = Math.round((monthlyFixed / WORKING_DAYS_PER_MONTH) * tripDays * 100) / 100
+  const fuelCost = Math.round(fuelLinkRate * distanceKm * 100) / 100
+  const rmRatePerKm = profile.repairs + profile.breakdowns + profile.tolls + profile.driverOt
+  const rmCost = Math.round(rmRatePerKm * distanceKm * 100) / 100
+  const crossBorderCost = profile.crossBorder
+  const totalCost = Math.round((driverCost + fixedAssetCost + fuelCost + rmCost + crossBorderCost) * 100) / 100
+
+  return {
+    driverCost, fixedAssetCost, fuelCost, rmCost, crossBorderCost, totalCost,
+    costPerKm: distanceKm > 0 ? Math.round((totalCost / distanceKm) * 100) / 100 : 0,
+    tripDays, rmRatePerKm: Math.round(rmRatePerKm * 100) / 100,
+  }
+}
+
 export async function GET(_request: Request, { params }: { params: Promise<{ tripId: string }> }) {
   try {
     const { tripId } = await params
@@ -93,64 +92,74 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tri
       { cookies: { getAll() { return cookieStore.getAll() }, setAll() {} } }
     )
 
-    let { data: trip } = await supabase.from('trips').select('*').eq('id', Number(tripId)).single()
-
-    if (!trip) {
-      const { data: auditRec } = await supabase.from('audit').select('trip_id').eq('id', Number(tripId)).single()
-      if (auditRec?.trip_id) {
-        const { data: t } = await supabase.from('trips').select('*').eq('trip_id', auditRec.trip_id).single()
-        trip = t
-      }
-    }
+    let { data: trip } = await supabase.from('trips').select('*').eq('trip_id', tripId).single()
 
     if (!trip) {
       return NextResponse.json({ error: 'Trip not found' }, { status: 404 })
     }
-
-    let vehicleType = 'vehicle'
-    const va = trip.vehicleassignments || trip.vehicle_assignments || {}
-    const vaParsed = typeof va === 'string' ? JSON.parse(va) : va
-    const vehicleId = vaParsed?.vehicle?.id
-    if (vehicleId) {
-      const { data: v } = await supabase.from('vehiclesc').select('vehicle_type').eq('id', vehicleId).single()
-      if (v?.vehicle_type) vehicleType = v.vehicle_type
-    }
-
-    const profileName = VEHICLE_TYPE_MAP[vehicleType] || '14METER'
-    const profile = PROFILES[profileName] || PROFILES['14METER']
-
-    // Fetch both in parallel — Mapbox for distance, trip report for fuel
-    const [mapboxResult, tripReport] = await Promise.all([
-      getDrivingDistance(trip.origin || '', trip.destination || ''),
-      getTripReport(trip.trip_id || ''),
-    ])
-
-    // Distance: Mapbox first, then trip report, then nothing
-    const distanceKm = mapboxResult?.distanceKm || tripReport?.distanceKm || 0
-    const distanceSource = mapboxResult ? 'mapbox' : tripReport ? 'trip_report' : 'none'
-    const durationHours = mapboxResult?.durationHours || tripReport?.durationHours || 0
-
-    // Fuel always from trip report (actual litres)
-    const fuelLitres = tripReport?.fuelLitres || 0
-    const dieselCost = fuelLitres > 0 ? fuelLitres * DIESEL_PRICE_PER_LITRE : 0
-
-    // Fixed cost
-    const tripDays = Math.max(1, Math.ceil(distanceKm / 600))
-    const fixedDaily = profile.fixed_monthly / 25
-    const fixedCost = fixedDaily * tripDays
-
-    // Loading/packing
-    const loadingCost = 2 * 2 * 45
-    const packingCost = 2 * 2 * 45
-
-    // Total
-    const totalCost = dieselCost + fixedCost + loadingCost + packingCost
 
     let clientName = trip.selectedclient || trip.selected_client || ''
     const cd = trip.clientdetails || trip.client_details
     if (!clientName && cd) {
       try { clientName = (typeof cd === 'string' ? JSON.parse(cd) : cd)?.name || '' } catch {}
     }
+
+    // ── PLANNED: read directly from trips table (stored at load creation) ──
+    const planned = {
+      driverCost: Number(trip.driver_cost) || 0,
+      fixedAssetCost: Number(trip.fixed_cost) || 0,
+      fuelCost: Number(trip.fuel_cost) || 0,
+      rmCost: Number(trip.maintenance_cost) || 0,
+      crossBorderCost: Number(trip.cross_border_cost) || 0,
+      totalCost: Number(trip.total_trip_cost) || 0,
+      costPerKm: Number(trip.cost_per_km) || 0,
+      distance: Number(trip.estimated_distance) || 0,
+      duration: Number(trip.estimated_duration) || 0,
+      tripDays: Number(trip.trip_days) || 0,
+      fuelLinkRate: Number(trip.diesel_rate) || 0,
+      rmRatePerKm: 0,
+      profileUsed: trip.profile_used || '',
+      sellingRatePerKm: Number(trip.selling_rate_per_km) || 0,
+      revenue: Number(trip.selling_rate_per_km) || 0,
+      profit: (Number(trip.selling_rate_per_km) || 0) - (Number(trip.total_trip_cost) || 0),
+    }
+
+    if (planned.distance > 0 && planned.rmCost > 0) {
+      planned.rmRatePerKm = Math.round((planned.rmCost / planned.distance) * 100) / 100
+    }
+
+    // ── ACTUAL: fetch real distance, recalculate with same formulas ──
+    const [mapboxResult, tripReport] = await Promise.all([
+      getDrivingDistance(trip.origin || '', trip.destination || ''),
+      getTripReport(trip.trip_id || ''),
+    ])
+
+    const actualDistanceKm = mapboxResult?.distanceKm || tripReport?.distanceKm || 0
+    const distanceSource = mapboxResult ? 'mapbox' : tripReport ? 'trip_report' : 'none'
+    const durationHours = mapboxResult?.durationHours || tripReport?.durationHours || 0
+    const fuelLitres = tripReport?.fuelLitres || 0
+
+    const actualTripDays = durationHours > 0
+      ? Math.max(0.5, Math.ceil((durationHours / 8) * 2) / 2)
+      : planned.tripDays
+
+    const profileKey = resolveProfileKey(trip.profile_used || '') || resolveProfileKey('vehicle')
+    const actualCalc = profileKey && actualDistanceKm > 0
+      ? recalcCost(profileKey, actualDistanceKm, actualTripDays, planned.fuelLinkRate)
+      : null
+
+    const actual = actualCalc ? {
+      ...actualCalc,
+      distance: actualDistanceKm,
+      distanceSource,
+      durationHours,
+      fuelLitres,
+      fuelLinkRate: planned.fuelLinkRate,
+      profileUsed: trip.profile_used || '',
+      sellingRatePerKm: planned.sellingRatePerKm,
+      revenue: planned.sellingRatePerKm,
+      profit: planned.sellingRatePerKm - actualCalc.totalCost,
+    } : null
 
     return NextResponse.json({
       ok: true,
@@ -160,30 +169,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tri
         cargo: trip.cargo, cargoWeight: trip.cargo_weight, clientName,
         rate: trip.rate, startDate: trip.startdate || trip.start_date,
         endDate: trip.end_date || trip.enddate,
-        vehicleType, driver: trip.driver,
-        distance: {
-          km: distanceKm,
-          source: distanceSource,
-          durationHours,
-        },
-        fuel: {
-          litres: fuelLitres,
-          pricePerLitre: DIESEL_PRICE_PER_LITRE,
-          totalCost: Math.round(dieselCost * 100) / 100,
-        },
-        fixed: {
-          monthly: profile.fixed_monthly,
-          daily: Math.round(fixedDaily * 100) / 100,
-          tripDays,
-          totalCost: Math.round(fixedCost * 100) / 100,
-        },
-        labour: {
-          loading: loadingCost,
-          packing: packingCost,
-          total: loadingCost + packingCost,
-        },
-        totalCost: Math.round(totalCost * 100) / 100,
-        costPerKm: distanceKm > 0 ? Math.round((totalCost / distanceKm) * 100) / 100 : 0,
+        vehicleType: trip.selected_vehicle_type || '', driver: trip.driver,
+        estimatedDuration: Number(trip.estimated_duration) || 0,
+        planned,
+        actual,
       }
     })
   } catch (error) {
