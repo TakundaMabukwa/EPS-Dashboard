@@ -1023,8 +1023,11 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
       effectiveStatus = lastRecorded.status?.toLowerCase() || effectiveStatus
     }
 
-    // Use trip's progress_stops as the single source
-    const tripStops = trip.progress_stops || []
+    // Use trip's progress_stops as the single source, always prepend Pending
+    let tripStops = trip.progress_stops || []
+    if (!tripStops.some((s: any) => s.value === 'pending')) {
+      tripStops = [{ order: 0, label: 'Pending', value: 'pending', isComplete: false }, ...tripStops]
+    }
 
     // Build timestamp map from stops_data and recorded order
     const timestampMap: Record<string, string> = {}
@@ -1035,25 +1038,23 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
       if (s && entry.timestamp) timestampMap[s] = entry.timestamp
     }
 
-    // Calculate elapsed from timestamps: time between this stop and the next
+    // Calculate elapsed from timestamps: time to get from previous stop to this one
     const elapsedFromTimestamps: Record<string, number> = {}
     for (let i = 0; i < recordedOrder.length; i++) {
       const currentStatus = recordedOrder[i]
       const currentTs = timestampMap[currentStatus]
       if (!currentTs) continue
-      if (i < recordedOrder.length - 1) {
-        // Completed stop: elapsed = next stop's timestamp - this stop's timestamp
-        const nextTs = timestampMap[recordedOrder[i + 1]]
-        if (nextTs) {
+      if (i > 0) {
+        // Elapsed = this stop's timestamp - previous stop's timestamp
+        const prevTs = timestampMap[recordedOrder[i - 1]]
+        if (prevTs) {
           elapsedFromTimestamps[currentStatus] = Math.floor(
-            (new Date(nextTs).getTime() - new Date(currentTs).getTime()) / 1000
+            (new Date(currentTs).getTime() - new Date(prevTs).getTime()) / 1000
           )
         }
       } else {
-        // Current (last) stop: elapsed = now - this stop's timestamp
-        elapsedFromTimestamps[currentStatus] = Math.floor(
-          (Date.now() - new Date(currentTs).getTime()) / 1000
-        )
+        // First stop: elapsed = 0 (start point)
+        elapsedFromTimestamps[currentStatus] = 0
       }
     }
 
@@ -1065,13 +1066,14 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
       ? Math.floor((Date.now() - new Date(timestampMap[effectiveStatus]).getTime()) / 1000)
       : 0
 
-    // Always order by progress_stops order (Pending = 1 always first)
-    const orderedStatuses = [...tripStops].sort((a: any, b: any) => (a.order || 0) - (b.order || 0))
+    // Order is fixed from progress_stops — never sort
+    const orderedStatuses = [...tripStops]
 
     // Build base waypoints in the dynamic order
     const baseWaypoints = orderedStatuses.map((status: any, index: number) => ({
       position: (index / (orderedStatuses.length - 1)) * 100,
       label: status.label,
+      value: status.value,
       completed: status.isComplete === true || (recordedOrder.includes(status.value) && status.value !== effectiveStatus),
       current: status.value === effectiveStatus,
       isStop: false,
@@ -1079,6 +1081,7 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
       isCurrent: status.value === effectiveStatus,
       currentElapsed: status.value === effectiveStatus ? currentElapsed : null,
       coords: coordsMap[status.value] || null,
+      recordedTimestamp: timestampMap[status.value] || null,
     }))
 
     // Insert stops between Loading (index 4) and On Trip (index 5)
@@ -1093,10 +1096,12 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
       const stopWaypoints = stops.map((stop: any, index: number) => ({
         position: loadingPos + (stopSpacing * (index + 1)),
         label: `Stop ${index + 1}`,
+        value: `stop-${index + 1}`,
         completed: recordedOrder.includes('loading') && !recordedOrder.includes('on-trip'),
         current: false,
         isStop: true,
-        stopId: stop
+        stopId: stop,
+        recordedTimestamp: null,
       }))
 
       // Rebuild base waypoints with adjusted positions for stops after loading
@@ -1464,7 +1469,20 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
               <div key={index} className="flex flex-col items-center relative">
               {/* Elapsed time — absolutely positioned so it never shifts the circles */}
               <div className="absolute -top-5 left-1/2 -translate-x-1/2 h-4 flex items-end justify-center">
-              {waypoint.completed && waypoint.elapsedSeconds !== null && (() => {
+              {waypoint.recordedTimestamp && (() => {
+                const ts = new Date(waypoint.recordedTimestamp)
+                const timeStr = `${ts.getHours().toString().padStart(2, '0')}:${ts.getMinutes().toString().padStart(2, '0')}`
+                return (
+                <span className={cn(
+                  "text-[9px] whitespace-nowrap font-medium",
+                  waypoint.current ? "text-blue-600 font-semibold" :
+                  waypoint.completed ? "text-emerald-600" : "text-gray-500"
+                )}>
+                  {timeStr}
+                </span>
+                )
+              })()}
+              {!waypoint.recordedTimestamp && waypoint.completed && waypoint.elapsedSeconds !== null && (() => {
                 const expected = getExpectedDuration(waypoint.value, trip)
                 const color = getElapsedColor(waypoint.elapsedSeconds, expected)
                 return (
@@ -1478,7 +1496,7 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
                 </span>
                 )
               })()}
-              {waypoint.isCurrent && waypoint.currentElapsed !== null && (() => {
+              {!waypoint.recordedTimestamp && waypoint.isCurrent && waypoint.currentElapsed !== null && (() => {
                 const expected = getExpectedDuration(waypoint.value, trip)
                 const color = getElapsedColor(waypoint.currentElapsed, expected)
                 return (
@@ -1834,7 +1852,10 @@ function TripReportsSection() {
                 <CardContent className="pt-0">
                   {(() => {
                     const stopsData = trip.stops_data || []
-                    const WORKFLOW = trip.progress_stops || []
+                    let WORKFLOW = trip.progress_stops || []
+                    if (!WORKFLOW.some((s: any) => s.value === 'pending')) {
+                      WORKFLOW = [{ order: 0, label: 'Pending', value: 'pending', isComplete: false }, ...WORKFLOW]
+                    }
                     const timestampMap: Record<string, string> = {}
                     const recordedOrder: string[] = []
                     for (const entry of stopsData) {
@@ -1882,14 +1903,14 @@ function TripReportsSection() {
                       const c = getElapsedColor(secs, expected)
                       return c === 'red' ? 'Overdue' : c === 'orange' ? 'Delayed' : 'On Time'
                     }
-                    // Always order by progress_stops order (Pending = 1 always first)
+                    // Order is fixed from progress_stops — never sort
                     const wpData = WORKFLOW.map((w: any) => ({
                       ...w,
                       completed: w.isComplete === true || (recordedOrder.includes(w.value) && w.value !== trip.status?.toLowerCase()),
                       current: w.value === trip.status?.toLowerCase(),
                       elapsed: recordedOrder.includes(w.value) ? (elapsedFromTimestamps[w.value] ?? null) : null,
                       timestamp: recordedOrder.includes(w.value) ? (timestampMap[w.value] ?? null) : null,
-                    })).sort((a: any, b: any) => (a.order || 0) - (b.order || 0))
+                    }))
                     return (
                     <div className="bg-white rounded-xl border border-slate-200 p-5 mb-4">
                       {/* Header */}
@@ -1939,7 +1960,17 @@ function TripReportsSection() {
                               <div key={i} className="flex flex-col items-center relative">
                                 {/* Elapsed time — absolutely positioned above */}
                                 <div className="absolute -top-5 left-1/2 -translate-x-1/2 h-4 flex items-end justify-center">
-                                  {wp.elapsed !== null && wp.elapsed > 0 && (() => {
+                                  {wp.timestamp ? (() => {
+                                    const ts = new Date(wp.timestamp)
+                                    const timeStr = `${ts.getHours().toString().padStart(2, '0')}:${ts.getMinutes().toString().padStart(2, '0')}`
+                                    return (
+                                    <span className={cn(
+                                      "text-[9px] whitespace-nowrap font-medium",
+                                      wp.current ? "text-blue-600 font-semibold" :
+                                      wp.completed ? "text-emerald-600" : "text-gray-500"
+                                    )}>{timeStr}</span>
+                                    )
+                                  })() : wp.elapsed !== null && wp.elapsed > 0 && (() => {
                                     const expected = getExpectedDuration(wp.value, trip)
                                     const color = getElapsedColor(wp.elapsed, expected)
                                     return (
