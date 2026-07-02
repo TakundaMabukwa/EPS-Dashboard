@@ -2000,51 +2000,45 @@ export default function LoadPlanPage() {
                     </div>
 
                     {/* Cost Breakdown */}
-                    {costBreakdown && (
-                      <div className="bg-gray-50 p-4 rounded-lg">
-                        <h4 className="font-medium mb-3">COST B/D</h4>
-                        <div className="space-y-2 text-sm">
-                          <div className="flex justify-between">
-                            <span>DRIVER</span>
-                            <span className="font-medium">R{costBreakdown.driverCost.toFixed(2)} <span className="text-muted-foreground">({costBreakdown.tripDays} DAYS)</span></span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>FIXED - ASSET</span>
-                            <span className="font-medium">R{costBreakdown.fixedAssetCost.toFixed(2)} <span className="text-muted-foreground">({costBreakdown.tripDays} DAYS)</span></span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>FUEL</span>
-                            <span className="font-medium">R{costBreakdown.fuelCost.toFixed(2)}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>R&M</span>
-                            <span className="font-medium">R{costBreakdown.rmCost.toFixed(2)} <span className="text-muted-foreground">CPK</span></span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>CROSS BORDER</span>
-                            <span className="font-medium">R{costBreakdown.crossBorderCost.toFixed(2)}</span>
-                          </div>
-                          <div className="border-t pt-2 mt-2 flex justify-between">
-                            <span className="font-bold">TOTAL COST</span>
-                            <span className="font-bold">R{costBreakdown.totalCost.toFixed(2)}</span>
-                          </div>
-                          {sellingRatePerKm && Number(sellingRatePerKm) > 0 && (
-                            <>
-                              <div className="border-t pt-2 mt-2 flex justify-between">
-                                <span className="font-bold">REVENUE</span>
-                                <span className="font-bold">R{Number(sellingRatePerKm).toFixed(2)}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className={`font-bold ${(Number(sellingRatePerKm) - costBreakdown.totalCost) >= 0 ? 'text-green-600' : 'text-red-600'}`}>PROFIT</span>
-                                <span className={`font-bold ${(Number(sellingRatePerKm) - costBreakdown.totalCost) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                  R{(Number(sellingRatePerKm) - costBreakdown.totalCost).toFixed(2)}
-                                </span>
-                              </div>
-                            </>
-                          )}
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <h4 className="font-medium mb-3">COST B/D</h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span>DRIVER</span>
+                          <span className="font-medium">{costBreakdown ? `R${costBreakdown.driverCost.toFixed(2)} (${costBreakdown.tripDays} DAYS)` : '—'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>FIXED - ASSET</span>
+                          <span className="font-medium">{costBreakdown ? `R${costBreakdown.fixedAssetCost.toFixed(2)} (${costBreakdown.tripDays} DAYS)` : '—'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>FUEL</span>
+                          <span className="font-medium">{costBreakdown ? `R${costBreakdown.fuelCost.toFixed(2)}` : '—'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>R&M</span>
+                          <span className="font-medium">{costBreakdown ? `R${costBreakdown.rmCost.toFixed(2)} CPK` : '—'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>CROSS BORDER</span>
+                          <span className="font-medium">{costBreakdown ? `R${costBreakdown.crossBorderCost.toFixed(2)}` : '—'}</span>
+                        </div>
+                        <div className="border-t pt-2 mt-2 flex justify-between">
+                          <span className="font-bold">TOTAL COST</span>
+                          <span className="font-bold">{costBreakdown ? `R${costBreakdown.totalCost.toFixed(2)}` : '—'}</span>
+                        </div>
+                        <div className="border-t pt-2 mt-2 flex justify-between">
+                          <span className="font-bold">REVENUE</span>
+                          <span className="font-bold">{Number(sellingRatePerKm) > 0 ? `R${Number(sellingRatePerKm).toFixed(2)}` : '—'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className={`font-bold ${costBreakdown && Number(sellingRatePerKm) > 0 ? ((Number(sellingRatePerKm) - costBreakdown.totalCost) >= 0 ? 'text-green-600' : 'text-red-600') : ''}`}>PROFIT</span>
+                          <span className={`font-bold ${costBreakdown && Number(sellingRatePerKm) > 0 ? ((Number(sellingRatePerKm) - costBreakdown.totalCost) >= 0 ? 'text-green-600' : 'text-red-600') : ''}`}>
+                            {costBreakdown && Number(sellingRatePerKm) > 0 ? `R${(Number(sellingRatePerKm) - costBreakdown.totalCost).toFixed(2)}` : '—'}
+                          </span>
                         </div>
                       </div>
-                    )}
+                    </div>
                     </>
                     )}
                   </div>
