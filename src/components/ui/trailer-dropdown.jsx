@@ -46,8 +46,8 @@ export function TrailerDropdown({
     setSearchTerm('')
   }
 
-  const selectedTrailer = trailers.find(t => t.id.toString() === value)
-  const displayValue = selectedTrailer ? `${selectedTrailer.registration_number} - ${selectedTrailer.make} ${selectedTrailer.model} (${selectedTrailer.vehicle_type})` : ''
+  const selectedTrailer = trailers.find(t => String(t.id) === String(value))
+  const displayValue = selectedTrailer ? (selectedTrailer.registration_number || `${selectedTrailer.make || ''} ${selectedTrailer.model || ''}`.trim()) : ''
 
   return (
     <div className="relative" ref={dropdownRef}>

@@ -56,7 +56,7 @@ export function DriverDropdown({
     setSearchTerm('')
   }
 
-  const selectedDriver = sortedDrivers.find(d => d.id === value)
+  const selectedDriver = sortedDrivers.find(d => String(d.id) === String(value))
   const displayValue = selectedDriver ? `${selectedDriver.first_name} ${selectedDriver.surname}` : ''
 
   return (

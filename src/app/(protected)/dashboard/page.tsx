@@ -1469,20 +1469,7 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
               <div key={index} className="flex flex-col items-center relative">
               {/* Elapsed time — absolutely positioned so it never shifts the circles */}
               <div className="absolute -top-5 left-1/2 -translate-x-1/2 h-4 flex items-end justify-center">
-              {waypoint.recordedTimestamp && (() => {
-                const ts = new Date(waypoint.recordedTimestamp)
-                const timeStr = `${ts.getHours().toString().padStart(2, '0')}:${ts.getMinutes().toString().padStart(2, '0')}`
-                return (
-                <span className={cn(
-                  "text-[9px] whitespace-nowrap font-medium",
-                  waypoint.current ? "text-blue-600 font-semibold" :
-                  waypoint.completed ? "text-emerald-600" : "text-gray-500"
-                )}>
-                  {timeStr}
-                </span>
-                )
-              })()}
-              {!waypoint.recordedTimestamp && waypoint.completed && waypoint.elapsedSeconds !== null && (() => {
+              {waypoint.completed && waypoint.elapsedSeconds !== null && (() => {
                 const expected = getExpectedDuration(waypoint.value, trip)
                 const color = getElapsedColor(waypoint.elapsedSeconds, expected)
                 return (
@@ -1492,11 +1479,11 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
                   color === 'orange' ? "text-orange-500" :
                   "text-gray-500"
                 )}>
-                  {formatElapsed(waypoint.elapsedSeconds) || '0m'}
+                  {waypoint.elapsedSeconds === 0 && index === 0 ? 'Start' : formatElapsed(waypoint.elapsedSeconds) || '0m'}
                 </span>
                 )
               })()}
-              {!waypoint.recordedTimestamp && waypoint.isCurrent && waypoint.currentElapsed !== null && (() => {
+              {waypoint.isCurrent && waypoint.currentElapsed !== null && (() => {
                 const expected = getExpectedDuration(waypoint.value, trip)
                 const color = getElapsedColor(waypoint.currentElapsed, expected)
                 return (
@@ -1960,17 +1947,7 @@ function TripReportsSection() {
                               <div key={i} className="flex flex-col items-center relative">
                                 {/* Elapsed time — absolutely positioned above */}
                                 <div className="absolute -top-5 left-1/2 -translate-x-1/2 h-4 flex items-end justify-center">
-                                  {wp.timestamp ? (() => {
-                                    const ts = new Date(wp.timestamp)
-                                    const timeStr = `${ts.getHours().toString().padStart(2, '0')}:${ts.getMinutes().toString().padStart(2, '0')}`
-                                    return (
-                                    <span className={cn(
-                                      "text-[9px] whitespace-nowrap font-medium",
-                                      wp.current ? "text-blue-600 font-semibold" :
-                                      wp.completed ? "text-emerald-600" : "text-gray-500"
-                                    )}>{timeStr}</span>
-                                    )
-                                  })() : wp.elapsed !== null && wp.elapsed > 0 && (() => {
+                                  {wp.elapsed !== null && wp.elapsed > 0 && (() => {
                                     const expected = getExpectedDuration(wp.value, trip)
                                     const color = getElapsedColor(wp.elapsed, expected)
                                     return (
@@ -1982,6 +1959,9 @@ function TripReportsSection() {
                                     )}>{fmtElapsed(wp.elapsed)}</span>
                                     )
                                   })()}
+                                  {wp.elapsed === 0 && i === 0 && (
+                                    <span className="text-[9px] whitespace-nowrap font-medium text-gray-500">Start</span>
+                                  )}
                                 </div>
                                 <div className={cn(
                                   "w-7 h-7 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all duration-300",

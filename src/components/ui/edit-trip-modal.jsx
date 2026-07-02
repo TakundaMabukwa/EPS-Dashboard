@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -18,7 +18,6 @@ import { ClientDropdown } from '@/components/ui/client-dropdown'
 import { ClientNameDisplay } from '@/components/ui/client-name-display'
 import { DriverDropdown } from '@/components/ui/driver-dropdown'
 import { VehicleDropdown } from '@/components/ui/vehicle-dropdown'
-import { VehicleTypeDropdown } from '@/components/ui/vehicle-type-dropdown'
 import { TrailerDropdown } from '@/components/ui/trailer-dropdown'
 import { StopPointDropdown } from '@/components/ui/stop-point-dropdown'
 import { ElevationModal } from '@/components/ui/elevation-modal'
@@ -49,6 +48,9 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
   const [loadingLocation, setLoadingLocation] = useState('')
   const [etaDropoff, setEtaDropoff] = useState('')
   const [dropOffPoint, setDropOffPoint] = useState('')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [cargoWeight, setCargoWeight] = useState('')
   const [optimizedRoute, setOptimizedRoute] = useState(null)
   const [isOptimizing, setIsOptimizing] = useState(false)
 
@@ -72,6 +74,33 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
   const [stopPoints, setStopPoints] = useState([])
   const [customStopPoints, setCustomStopPoints] = useState([])
   const [tripDays, setTripDays] = useState(1)
+
+  // Cost engine state
+  const [costBreakdown, setCostBreakdown] = useState(null)
+  const [sellingRatePerKm, setSellingRatePerKm] = useState('')
+  const [detectedVehicleType, setDetectedVehicleType] = useState('')
+  const [fuelMonthLabel, setFuelMonthLabel] = useState('')
+  const [fuelMonths, setFuelMonths] = useState([])
+
+  // Progress stops state
+  const DEFAULT_PROGRESS_STOPS = [
+    { label: "Accept", value: "accepted" },
+    { label: "Departing", value: "departing" },
+    { label: "Arrived", value: "arrived-at-loading" },
+    { label: "Queuing", value: "queuing-at-loading" },
+    { label: "Staging", value: "staging-at-loading" },
+    { label: "Loading", value: "loading" },
+    { label: "On Trip", value: "on-trip" },
+    { label: "Truck Stop", value: "truck-stop" },
+    { label: "Refueling", value: "refueling" },
+    { label: "Arrived", value: "arrived-at-offloading" },
+    { label: "Offloading", value: "offloading" },
+    { label: "Weighing", value: "weighing" },
+    { label: "Depot", value: "depot" },
+    { label: "Handover", value: "handover" },
+    { label: "Delivered", value: "delivered" },
+  ]
+  const [selectedStops, setSelectedStops] = useState(new Set())
 
   // Rate Card System - Variable Costs
   const RATE_CARD_SYSTEM = {
@@ -339,6 +368,9 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
       setDropOffPoint(trip.destination || '')
       setEtaPickup(pickupLocs[0]?.scheduled_time || '')
       setEtaDropoff(dropoffLocs[0]?.scheduled_time || '')
+      setStartDate(trip.startdate || trip.start_date || '')
+      setEndDate(trip.enddate || trip.end_date || '')
+      setCargoWeight(trip.cargo_weight || '')
       setTripType(trip.trip_type || 'local')
       setSelectedVehicleType(trip.selected_vehicle_type || '')
       setFuelPricePerLiter(trip.fuel_price_per_liter?.toString() || '21.55')
@@ -349,23 +381,40 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
       setApproximatedVehicleCost(trip.approximated_vehicle_cost || 0)
       setApproximatedDriverCost(trip.approximated_driver_cost || 0)
       setTotalVehicleCost(trip.total_vehicle_cost || 0)
+      setTripDays(trip.trip_days || 1)
+
+      // Cost engine data
+      setCostBreakdown({
+        driverCost: trip.driver_cost || 0,
+        fixedAssetCost: trip.fixed_cost || 0,
+        fuelCost: trip.fuel_cost || 0,
+        rmCost: trip.maintenance_cost || 0,
+        crossBorderCost: trip.cross_border_cost || 0,
+        totalCost: trip.total_trip_cost || 0,
+        costPerKm: trip.cost_per_km || 0,
+      })
+      setSellingRatePerKm(trip.selling_rate_per_km?.toString() || '')
+      setDetectedVehicleType(trip.profile_used || '')
+
+      // Set progress stops
+      const tripProgressStops = trip.progress_stops || []
+      setSelectedStops(new Set(tripProgressStops.map((s) => s.value)))
       
-      // Set driver assignments and fetch vehicle details from vehiclesc table
+      // Set driver assignments and vehicle IDs
       if (assignments.length > 0) {
         const assignment = assignments[0]
         setDriverAssignments(assignment.drivers || [{ id: '', name: '' }])
         
-        // Set vehicle IDs from assignments
         const vehicleId = assignment.vehicle?.id?.toString() || ''
         const trailerId = assignment.trailer?.id?.toString() || ''
         setSelectedVehicleId(vehicleId)
         setSelectedTrailerId(trailerId)
         
-        // Fetch additional vehicle details from vehiclesc table if needed
+        // Detect vehicle type from horse's DB code if available
         if (vehicleId && vehicles.length > 0) {
-          const vehicleDetails = vehicles.find(v => v.id.toString() === vehicleId)
-          if (vehicleDetails && !selectedVehicleType) {
-            setSelectedVehicleType(vehicleDetails.vehicle_type || '')
+          const horse = vehicles.find(v => String(v.id) === vehicleId)
+          if (horse?.vehicle_type) {
+            setDetectedVehicleType(horse.vehicle_type)
           }
         }
       }
@@ -373,16 +422,97 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
       // Set stop points
       if (selectedStopPoints.length > 0) {
         const stopPointIds = selectedStopPoints.map(stop => 
-          typeof stop === 'object' ? (stop.id || stop.type === 'existing' ? stop.id : '') : stop
+          typeof stop === 'object' ? String(stop.id || (stop.type === 'existing' ? stop.id : '')) : String(stop)
         ).filter(Boolean)
         const customPoints = selectedStopPoints.map(stop => 
           typeof stop === 'object' && stop.type === 'custom' ? stop.name : ''
         )
         setStopPoints(stopPointIds)
         setCustomStopPoints(customPoints)
+        
+        // Pre-populate availableStopPoints from trip data so dropdowns show names immediately
+        const existingStops = selectedStopPoints
+          .filter(stop => typeof stop === 'object' && stop.type === 'existing' && stop.id)
+          .map(stop => ({ id: stop.id, name: stop.name, name2: stop.name2 || '', coordinates: stop.coordinates || '' }))
+        if (existingStops.length > 0) {
+          setAvailableStopPoints(prev => {
+            const merged = [...prev]
+            for (const s of existingStops) {
+              if (!merged.find(p => String(p.id) === String(s.id))) merged.push(s)
+            }
+            return merged
+          })
+        }
+        
+        // Also fetch full list in background
+        fetchStopPoints()
+      } else {
+        setStopPoints([])
+        setCustomStopPoints([])
       }
     }
-  }, [trip, isOpen, vehicles])
+  }, [trip, isOpen])
+
+  // Fetch fuel months on open
+  useEffect(() => {
+    if (!isOpen) return
+    fetch('/api/fuel-months')
+      .then(r => r.json())
+      .then(data => {
+        if (data.months?.length) {
+          setFuelMonths(data.months)
+          if (!fuelMonthLabel) setFuelMonthLabel(data.months[0]?.label || '')
+        }
+      })
+      .catch(() => {})
+  }, [isOpen])
+
+  // Cost engine calculation — runs when vehicle type, distance, trip days, or fuel month changes
+  useEffect(() => {
+    // Auto-detect vehicle type from selected horse's vehicle_type DB code
+    let effectiveType = detectedVehicleType || selectedVehicleType || ''
+    if (selectedVehicleId && vehicles.length > 0) {
+      const horse = vehicles.find(v => String(v.id) === String(selectedVehicleId))
+      if (horse?.vehicle_type) {
+        effectiveType = horse.vehicle_type
+        setDetectedVehicleType(horse.vehicle_type)
+      }
+    }
+
+    const dist = estimatedDistance
+
+    // Calculate trip days from distance if no route
+    let calculatedTripDays = tripDays
+    if (optimizedRoute?.route?.duration) {
+      const durationHours = optimizedRoute.route.duration / 3600
+      const rawDays = durationHours / 8
+      calculatedTripDays = Math.max(0.5, Math.ceil(rawDays * 2) / 2)
+    } else if (dist > 0 && !tripDays) {
+      calculatedTripDays = 0.5
+    }
+    setTripDays(calculatedTripDays)
+
+    if (!effectiveType || !dist || dist <= 0) {
+      setCostBreakdown({ driverCost: 0, fixedAssetCost: 0, fuelCost: 0, rmCost: 0, crossBorderCost: 0, totalCost: 0, tripDays: 0 })
+      return
+    }
+
+    const month = fuelMonthLabel || ''
+    const fetchCost = async () => {
+      try {
+        const res = await fetch('/api/load-plan/calculate-cost', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ vehicleType: effectiveType, distanceKm: dist, tripDays: calculatedTripDays, monthLabel: month }),
+        })
+        const data = await res.json()
+        if (!data.error) setCostBreakdown(data)
+      } catch (err) {
+        console.error('Error calculating cost:', err)
+      }
+    }
+    fetchCost()
+  }, [selectedVehicleType, detectedVehicleType, estimatedDistance, fuelMonthLabel, optimizedRoute, selectedVehicleId, vehicles])
 
   // Rate Card Calculation Function
   const calculateRateCardCost = useCallback((vehicleType, kms, days) => {
@@ -638,6 +768,9 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
           return null
         }).filter(Boolean),
         selected_vehicle_type: selectedVehicleType,
+        cargo_weight: cargoWeight || null,
+        startdate: startDate || null,
+        enddate: endDate || null,
         approximate_fuel_cost: approximateFuelCost,
         approximated_cpk: approximatedCPK,
         approximated_vehicle_cost: approximatedVehicleCost,
@@ -647,6 +780,24 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
         estimated_distance: estimatedDistance,
         fuel_price_per_liter: parseFloat(fuelPricePerLiter) || null,
         updated_at: new Date().toISOString(),
+        
+        // Cost engine data
+        driver_cost: costBreakdown?.driverCost || 0,
+        fuel_cost: costBreakdown?.fuelCost || 0,
+        maintenance_cost: costBreakdown?.rmCost || 0,
+        cross_border_cost: costBreakdown?.crossBorderCost || 0,
+        total_trip_cost: costBreakdown?.totalCost || 0,
+        fixed_cost: costBreakdown?.fixedAssetCost || 0,
+        cost_per_km: costBreakdown?.totalCost && estimatedDistance ? Math.round((costBreakdown.totalCost / estimatedDistance) * 100) / 100 : 0,
+        profile_used: detectedVehicleType || '',
+        diesel_rate: costBreakdown?.fuelLinkRate || 0,
+        selling_rate_per_km: Number(sellingRatePerKm) || 0,
+        trip_days: tripDays || 0,
+        
+        // Progress stops
+        progress_stops: DEFAULT_PROGRESS_STOPS
+          .filter(s => selectedStops.has(s.value))
+          .map((s, i) => ({ order: i + 1, label: s.label, value: s.value, isComplete: false })),
         
         // Always elevate on edit
         elevate: true
@@ -1056,6 +1207,61 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
             </div>
           )}
 
+          {/* Trip Progress Stops */}
+          <div className="space-y-3">
+            <Label className="text-lg font-medium">Trip Progress Stops</Label>
+            <p className="text-xs text-slate-500">Select the workflow steps for this trip</p>
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+              {DEFAULT_PROGRESS_STOPS.map((stop) => (
+                <button
+                  key={stop.value}
+                  type="button"
+                  onClick={() => {
+                    const next = new Set(selectedStops)
+                    if (next.has(stop.value)) {
+                      next.delete(stop.value)
+                    } else {
+                      next.add(stop.value)
+                    }
+                    setSelectedStops(next)
+                  }}
+                  className={cn(
+                    "px-3 py-2 rounded-lg border text-xs font-medium transition-all",
+                    selectedStops.has(stop.value)
+                      ? "bg-blue-500 text-white border-blue-600 shadow-sm"
+                      : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
+                  )}
+                >
+                  {stop.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Stop Points */}
+          {(stopPoints.length > 0 || customStopPoints.some(p => p)) && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-lg font-medium">Stop Points</Label>
+                <span className="text-xs text-slate-500">{stopPoints.filter(Boolean).length + customStopPoints.filter(Boolean).length} stop(s)</span>
+              </div>
+              <div className="space-y-2">
+                {stopPoints.map((pointId, index) => {
+                  if (!pointId && !customStopPoints[index]) return null
+                  const point = availableStopPoints.find(p => p.id.toString() === pointId)
+                  const name = customStopPoints[index] || point?.name || `Stop ${index + 1}`
+                  return (
+                    <div key={index} className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg border border-slate-200">
+                      <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold flex items-center justify-center">{index + 1}</span>
+                      <MapPin className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
+                      <span className="text-xs text-slate-700 truncate">{name}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Driver Assignments */}
           <div className="space-y-4">
             <Label className="text-lg font-medium">Driver Assignments</Label>
@@ -1064,19 +1270,26 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
                 <DriverDropdown
                   value={driver.id}
                   onChange={(value) => {
-                    const selectedDriver = drivers.find(d => d.id === value)
+                    const selectedDriver = drivers.find(d => String(d.id) === String(value))
                     setDriverAssignments(prev => {
                       const updated = [...prev]
                       updated[driverIndex] = { 
                         id: value, 
-                        name: selectedDriver?.surname || '',
-                        first_name: selectedDriver?.first_name || '',
-                        surname: selectedDriver?.surname || ''
+                        name: selectedDriver?.surname || driver.name || '',
+                        first_name: selectedDriver?.first_name || driver.first_name || '',
+                        surname: selectedDriver?.surname || driver.surname || ''
                       }
                       return updated
                     })
                   }}
-                  drivers={availableDrivers}
+                  drivers={(() => {
+                    const list = [...availableDrivers]
+                    // Ensure assigned driver is always in the list
+                    if (driver.id && !list.find(d => String(d.id) === String(driver.id))) {
+                      list.unshift({ id: driver.id, name: driver.name || '', first_name: driver.first_name || '', surname: driver.surname || '' })
+                    }
+                    return list
+                  })()}
                   placeholder="Select available driver"
                 />
               </div>
@@ -1086,19 +1299,6 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
           {/* Vehicle Selection */}
           <div className="space-y-4">
             <Label className="text-lg font-medium">Vehicle Assignment</Label>
-            
-            {/* Vehicle Type Dropdown */}
-            <div className="space-y-2">
-              <Label htmlFor="vehicleType" className="text-sm font-medium text-slate-700">Vehicle Type</Label>
-              <VehicleTypeDropdown
-                value={selectedVehicleType}
-                onChange={(value) => {
-                  setSelectedVehicleType(value)
-                  setSelectedVehicleId('') // Reset vehicle selection when type changes
-                }}
-                placeholder="Select vehicle type"
-              />
-            </div>
 
             {/* Horse Dropdown - Vehicles only */}
             <div className="space-y-2">
@@ -1106,7 +1306,16 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
               <VehicleDropdown
                 value={selectedVehicleId}
                 onChange={setSelectedVehicleId}
-                vehicles={vehicles.filter(vehicle => !vehicle.vehicle_type?.startsWith('TR'))}
+                vehicles={(() => {
+                  const horses = vehicles.filter(v => !v.vehicle_type?.startsWith('TR'))
+                  // Ensure trip's assigned horse is always in the list
+                  if (selectedVehicleId && !horses.find(v => String(v.id) === String(selectedVehicleId))) {
+                    const assignment = (trip?.vehicleassignments || trip?.vehicle_assignments || [])[0]
+                    const vName = assignment?.vehicle?.name || ''
+                    if (vName) horses.unshift({ id: selectedVehicleId, registration_number: vName, make: '', model: '', vehicle_type: '' })
+                  }
+                  return horses
+                })()}
                 placeholder="Select horse (vehicle)"
               />
             </div>
@@ -1117,7 +1326,16 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
               <TrailerDropdown
                 value={selectedTrailerId}
                 onChange={setSelectedTrailerId}
-                trailers={vehicles.filter(vehicle => vehicle.vehicle_type?.startsWith('TR'))}
+                trailers={(() => {
+                  const trailers = vehicles.filter(v => v.vehicle_type?.startsWith('TR'))
+                  // Ensure trip's assigned trailer is always in the list
+                  if (selectedTrailerId && !trailers.find(t => String(t.id) === String(selectedTrailerId))) {
+                    const assignment = (trip?.vehicleassignments || trip?.vehicle_assignments || [])[0]
+                    const tName = assignment?.trailer?.name || ''
+                    if (tName) trailers.unshift({ id: selectedTrailerId, registration_number: tName, make: '', model: '', vehicle_type: 'TR' })
+                  }
+                  return trailers
+                })()}
                 placeholder="Select trailer"
               />
             </div>
@@ -1173,7 +1391,35 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
                     </div>
                   </div>
 
-                  {/* Cost Display Cards */}
+                  {/* Cost Engine Display */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm font-medium text-slate-700">Cost Engine</Label>
+                      {detectedVehicleType && (
+                        <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">{detectedVehicleType}</span>
+                      )}
+                    </div>
+                    {costBreakdown && (
+                      <div className="bg-slate-50 rounded-lg p-3 space-y-1.5 text-xs">
+                        <div className="flex justify-between"><span className="text-slate-600">Driver</span><span className="font-medium">R{(costBreakdown.driverCost || 0).toFixed(2)} <span className="text-slate-400">({costBreakdown.tripDays || tripDays} DAYS)</span></span></div>
+                        <div className="flex justify-between"><span className="text-slate-600">Fixed - Asset</span><span className="font-medium">R{(costBreakdown.fixedAssetCost || 0).toFixed(2)} <span className="text-slate-400">({costBreakdown.tripDays || tripDays} DAYS)</span></span></div>
+                        <div className="flex justify-between"><span className="text-slate-600">Fuel</span><span className="font-medium">R{(costBreakdown.fuelCost || 0).toFixed(2)}</span></div>
+                        <div className="flex justify-between"><span className="text-slate-600">R&M</span><span className="font-medium">R{(costBreakdown.rmCost || 0).toFixed(2)}</span></div>
+                        <div className="flex justify-between"><span className="text-slate-600">Cross Border</span><span className="font-medium">R{(costBreakdown.crossBorderCost || 0).toFixed(2)}</span></div>
+                        <div className="border-t pt-1.5 flex justify-between font-bold"><span>TOTAL COST</span><span>R{(costBreakdown.totalCost || 0).toFixed(2)}</span></div>
+                        {sellingRatePerKm && Number(sellingRatePerKm) > 0 && (
+                          <>
+                            <div className="flex justify-between"><span className="text-slate-600">Revenue</span><span className="font-bold">R{Number(sellingRatePerKm).toFixed(2)}</span></div>
+                            <div className={cn("flex justify-between font-bold", (Number(sellingRatePerKm) - (costBreakdown.totalCost || 0)) >= 0 ? "text-emerald-600" : "text-red-600")}>
+                              <span>PROFIT</span>
+                              <span>R{(Number(sellingRatePerKm) - (costBreakdown.totalCost || 0)).toFixed(2)}</span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
                   <div className="grid grid-cols-2 gap-3">
                     <div className="p-4 bg-white rounded-lg border border-slate-200 shadow-sm">
                       <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Distance</p>
@@ -1181,8 +1427,8 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
                       <p className="text-xs text-slate-600">kilometers</p>
                     </div>
                     <div className="p-4 bg-white rounded-lg border border-slate-200 shadow-sm">
-                      <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">CPK</p>
-                      <p className="text-2xl font-bold text-slate-800 mt-2">R{approximatedCPK.toFixed(2)}</p>
+                      <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Cost Per KM</p>
+                      <p className="text-2xl font-bold text-slate-800 mt-2">R{costBreakdown?.costPerKm?.toFixed(2) || '0.00'}</p>
                       <p className="text-xs text-slate-600">per km</p>
                     </div>
                   </div>

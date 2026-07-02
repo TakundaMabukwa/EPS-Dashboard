@@ -46,8 +46,8 @@ export function VehicleDropdown({
     setSearchTerm('')
   }
 
-  const selectedVehicle = vehicles.find(v => v.id === value)
-  const displayValue = selectedVehicle ? `${selectedVehicle.make} ${selectedVehicle.model} (${selectedVehicle.regNumber || selectedVehicle.registration_number})` : ''
+  const selectedVehicle = vehicles.find(v => String(v.id) === String(value))
+  const displayValue = selectedVehicle ? (selectedVehicle.registration_number || `${selectedVehicle.make || ''} ${selectedVehicle.model || ''}`.trim()) : ''
 
   return (
     <div className="relative" ref={dropdownRef}>

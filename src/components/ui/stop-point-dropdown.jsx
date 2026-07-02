@@ -27,7 +27,7 @@ export function StopPointDropdown({
   }, [stopPoints, searchTerm])
 
   // Get selected stop point display name
-  const selectedStopPoint = stopPoints.find(p => p.id.toString() === value)
+  const selectedStopPoint = stopPoints.find(p => String(p.id) === String(value))
   const displayValue = selectedStopPoint 
     ? `${selectedStopPoint.name}${selectedStopPoint.name2 ? ` - ${selectedStopPoint.name2}` : ''}`
     : ''
