@@ -84,7 +84,6 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
 
   // Progress stops state
   const DEFAULT_PROGRESS_STOPS = [
-    { label: "Accept", value: "accepted" },
     { label: "Departing", value: "departing" },
     { label: "Arrived", value: "arrived-at-loading" },
     { label: "Queuing", value: "queuing-at-loading" },

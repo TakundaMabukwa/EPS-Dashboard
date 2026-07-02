@@ -122,7 +122,6 @@ export default function LoadPlanPage() {
 
   // Progress stops
   const DEFAULT_PROGRESS_STOPS = [
-    { label: "Accept",     value: "accepted" },
     { label: "Departing",  value: "departing" },
     { label: "Arrived",    value: "arrived-at-loading" },
     { label: "Queuing",    value: "queuing-at-loading" },
@@ -138,8 +137,8 @@ export default function LoadPlanPage() {
     { label: "Handover",   value: "handover" },
     { label: "Delivered",  value: "delivered" },
   ]
-  const [selectedStops, setSelectedStops] = useState<Set<string>>(new Set())
-  const [useDefaultStops, setUseDefaultStops] = useState(false)
+  const [selectedStops, setSelectedStops] = useState<Set<string>>(new Set(DEFAULT_PROGRESS_STOPS.map(s => s.value)))
+  const [useDefaultStops, setUseDefaultStops] = useState(true)
 
   const addressDecisionRef = useRef(null)
 
