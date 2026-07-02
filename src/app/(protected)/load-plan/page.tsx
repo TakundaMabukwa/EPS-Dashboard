@@ -1946,15 +1946,14 @@ export default function LoadPlanPage() {
                 ) : null}
 
                 {/* Cost Engine */}
-                {selectedVehicleId && (
-                  <div className="space-y-4">
-                    <Label className="text-lg font-medium">Trip Cost Estimate</Label>
+                <div className="space-y-4">
+                  <Label className="text-lg font-medium">Trip Cost Estimate</Label>
 
-                    {vehicleTypeNotFound ? (
-                      <div className="bg-amber-50 border border-amber-200 p-4 rounded-lg text-amber-800 text-sm">
-                        Selected vehicle doesn't have a matching cost type. Please select a different vehicle or set the vehicle type above.
-                      </div>
-                    ) : (
+                  {vehicleTypeNotFound && (
+                    <div className="bg-amber-50 border border-amber-200 p-4 rounded-lg text-amber-800 text-sm">
+                      Selected vehicle doesn't have a matching cost type. Please select a different vehicle or set the vehicle type above.
+                    </div>
+                  )}
 
                     <>
                     <div className="grid grid-cols-3 gap-4">
@@ -2040,9 +2039,7 @@ export default function LoadPlanPage() {
                       </div>
                     </div>
                     </>
-                    )}
                   </div>
-                )}
 
                 {/* Driver Assignments */}
                 <div className="space-y-4">
