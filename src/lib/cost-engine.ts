@@ -103,6 +103,7 @@ export const DB_VEHICLE_TYPE_TO_PROFILE: Record<string, string> = {
 }
 
 export function resolveProfileKey(input: string): string | null {
+  if (!input) return null
   if (VEHICLE_COST_PROFILES[input]) return input
   if (DB_VEHICLE_TYPE_TO_PROFILE[input]) return DB_VEHICLE_TYPE_TO_PROFILE[input]
   return null

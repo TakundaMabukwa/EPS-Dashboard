@@ -211,7 +211,7 @@ export default function LoadPlanPage() {
         while (hasMore) {
           const { data, error } = await supabase
             .from('vehiclesc')
-            .select('id, registration_number, engine_number, vin_number, make, model, sub_model, manufactured_year, vehicle_type, veh_dormant_flag')
+            .select('id, registration_number, engine_number, vin_number, make, model, sub_model, manufactured_year, vehicle_type, veh_dormant_flag, cost_profile')
             .range(from, from + batchSize - 1)
           
           if (error) throw error
@@ -337,20 +337,28 @@ export default function LoadPlanPage() {
 
   // Calculate cost breakdown when inputs change
   useEffect(() => {
-    // Detect vehicle type from selected horse's vehicle_type DB code
+    // Detect vehicle type: prefer cost_profile, fall back to vehicle_type DB code
     let effectiveType = ''
     let notFound = false
     if (selectedVehicleId) {
       const horse = vehicles.find(v => String(v.id) === String(selectedVehicleId))
       if (horse) {
-        const dbType = horse.vehicle_type || ''
-        const profileKey = resolveProfileKey(dbType)
-        if (profileKey) {
-          effectiveType = profileKey
+        // Use cost_profile if set (exact Excel dropdown value)
+        const costProf = (horse as any).cost_profile || ''
+        if (costProf && resolveProfileKey(costProf)) {
+          effectiveType = resolveProfileKey(costProf)!
           notFound = false
         } else {
-          effectiveType = ''
-          notFound = true
+          // Fall back to vehicle_type DB code mapping
+          const dbType = horse.vehicle_type || ''
+          const profileKey = resolveProfileKey(dbType)
+          if (profileKey) {
+            effectiveType = profileKey
+            notFound = false
+          } else {
+            effectiveType = ''
+            notFound = true
+          }
         }
       }
     }

@@ -306,7 +306,7 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
     try {
       // Fetch only essential data first, then load others in background
       const [vehiclesResult, driversResult] = await Promise.all([
-        supabase.from('vehiclesc').select('id, registration_number, vehicle_type, branch_name, make, model, cof_date').eq('veh_dormant_flag', false).not('branch_name', 'is', null).neq('branch_name', 'SOLD'),
+        supabase.from('vehiclesc').select('id, registration_number, vehicle_type, branch_name, make, model, cof_date, cost_profile').eq('veh_dormant_flag', false).not('branch_name', 'is', null).neq('branch_name', 'SOLD'),
         supabase.from('drivers').select('id, first_name, surname, available')
       ])
       
@@ -468,13 +468,20 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
 
   // Cost engine calculation — runs when vehicle type, distance, trip days, or fuel month changes
   useEffect(() => {
-    // Auto-detect vehicle type from selected horse's vehicle_type DB code
+    // Auto-detect vehicle type: prefer cost_profile, fall back to vehicle_type DB code
     let effectiveType = detectedVehicleType || selectedVehicleType || ''
     if (selectedVehicleId && vehicles.length > 0) {
       const horse = vehicles.find(v => String(v.id) === String(selectedVehicleId))
-      if (horse?.vehicle_type) {
-        effectiveType = horse.vehicle_type
-        setDetectedVehicleType(horse.vehicle_type)
+      if (horse) {
+        // Use cost_profile if set (exact Excel dropdown value)
+        const costProf = horse.cost_profile || ''
+        if (costProf) {
+          effectiveType = costProf
+          setDetectedVehicleType(costProf)
+        } else if (horse.vehicle_type) {
+          effectiveType = horse.vehicle_type
+          setDetectedVehicleType(horse.vehicle_type)
+        }
       }
     }
 
