@@ -1,10 +1,10 @@
--- Add cost_profile column to vehicles table
-ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS cost_profile text;
+-- Add cost_profile column to vehiclesc table
+ALTER TABLE vehiclesc ADD COLUMN IF NOT EXISTS cost_profile text;
 
 -- ============================================================
 -- HORSE DOUBLE AXLE → TAUTLINER (standard)
 -- ============================================================
-UPDATE vehicles SET cost_profile = 'TAUTLINER' WHERE registration_number IN (
+UPDATE vehiclesc SET cost_profile = 'TAUTLINER' WHERE registration_number IN (
   'AERO TRUCK',
   'CC36NSGP','CD63DWGP',
   'FF63HJGP','FF63JDGP','FF63JRGP','FF63KMGP','FF63LPGP','FF63MKGP',
@@ -31,7 +31,7 @@ UPDATE vehicles SET cost_profile = 'TAUTLINER' WHERE registration_number IN (
 -- ============================================================
 -- SINOTRUK SITRAK (non-HAZ) → TAUTLINER
 -- ============================================================
-UPDATE vehicles SET cost_profile = 'TAUTLINER' WHERE registration_number IN (
+UPDATE vehiclesc SET cost_profile = 'TAUTLINER' WHERE registration_number IN (
   'ERJ228GP','ERJ229GP','ERJ230GP','ERJ231GP','ERJ232GP','ERJ233GP',
   'MK88LKGP','MK88LTGP','MK88MLGP','MK88MPGP','MK88PSGP','MK88RHGP'
 );
@@ -39,7 +39,7 @@ UPDATE vehicles SET cost_profile = 'TAUTLINER' WHERE registration_number IN (
 -- ============================================================
 -- SINOTRUCK HOWO 2026 HAZCHEM → TAUTLINER (HAZ)
 -- ============================================================
-UPDATE vehicles SET cost_profile = 'TAUTLINER_HAZ' WHERE registration_number IN (
+UPDATE vehiclesc SET cost_profile = 'TAUTLINER_HAZ' WHERE registration_number IN (
   'JFR637X','JFR656X','JFR660X','JFR667X','JFR669X','JFR673X','JFR679X','JFR685X','JFR717X','JGC810X',
   'MW90JPGP','MW90KFGP','MW90LDGP','MW90LPGP','MW90LYGP','MW90MRGP','MW90MWGP','MW90NFGP','MW90NMGP','MW90NSGP'
 );
@@ -47,7 +47,7 @@ UPDATE vehicles SET cost_profile = 'TAUTLINER_HAZ' WHERE registration_number IN 
 -- ============================================================
 -- HORSE SINGLE AXLE → TAUTLINER
 -- ============================================================
-UPDATE vehicles SET cost_profile = 'TAUTLINER' WHERE registration_number IN (
+UPDATE vehiclesc SET cost_profile = 'TAUTLINER' WHERE registration_number IN (
   'JR30SXGP','JR30SZGP','JR30TFGP','JR30TKGP','JR30VBGP',
   'KB24WLGP','KB24WNGP','KB24WWGP','KB24WYGP',
   'YBF920GP'
@@ -56,7 +56,7 @@ UPDATE vehicles SET cost_profile = 'TAUTLINER' WHERE registration_number IN (
 -- ============================================================
 -- 8TON → 8T_NUCLEUS
 -- ============================================================
-UPDATE vehicles SET cost_profile = '8T_NUCLEUS' WHERE registration_number IN (
+UPDATE vehiclesc SET cost_profile = '8T_NUCLEUS' WHERE registration_number IN (
   'JT07LVGP','KF84NVGP',
   'KG32NLGP','KG32NTGP','KG32NXGP',
   'KY69YCGP','KY69YHGP','KY69YNGP',
@@ -69,41 +69,41 @@ UPDATE vehicles SET cost_profile = '8T_NUCLEUS' WHERE registration_number IN (
 -- ============================================================
 -- 14TON → 14_TON_CURTAIN
 -- ============================================================
-UPDATE vehicles SET cost_profile = '14_TON_CURTAIN' WHERE registration_number IN (
+UPDATE vehiclesc SET cost_profile = '14_TON_CURTAIN' WHERE registration_number IN (
   'LT58GZGP','LT58HBGP'
 );
 
 -- ============================================================
 -- 5TON → 14_TON_CURTAIN (closest match)
 -- ============================================================
-UPDATE vehicles SET cost_profile = '14_TON_CURTAIN' WHERE registration_number IN (
+UPDATE vehiclesc SET cost_profile = '14_TON_CURTAIN' WHERE registration_number IN (
   'MWT188GP'
 );
 
 -- ============================================================
 -- FLATBED → 14_TON_CURTAIN (closest match)
 -- ============================================================
-UPDATE vehicles SET cost_profile = '14_TON_CURTAIN' WHERE registration_number IN (
+UPDATE vehiclesc SET cost_profile = '14_TON_CURTAIN' WHERE registration_number IN (
   'XLH496GP'
 );
 
 -- ============================================================
 -- 1TON → 1_TON_BAKKIE
 -- ============================================================
-UPDATE vehicles SET cost_profile = '1_TON_BAKKIE' WHERE registration_number IN (
+UPDATE vehiclesc SET cost_profile = '1_TON_BAKKIE' WHERE registration_number IN (
   'TWC146GP'
 );
 
 -- ============================================================
 -- 1.5TON → 1_TON_BAKKIE
 -- ============================================================
-UPDATE vehicles SET cost_profile = '1_TON_BAKKIE' WHERE registration_number IN (
+UPDATE vehiclesc SET cost_profile = '1_TON_BAKKIE' WHERE registration_number IN (
   'JM27KHGP'
 );
 
 -- ============================================================
 -- TANKER → TAUTLINER (no dedicated tanker profile)
 -- ============================================================
-UPDATE vehicles SET cost_profile = 'TAUTLINER' WHERE registration_number IN (
+UPDATE vehiclesc SET cost_profile = 'TAUTLINER' WHERE registration_number IN (
   'JH41LCGP'
 );
