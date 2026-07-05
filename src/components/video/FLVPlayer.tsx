@@ -30,7 +30,7 @@ export default function FLVPlayer({ streamUrl, channel, vehicleName, onStop, onS
     setError(false);
     setStatus('loading');
     onStatusChange?.(channel, 'loading');
-    const maxReconnects = 2;
+    const maxReconnects = 1;
 
     const onVideoPlaying = () => {
       if (destroyed) return;

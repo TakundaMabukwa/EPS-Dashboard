@@ -60,37 +60,24 @@ export async function GET(
     if (range) forwardedHeaders.range = range;
 
     const isStreamProxy = path === "stream/stream/proxy";
-    const directFlvUrl = isStreamProxy ? request.nextUrl.searchParams.get("url") : null;
 
-    if (isStreamProxy && directFlvUrl) {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
+    if (isStreamProxy) {
+      const response = await fetch(url, {
+        method: "GET",
+        headers: forwardedHeaders,
+        cache: "no-store",
+      });
 
-      let upstream: Response;
-      try {
-        upstream = await fetch(directFlvUrl, {
-          method: "GET",
-          headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
-          cache: "no-store",
-          signal: controller.signal,
-        });
-      } catch (err) {
-        clearTimeout(timeout);
-        return new Response(null, { status: 502, headers: { "Content-Type": "video/x-flv" } });
-      }
-      clearTimeout(timeout);
+      const ct = response.headers.get("content-type") || "";
+      const passHeaders = new Headers();
+      ["content-type", "content-length", "cache-control", "transfer-encoding"].forEach((key) => {
+        const val = response.headers.get(key);
+        if (val) passHeaders.set(key, val);
+      });
 
-      if (!upstream.ok || !upstream.body) {
-        return new Response(null, { status: upstream.status || 502, headers: { "Content-Type": "video/x-flv" } });
-      }
-
-      return new Response(upstream.body, {
-        status: 200,
-        headers: {
-          "Content-Type": "video/x-flv",
-          "Cache-Control": "no-cache",
-          "Access-Control-Allow-Origin": "*",
-        },
+      return new Response(response.body, {
+        status: response.status,
+        headers: passHeaders,
       });
     }
 
@@ -161,6 +148,9 @@ export async function GET(
       headers: passHeaders,
     });
   } catch (error) {
+    if (path === "stream/stream/proxy") {
+      return new Response(null, { status: 502, headers: { "Content-Type": "video/x-flv" } });
+    }
     const message = error instanceof Error ? error.message : String(error);
     return Response.json(
       {
