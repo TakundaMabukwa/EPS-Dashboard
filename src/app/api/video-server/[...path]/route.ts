@@ -63,14 +63,23 @@ export async function GET(
     const directFlvUrl = isStreamProxy ? request.nextUrl.searchParams.get("url") : null;
     const fetchUrl = directFlvUrl || url;
 
-    const response = await fetch(fetchUrl, {
-      method: "GET",
-      headers: {
-        ...forwardedHeaders,
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      },
-      cache: "no-store",
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
+    let response: Response;
+    try {
+      response = await fetch(fetchUrl, {
+        method: "GET",
+        headers: {
+          ...forwardedHeaders,
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        },
+        cache: "no-store",
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (isDirectMediaRequest) {
       const passHeaders = new Headers();

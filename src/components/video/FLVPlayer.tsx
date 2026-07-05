@@ -30,8 +30,7 @@ export default function FLVPlayer({ streamUrl, channel, vehicleName, onStop, onS
     setError(false);
     setStatus('loading');
     onStatusChange?.(channel, 'loading');
-    const maxReconnects = 8;
-    let failedAttempts = 0;
+    const maxReconnects = 2;
 
     const onVideoPlaying = () => {
       if (destroyed) return;
@@ -39,7 +38,6 @@ export default function FLVPlayer({ streamUrl, channel, vehicleName, onStop, onS
       setStatus('live');
       setError(false);
       reconnectRef.current = 0;
-      failedAttempts = 0;
       onStatusChange?.(channel, 'live');
     };
     const onVideoTimeUpdate = () => {
@@ -49,7 +47,6 @@ export default function FLVPlayer({ streamUrl, channel, vehicleName, onStop, onS
         setStatus('live');
         setError(false);
         reconnectRef.current = 0;
-        failedAttempts = 0;
         onStatusChange?.(channel, 'live');
       }
     };
@@ -58,13 +55,30 @@ export default function FLVPlayer({ streamUrl, channel, vehicleName, onStop, onS
     videoEl.addEventListener('timeupdate', onVideoTimeUpdate);
 
     (async () => {
-      const flvjs = (await import('flv.js')).default;
-      if (destroyed || !flvjs.isSupported()) {
+      let flvjs: any;
+      try {
+        flvjs = (await import('flv.js')).default;
+      } catch {
         if (!destroyed) {
           setStatus('offline');
           onStatusChange?.(channel, 'offline');
         }
         return;
+      }
+      if (destroyed || !flvjs?.isSupported()) {
+        if (!destroyed) {
+          setStatus('offline');
+          onStatusChange?.(channel, 'offline');
+        }
+        return;
+      }
+
+      function goOffline() {
+        if (destroyed) return;
+        setError(true);
+        setStatus('offline');
+        onStatusChange?.(channel, 'offline');
+        destroyPlayer();
       }
 
       function connect() {
@@ -89,32 +103,37 @@ export default function FLVPlayer({ streamUrl, channel, vehicleName, onStop, onS
 
           player.on(flvjs.Events.ERROR, () => {
             if (destroyed) return;
-            failedAttempts++;
-            if (failedAttempts >= 2) {
-              setError(true);
-              setStatus('offline');
-              onStatusChange?.(channel, 'offline');
-            } else if (reconnectRef.current < maxReconnects) {
-              reconnectRef.current++;
-              setTimeout(connect, 2000 * reconnectRef.current);
+            reconnectRef.current++;
+            if (reconnectRef.current >= maxReconnects) {
+              goOffline();
             } else {
-              setError(true);
-              setStatus('offline');
-              onStatusChange?.(channel, 'offline');
+              setTimeout(connect, 1500);
             }
           });
 
           player.on(flvjs.Events.LOADING_COMPLETE, () => {
-            if (!destroyed) reconnectRef.current = 0;
+            if (destroyed) return;
+            reconnectRef.current++;
+            if (reconnectRef.current >= maxReconnects) {
+              goOffline();
+            } else {
+              setTimeout(connect, 1500);
+            }
           });
 
           player.load();
-          player.play().catch(() => {});
-        } catch (e) {
-          if (destroyed) return;
-          setError(true);
-          setStatus('offline');
-          onStatusChange?.(channel, 'offline');
+          player.play().catch(() => {
+            if (!destroyed) {
+              reconnectRef.current++;
+              if (reconnectRef.current >= maxReconnects) {
+                goOffline();
+              }
+            }
+          });
+        } catch {
+          if (!destroyed) {
+            goOffline();
+          }
         }
       }
 
@@ -125,7 +144,7 @@ export default function FLVPlayer({ streamUrl, channel, vehicleName, onStop, onS
             playerRef.current.unload();
             playerRef.current.detachMediaElement();
             playerRef.current.destroy();
-          } catch (e) {}
+          } catch {}
           playerRef.current = null;
         }
       }
@@ -134,10 +153,10 @@ export default function FLVPlayer({ streamUrl, channel, vehicleName, onStop, onS
 
       pingRef.current = setInterval(() => {
         if (destroyed) return;
-        if (playerRef.current && videoRef.current && videoRef.current.paused) {
+        if (playerRef.current && videoRef.current && videoRef.current.paused && !error) {
           playerRef.current.play().catch(() => {});
         }
-      }, 10000);
+      }, 15000);
     })();
 
     return () => {
@@ -154,7 +173,7 @@ export default function FLVPlayer({ streamUrl, channel, vehicleName, onStop, onS
           playerRef.current.unload();
           playerRef.current.detachMediaElement();
           playerRef.current.destroy();
-        } catch (e) {}
+        } catch {}
         playerRef.current = null;
       }
     };
