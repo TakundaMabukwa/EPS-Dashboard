@@ -59,11 +59,17 @@ export async function GET(
     const range = request.headers.get("range");
     if (range) forwardedHeaders.range = range;
 
-    const response = await fetch(url, {
+    const isStreamProxy = path === "stream/stream/proxy";
+    const directFlvUrl = isStreamProxy ? request.nextUrl.searchParams.get("url") : null;
+    const fetchUrl = directFlvUrl || url;
+
+    const response = await fetch(fetchUrl, {
       method: "GET",
-      headers: forwardedHeaders,
+      headers: {
+        ...forwardedHeaders,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      },
       cache: "no-store",
-      next: { revalidate: 0 },
     });
 
     if (isDirectMediaRequest) {
