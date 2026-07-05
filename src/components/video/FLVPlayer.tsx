@@ -30,7 +30,7 @@ export default function FLVPlayer({ streamUrl, channel, vehicleName, onStop, onS
     setError(false);
     setStatus('loading');
     onStatusChange?.(channel, 'loading');
-    const maxReconnects = 3;
+    const maxReconnects = 5;
 
     const onVideoPlaying = () => {
       if (destroyed) return;
@@ -107,7 +107,8 @@ export default function FLVPlayer({ streamUrl, channel, vehicleName, onStop, onS
             if (reconnectRef.current >= maxReconnects) {
               goOffline();
             } else {
-              setTimeout(connect, 1500);
+              const delay = Math.min(1500 * reconnectRef.current, 5000);
+              setTimeout(connect, delay);
             }
           });
 
@@ -117,19 +118,23 @@ export default function FLVPlayer({ streamUrl, channel, vehicleName, onStop, onS
             if (reconnectRef.current >= maxReconnects) {
               goOffline();
             } else {
-              setTimeout(connect, 1500);
+              const delay = Math.min(1500 * reconnectRef.current, 5000);
+              setTimeout(connect, delay);
             }
           });
 
           player.load();
-          player.play().catch(() => {
-            if (!destroyed) {
-              reconnectRef.current++;
-              if (reconnectRef.current >= maxReconnects) {
-                goOffline();
+          setTimeout(() => {
+            if (destroyed) return;
+            player.play().catch(() => {
+              if (!destroyed) {
+                reconnectRef.current++;
+                if (reconnectRef.current >= maxReconnects) {
+                  goOffline();
+                }
               }
-            }
-          });
+            });
+          }, 500);
         } catch {
           if (!destroyed) {
             goOffline();
@@ -149,7 +154,8 @@ export default function FLVPlayer({ streamUrl, channel, vehicleName, onStop, onS
         }
       }
 
-      connect();
+      const connectDelay = (channel - 1) * 800;
+      setTimeout(connect, connectDelay);
 
       pingRef.current = setInterval(() => {
         if (destroyed) return;
