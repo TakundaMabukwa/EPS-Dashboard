@@ -61,25 +61,45 @@ export async function GET(
 
     const isStreamProxy = path === "stream/stream/proxy";
     const directFlvUrl = isStreamProxy ? request.nextUrl.searchParams.get("url") : null;
-    const fetchUrl = directFlvUrl || url;
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    if (isStreamProxy && directFlvUrl) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
 
-    let response: Response;
-    try {
-      response = await fetch(fetchUrl, {
-        method: "GET",
-        headers: {
-          ...forwardedHeaders,
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        },
-        cache: "no-store",
-        signal: controller.signal,
-      });
-    } finally {
+      let upstream: Response;
+      try {
+        upstream = await fetch(directFlvUrl, {
+          method: "GET",
+          headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+          cache: "no-store",
+          signal: controller.signal,
+        });
+      } catch (err) {
+        clearTimeout(timeout);
+        return new Response(null, { status: 502, headers: { "Content-Type": "video/x-flv" } });
+      }
       clearTimeout(timeout);
+
+      if (!upstream.ok || !upstream.body) {
+        return new Response(null, { status: upstream.status || 502, headers: { "Content-Type": "video/x-flv" } });
+      }
+
+      return new Response(upstream.body, {
+        status: 200,
+        headers: {
+          "Content-Type": "video/x-flv",
+          "Cache-Control": "no-cache",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
     }
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: forwardedHeaders,
+      cache: "no-store",
+      next: { revalidate: 0 },
+    });
 
     if (isDirectMediaRequest) {
       const passHeaders = new Headers();
@@ -116,19 +136,6 @@ export async function GET(
           Pragma: "no-cache",
           Expires: "0",
         },
-      });
-    }
-
-    // For FLV/streaming endpoints, pipe the response body directly
-    if (path.startsWith("stream/stream/proxy")) {
-      const passHeaders = new Headers();
-      ["content-type", "content-length", "cache-control", "transfer-encoding"].forEach((key) => {
-        const value = response.headers.get(key);
-        if (value) passHeaders.set(key, value);
-      });
-      return new Response(response.body, {
-        status: response.status,
-        headers: passHeaders,
       });
     }
 
