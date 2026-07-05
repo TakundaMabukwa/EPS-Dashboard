@@ -160,7 +160,15 @@ export async function POST(
   const { path: pathArray } = await params;
   const path = pathArray.join("/");
   const target = resolveVideoServerProxyBase(pathArray);
-  const url = `${target.baseUrl}/api/${path}`;
+  const first = pathArray[0];
+  const epsPath = first === "eps" ? path.slice(4) : path;
+  const upstreamPath =
+    first === "media" || first === "captures"
+      ? `/${path}`
+      : first === "eps"
+      ? `/api/${epsPath}`
+      : `/api/${path}`;
+  const url = `${target.baseUrl}${upstreamPath}`;
   const body = await request.json().catch(() => ({}));
 
   try {

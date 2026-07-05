@@ -7,15 +7,16 @@ interface FLVPlayerProps {
   channel: number;
   vehicleName: string;
   onStop?: () => void;
+  onStatusChange?: (channel: number, status: 'loading' | 'live' | 'offline') => void;
 }
 
-export default function FLVPlayer({ streamUrl, channel, vehicleName, onStop }: FLVPlayerProps) {
+export default function FLVPlayer({ streamUrl, channel, vehicleName, onStop, onStatusChange }: FLVPlayerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const playerRef = useRef<any>(null);
   const reconnectRef = useRef(0);
   const pingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const destroyedRef = useRef(false);
-  const [status, setStatus] = useState('Connecting...');
+  const [status, setStatus] = useState('loading');
   const [error, setError] = useState(false);
   const [videoPlaying, setVideoPlaying] = useState(false);
 
@@ -27,23 +28,29 @@ export default function FLVPlayer({ streamUrl, channel, vehicleName, onStop }: F
     reconnectRef.current = 0;
     setVideoPlaying(false);
     setError(false);
-    setStatus('Connecting...');
-    const maxReconnects = 5;
+    setStatus('loading');
+    onStatusChange?.(channel, 'loading');
+    const maxReconnects = 8;
+    let failedAttempts = 0;
 
     const onVideoPlaying = () => {
       if (destroyed) return;
       setVideoPlaying(true);
-      setStatus('Streaming live');
+      setStatus('live');
       setError(false);
       reconnectRef.current = 0;
+      failedAttempts = 0;
+      onStatusChange?.(channel, 'live');
     };
     const onVideoTimeUpdate = () => {
       if (destroyed) return;
       if (videoRef.current && videoRef.current.currentTime > 0 && !videoPlaying) {
         setVideoPlaying(true);
-        setStatus('Streaming live');
+        setStatus('live');
         setError(false);
         reconnectRef.current = 0;
+        failedAttempts = 0;
+        onStatusChange?.(channel, 'live');
       }
     };
     const videoEl = videoRef.current;
@@ -53,7 +60,10 @@ export default function FLVPlayer({ streamUrl, channel, vehicleName, onStop }: F
     (async () => {
       const flvjs = (await import('flv.js')).default;
       if (destroyed || !flvjs.isSupported()) {
-        if (!destroyed) setStatus('FLV not supported');
+        if (!destroyed) {
+          setStatus('offline');
+          onStatusChange?.(channel, 'offline');
+        }
         return;
       }
 
@@ -79,11 +89,18 @@ export default function FLVPlayer({ streamUrl, channel, vehicleName, onStop }: F
 
           player.on(flvjs.Events.ERROR, () => {
             if (destroyed) return;
-            setError(true);
-            setStatus('Stream error');
-            if (reconnectRef.current < maxReconnects) {
+            failedAttempts++;
+            if (failedAttempts >= 2) {
+              setError(true);
+              setStatus('offline');
+              onStatusChange?.(channel, 'offline');
+            } else if (reconnectRef.current < maxReconnects) {
               reconnectRef.current++;
               setTimeout(connect, 2000 * reconnectRef.current);
+            } else {
+              setError(true);
+              setStatus('offline');
+              onStatusChange?.(channel, 'offline');
             }
           });
 
@@ -96,11 +113,8 @@ export default function FLVPlayer({ streamUrl, channel, vehicleName, onStop }: F
         } catch (e) {
           if (destroyed) return;
           setError(true);
-          setStatus('Player error');
-          if (reconnectRef.current < maxReconnects) {
-            reconnectRef.current++;
-            setTimeout(connect, 3000);
-          }
+          setStatus('offline');
+          onStatusChange?.(channel, 'offline');
         }
       }
 
@@ -146,27 +160,12 @@ export default function FLVPlayer({ streamUrl, channel, vehicleName, onStop }: F
     };
   }, [streamUrl]);
 
-  const isStreaming = !error && videoPlaying;
+  const isLive = status === 'live';
+  const isOffline = status === 'offline';
 
   return (
-    <div className="bg-slate-800 rounded-lg p-4 shadow-lg">
-      <div className="flex justify-between items-center mb-2">
-        <h3 className="text-teal-400 font-bold text-sm">{vehicleName}</h3>
-        <div className="flex items-center gap-2">
-          <span className={`text-xs ${isStreaming ? 'text-green-400' : error ? 'text-red-400' : 'text-yellow-400'}`}>
-            {status}
-          </span>
-          {onStop && (
-            <button
-              onClick={onStop}
-              className="text-xs px-2 py-1 bg-red-500 hover:bg-red-600 text-white rounded"
-            >
-              Stop
-            </button>
-          )}
-        </div>
-      </div>
-      <div className="relative w-full aspect-video bg-slate-900 rounded overflow-hidden">
+    <div className="relative rounded-lg overflow-hidden bg-slate-950 border border-slate-800">
+      <div className="relative w-full aspect-video bg-black">
         <video
           ref={videoRef}
           className="w-full h-full object-contain"
@@ -174,24 +173,50 @@ export default function FLVPlayer({ streamUrl, channel, vehicleName, onStop }: F
           playsInline
           autoPlay
         />
-        {!isStreaming && !error && (
-          <div className="absolute inset-0 flex items-center justify-center bg-slate-900/80">
-            <div className="text-center text-slate-400">
-              <div className="w-8 h-8 border-2 border-slate-500 border-t-cyan-400 rounded-full animate-spin mx-auto mb-2" />
-              <p className="text-sm">{status}</p>
+        {status === 'loading' && (
+          <div className="absolute inset-0 flex items-center justify-center bg-slate-950/90">
+            <div className="text-center">
+              <div className="w-10 h-10 border-2 border-slate-600 border-t-cyan-400 rounded-full animate-spin mx-auto mb-3" />
+              <p className="text-slate-400 text-sm">Connecting...</p>
             </div>
           </div>
         )}
-        {error && (
-          <div className="absolute inset-0 flex items-center justify-center bg-slate-900/80">
-            <div className="text-center text-slate-400">
-              <p className="text-sm">{status}</p>
+        {isOffline && (
+          <div className="absolute inset-0 flex items-center justify-center bg-slate-950/95">
+            <div className="text-center">
+              <div className="w-12 h-12 rounded-full bg-slate-800/80 flex items-center justify-center mx-auto mb-3">
+                <svg className="w-6 h-6 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.182 16.318A4.486 4.486 0 0012.016 15a4.486 4.486 0 00-3.198 1.318M21 12a9 9 0 11-18 0 9 9 0 0118 0zM9.75 9.75c0 .414-.168.75-.375.75S9 10.164 9 9.75 9.168 9 9.375 9s.375.336.375.75zm-.375 0h.008v.015h-.008V9.75zm5.625 0c0 .414-.168.75-.375.75s-.375-.336-.375-.75.168-.75.375-.75.375.336.375.75zm-.375 0h.008v.015h-.008V9.75z" />
+                </svg>
+              </div>
+              <p className="text-slate-500 text-sm font-medium">Camera Offline</p>
+              <p className="text-slate-600 text-xs mt-1">CH{channel}</p>
             </div>
+          </div>
+        )}
+        {isLive && (
+          <div className="absolute top-2 right-2 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm rounded px-2 py-1">
+            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            <span className="text-[10px] text-white font-medium uppercase tracking-wider">Live</span>
           </div>
         )}
       </div>
-      <div className="text-xs text-gray-400 mt-2 font-mono">
-        FLV Live | CH {channel}
+      <div className="flex items-center justify-between px-3 py-2 bg-slate-900 border-t border-slate-800">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-slate-300">CH{channel}</span>
+          <span className="text-[10px] text-slate-500">|</span>
+          <span className={`text-[10px] font-medium ${isLive ? 'text-green-400' : isOffline ? 'text-slate-500' : 'text-yellow-400'}`}>
+            {isLive ? 'Streaming' : isOffline ? 'Offline' : 'Connecting'}
+          </span>
+        </div>
+        {onStop && (
+          <button
+            onClick={onStop}
+            className="text-[10px] px-2 py-0.5 bg-slate-700 hover:bg-red-600 text-slate-300 hover:text-white rounded transition-colors"
+          >
+            Stop
+          </button>
+        )}
       </div>
     </div>
   );
