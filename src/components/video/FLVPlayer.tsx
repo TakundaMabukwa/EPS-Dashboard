@@ -1,7 +1,6 @@
 'use client';
 
 import { useRef, useEffect, useState } from 'react';
-import flvjs from 'flv.js';
 
 interface FLVPlayerProps {
   streamUrl: string;
@@ -21,11 +20,9 @@ export default function FLVPlayer({ streamUrl, channel, vehicleName, onStop }: F
   const [videoPlaying, setVideoPlaying] = useState(false);
 
   useEffect(() => {
-    if (!videoRef.current || !streamUrl || !flvjs.isSupported()) {
-      if (!flvjs.isSupported()) setStatus('FLV not supported');
-      return;
-    }
+    if (!videoRef.current || !streamUrl) return;
 
+    let destroyed = false;
     destroyedRef.current = false;
     reconnectRef.current = 0;
     setVideoPlaying(false);
@@ -34,14 +31,14 @@ export default function FLVPlayer({ streamUrl, channel, vehicleName, onStop }: F
     const maxReconnects = 5;
 
     const onVideoPlaying = () => {
-      if (destroyedRef.current) return;
+      if (destroyed) return;
       setVideoPlaying(true);
       setStatus('Streaming live');
       setError(false);
       reconnectRef.current = 0;
     };
     const onVideoTimeUpdate = () => {
-      if (destroyedRef.current) return;
+      if (destroyed) return;
       if (videoRef.current && videoRef.current.currentTime > 0 && !videoPlaying) {
         setVideoPlaying(true);
         setStatus('Streaming live');
@@ -53,54 +50,90 @@ export default function FLVPlayer({ streamUrl, channel, vehicleName, onStop }: F
     videoEl.addEventListener('playing', onVideoPlaying);
     videoEl.addEventListener('timeupdate', onVideoTimeUpdate);
 
-    function connect() {
-      if (destroyedRef.current || !videoRef.current) return;
+    (async () => {
+      const flvjs = (await import('flv.js')).default;
+      if (destroyed || !flvjs.isSupported()) {
+        if (!destroyed) setStatus('FLV not supported');
+        return;
+      }
 
-      destroyPlayer();
+      function connect() {
+        if (destroyed || !videoRef.current) return;
 
-      const proxyUrl = `/api/video-server/stream/stream/proxy?url=${encodeURIComponent(streamUrl)}`;
+        destroyPlayer();
 
-      try {
-        const player = flvjs.createPlayer({
-          type: 'flv',
-          url: proxyUrl,
-          isLive: true,
-          hasAudio: false,
-          enableStashBuffer: false,
-          stashInitialSize: 128,
-        });
+        const proxyUrl = `/api/video-server/stream/stream/proxy?url=${encodeURIComponent(streamUrl)}`;
 
-        player.attachMediaElement(videoRef.current);
-        playerRef.current = player;
+        try {
+          const player = flvjs.createPlayer({
+            type: 'flv',
+            url: proxyUrl,
+            isLive: true,
+            hasAudio: false,
+            enableStashBuffer: false,
+            stashInitialSize: 128,
+          });
 
-        player.on(flvjs.Events.ERROR, () => {
-          if (destroyedRef.current) return;
+          player.attachMediaElement(videoRef.current);
+          playerRef.current = player;
+
+          player.on(flvjs.Events.ERROR, () => {
+            if (destroyed) return;
+            setError(true);
+            setStatus('Stream error');
+            if (reconnectRef.current < maxReconnects) {
+              reconnectRef.current++;
+              setTimeout(connect, 2000 * reconnectRef.current);
+            }
+          });
+
+          player.on(flvjs.Events.LOADING_COMPLETE, () => {
+            if (!destroyed) reconnectRef.current = 0;
+          });
+
+          player.load();
+          player.play().catch(() => {});
+        } catch (e) {
+          if (destroyed) return;
           setError(true);
-          setStatus('Stream error');
+          setStatus('Player error');
           if (reconnectRef.current < maxReconnects) {
             reconnectRef.current++;
-            setTimeout(connect, 2000 * reconnectRef.current);
+            setTimeout(connect, 3000);
           }
-        });
-
-        player.on(flvjs.Events.LOADING_COMPLETE, () => {
-          if (!destroyedRef.current) reconnectRef.current = 0;
-        });
-
-        player.load();
-        player.play().catch(() => {});
-      } catch (e) {
-        if (destroyedRef.current) return;
-        setError(true);
-        setStatus('Player error');
-        if (reconnectRef.current < maxReconnects) {
-          reconnectRef.current++;
-          setTimeout(connect, 3000);
         }
       }
-    }
 
-    function destroyPlayer() {
+      function destroyPlayer() {
+        if (playerRef.current) {
+          try {
+            playerRef.current.pause();
+            playerRef.current.unload();
+            playerRef.current.detachMediaElement();
+            playerRef.current.destroy();
+          } catch (e) {}
+          playerRef.current = null;
+        }
+      }
+
+      connect();
+
+      pingRef.current = setInterval(() => {
+        if (destroyed) return;
+        if (playerRef.current && videoRef.current && videoRef.current.paused) {
+          playerRef.current.play().catch(() => {});
+        }
+      }, 10000);
+    })();
+
+    return () => {
+      destroyed = true;
+      destroyedRef.current = true;
+      if (videoEl) {
+        videoEl.removeEventListener('playing', onVideoPlaying);
+        videoEl.removeEventListener('timeupdate', onVideoTimeUpdate);
+      }
+      if (pingRef.current) clearInterval(pingRef.current);
       if (playerRef.current) {
         try {
           playerRef.current.pause();
@@ -110,25 +143,6 @@ export default function FLVPlayer({ streamUrl, channel, vehicleName, onStop }: F
         } catch (e) {}
         playerRef.current = null;
       }
-    }
-
-    connect();
-
-    pingRef.current = setInterval(() => {
-      if (destroyedRef.current) return;
-      if (playerRef.current && videoRef.current && videoRef.current.paused) {
-        playerRef.current.play().catch(() => {});
-      }
-    }, 10000);
-
-    return () => {
-      destroyedRef.current = true;
-      if (videoEl) {
-        videoEl.removeEventListener('playing', onVideoPlaying);
-        videoEl.removeEventListener('timeupdate', onVideoTimeUpdate);
-      }
-      if (pingRef.current) clearInterval(pingRef.current);
-      destroyPlayer();
     };
   }, [streamUrl]);
 
