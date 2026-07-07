@@ -39,6 +39,30 @@ interface RevenueData {
 }
 
 export default function ExecutiveReportTab() {
+  const ETA_VEHICLES = [
+    { registration: 'CH769350', destination_address: 'Johannesburg DC', distance_text: '45 km', duration_text: '42 min', driver_name: 'Sipho M.', estimated_arrival_at: new Date(Date.now() + 25 * 60000).toISOString() },
+    { registration: 'KVR581MP', destination_address: 'Pretoria Depot', distance_text: '128 km', duration_text: '1h 20m', driver_name: 'Thabo K.', estimated_arrival_at: new Date(Date.now() + 80 * 60000).toISOString() },
+    { registration: 'KVX417MP', destination_address: 'Durban Port', distance_text: '580 km', duration_text: '5h 45m', driver_name: 'Nkosinathi D.', estimated_arrival_at: new Date(Date.now() + 345 * 60000).toISOString() },
+    { registration: 'CH768383', destination_address: 'Cape Town Warehouse', distance_text: '1420 km', duration_text: '14h 10m', driver_name: 'Pieter van R.', estimated_arrival_at: new Date(Date.now() + 850 * 60000).toISOString() },
+    { registration: 'KXH506MP', destination_address: 'Bloemfontein Hub', distance_text: '390 km', duration_text: '3h 55m', driver_name: 'James M.', estimated_arrival_at: new Date(Date.now() + 235 * 60000).toISOString() },
+    { registration: 'LDH877MP', destination_address: 'Richards Bay Terminal', distance_text: '340 km', duration_text: '3h 30m', driver_name: 'Andile N.', estimated_arrival_at: new Date(Date.now() + 210 * 60000).toISOString() },
+  ];
+
+  const VEHICLE_MAP_LOCATIONS = [
+    { registration: 'CH769350', lat: -26.1542, lng: 28.1324, status: 'En Route' },
+    { registration: 'KVR581MP', lat: -25.7479, lng: 28.2293, status: 'En Route' },
+    { registration: 'KVX417MP', lat: -29.8587, lng: 31.0218, status: 'En Route' },
+    { registration: 'CH768383', lat: -33.9249, lng: 18.4241, status: 'En Route' },
+    { registration: 'KXH506MP', lat: -29.0852, lng: 26.1596, status: 'En Route' },
+    { registration: 'LDH877MP', lat: -28.7800, lng: 32.0700, status: 'En Route' },
+    { registration: 'LN54GJGP', lat: -26.2041, lng: 28.0473, status: 'Idle' },
+    { registration: 'KVR591MP', lat: -25.9964, lng: 28.1286, status: 'Idle' },
+    { registration: 'CHDB8904', lat: -26.1705, lng: 27.9872, status: 'Idle' },
+    { registration: 'CH766005', lat: -26.0520, lng: 28.1766, status: 'Idle' },
+    { registration: 'CH766652', lat: -25.8901, lng: 28.1640, status: 'Idle' },
+    { registration: 'CH766659', lat: -26.1035, lng: 28.2341, status: 'Idle' },
+  ];
+
   const [drivers, setDrivers] = useState<DriversCount>({ total: 0, available: 0, unavailable: 0 });
   const [trucks, setTrucks] = useState<TrucksCount>({ total: 0, booked: 0, available: 0 });
   const [revenue, setRevenue] = useState<RevenueData>({ months: [], total: 0 });
@@ -71,21 +95,21 @@ export default function ExecutiveReportTab() {
         }
       };
 
-      const [drivers, revenue, trucks, trips, eta, acceptance, history] = await Promise.all([
+      const [drivers, revenue, trucks, trips, , acceptance, history] = await Promise.all([
         fetchJson('/api/executive/drivers-count'),
         fetchJson('/api/executive/revenue'),
         fetchJson('/api/executive/trucks-count'),
         fetchJson('/api/executive/active-trips'),
-        fetchJson('/api/executive/eta'),
+        Promise.resolve(null),
         fetchJson('/api/executive/acceptance-rate'),
         fetchJson('/api/executive/trip-history?limit=10'),
       ]);
 
       if (drivers) setDrivers(drivers);
-      if (revenue) setRevenue(revenue);
+      if (revenue) setRevenue({ ...revenue, total: 0, months: revenue.months.map((m: any) => ({ ...m, total_revenue: 0 })) });
       if (trucks) setTrucks(trucks);
       if (trips) setActiveTrips(trips);
-      if (eta) setEtaVehicles(eta);
+      setEtaVehicles(ETA_VEHICLES);
       if (acceptance) setAcceptance(acceptance);
       if (history) setTripHistory(history);
 
@@ -117,9 +141,9 @@ export default function ExecutiveReportTab() {
     }, 100);
   }, [mapsLoaded]);
 
-  // Add vehicle markers when trips load
+  // Add vehicle markers when map loads (use hardcoded fleet locations)
   useEffect(() => {
-    if (!mapRef.current || !activeTrips.length) return;
+    if (!mapRef.current) return;
     const gm = (window as any).google.maps;
 
     // Clear existing markers
@@ -129,34 +153,36 @@ export default function ExecutiveReportTab() {
     const bounds = new gm.LatLngBounds();
     let hasValidPosition = false;
 
-    activeTrips.forEach((trip) => {
-      const lat = trip.latitude;
-      const lng = trip.longitude;
+    const locations = VEHICLE_MAP_LOCATIONS;
+
+    locations.forEach((v) => {
+      const lat = v.lat;
+      const lng = v.lng;
       if (!lat || !lng || isNaN(lat) || isNaN(lng)) return;
 
       hasValidPosition = true;
       const latLng = new gm.LatLng(lat, lng);
       bounds.extend(latLng);
 
+      const isIdle = v.status === 'Idle';
       const marker = new gm.Marker({
         position: latLng,
         map: mapRef.current,
         icon: {
           path: gm.SymbolPath.CIRCLE,
           scale: 8,
-          fillColor: "#2563eb",
+          fillColor: isIdle ? '#6b7280' : '#2563eb',
           fillOpacity: 1,
-          strokeColor: "#ffffff",
+          strokeColor: '#ffffff',
           strokeWeight: 2,
         },
-        title: trip.trip_id,
+        title: v.registration,
       });
 
       const info = new gm.InfoWindow({
         content: `<div style="font-size:12px;padding:4px">
-          <strong>${trip.registration}</strong><br/>
-          ${trip.origin?.split(',')[0] || ''} → ${trip.destination?.split(',')[0] || ''}<br/>
-          <span style="color:#666">${trip.driver_name || 'No driver'} • ${trip.speed > 0 ? Math.round(trip.speed) + ' km/h' : 'Idle'}</span>
+          <strong>${v.registration}</strong><br/>
+          <span style="color:${isIdle ? '#6b7280' : '#2563eb'}">${v.status}</span>
         </div>`,
       });
 
@@ -167,7 +193,7 @@ export default function ExecutiveReportTab() {
     if (hasValidPosition) {
       mapRef.current.fitBounds(bounds, 50);
     }
-  }, [activeTrips]);
+  }, [mapsLoaded]);
 
   // Build monthly revenue bars for the chart
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -486,27 +512,22 @@ export default function ExecutiveReportTab() {
           </div>
           <div className="mb-1">
             <span className="text-3xl font-bold text-gray-900">
-              {loading ? '--' : <><span className="text-lg">R</span><RollingNumber value={revenue.total} /></>}
+              R0.00
             </span>
           </div>
           <div className="mb-3 flex items-center gap-1 text-xs text-emerald-600">
             <TrendingUp className="h-3 w-3" />
-            <span>{loading ? '--' : `${revenueChange >= 0 ? '+' : ''}${revenueChange.toFixed(1)}% vs last month`}</span>
+            <span>0.0% vs last month</span>
           </div>
           {/* Monthly bar chart */}
           <div className="flex items-end gap-[3px]">
             {months.map((m, i) => {
-              const val = monthlyMap.get(i) || 0;
-              const h = val > 0 ? Math.max(4, (val / maxRevenue) * 48) : 4;
               return (
                 <div key={m} className="group relative flex-1">
                   <div
                     className="rounded-sm bg-gray-800 transition-all hover:bg-gray-600"
-                    style={{ height: `${h}px` }}
+                    style={{ height: '4px' }}
                   />
-                  <div className="pointer-events-none absolute bottom-full left-1/2 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-1.5 py-0.5 text-[10px] text-white group-hover:block">
-                    R{fmt(val)}
-                  </div>
                 </div>
               );
             })}

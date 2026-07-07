@@ -2391,12 +2391,12 @@ export default function Dashboard() {
               >
                 Trip Routing
               </TabsTrigger>
-              <TabsTrigger
+              {/* <TabsTrigger
                 value="live-map"
                 className="px-6 py-2 text-sm font-medium rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm"
               >
                 Live Map
-              </TabsTrigger>
+              </TabsTrigger> */}
               <TabsTrigger
                 value="reports"
                 className="px-6 py-2 text-sm font-medium rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm"
@@ -2467,12 +2467,12 @@ export default function Dashboard() {
               >
                 Trip Routing
               </TabsTrigger>
-              <TabsTrigger
+              {/* <TabsTrigger
                 value="live-map"
                 className="px-6 py-2 text-sm font-medium rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm"
               >
                 Live Map
-              </TabsTrigger>
+              </TabsTrigger> */}
               <TabsTrigger
                 value="reports"
                 className="px-6 py-2 text-sm font-medium rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm"

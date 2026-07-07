@@ -171,22 +171,10 @@ export default function Vehicles() {
   const [isEquipmentSheetOpen, setIsEquipmentSheetOpen] = useState(false);
   const [equipmentVehicleReg, setEquipmentVehicleReg] = useState("");
   const [cardFilter, setCardFilter] = useState<string | null>(null);
-  const [branchFilter, setBranchFilter] = useState<string>('all');
+  const [branchFilter, setBranchFilter] = useState<string>('PREMIER');
   
   const branches = [
-    { name: 'BRAKEN GATE CPT', code: 'BRK' },
-    { name: 'CANCELLED DN', code: 'CANCEL' },
-    { name: 'DCC CROSSBORDER', code: 'DCC' },
-    { name: 'EPS JOHANNESBURG', code: 'JHB' },
-    { name: 'GOSFORTH PARK', code: 'GFS' },
-    { name: 'HEAD OFFICE', code: 'HO' },
-    { name: 'NORTHFIELDS', code: 'NORTH' },
-    { name: 'OPEN NETWORK', code: 'ON' },
-    { name: 'POLOKWANE LID', code: 'PLKL' },
-    { name: 'RIVERSANDS', code: 'RS' },
-    { name: 'SPAR KZN', code: 'SPAR' },
-    { name: 'WATERFALL MIDRAND', code: 'WTF' },
-    { name: 'WRITTEN OFF', code: 'WO' },
+    { name: 'PREMIER', code: 'PRE' },
   ];
   
 
@@ -194,7 +182,7 @@ export default function Vehicles() {
     const { data: vehicles, error } = await supabase
       .from("vehiclesc")
       .select("*")
-      .neq("branch_name", "SOLD");
+      .eq("branch_name", "PREMIER");
     if (error) {
       console.error("the error is", error.name, error.message);
     } else {
