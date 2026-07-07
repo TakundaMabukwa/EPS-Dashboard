@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "EPS Breakdown Dashboard",
-  description: "Breakdown Dashboard for EPS Courier Services",
+  title: "Premier Logistics Dashboard",
+  description: "Fleet Management Dashboard for Premier Logistics Solutions",
   authors: [{ name: "Kilig Mukelani", url: "" }],
 };
 

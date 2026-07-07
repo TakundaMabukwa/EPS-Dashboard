@@ -246,16 +246,16 @@ export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
       <div className="flex h-screen bg-gray-100 text-gray-900">
         {/* Sidebar */}
         <aside
-        className={`fixed inset-y-0 left-0 z-50 flex flex-col justify-between bg-gradient-to-br from-blue-950 to-blue-800 text-white shadow-2xl transition-width duration-300 ease-in-out overflow-hidden ${sidebarExpanded ? "w-64" : "w-20"
+        className={`fixed inset-y-0 left-0 z-50 flex flex-col justify-between bg-gradient-to-b from-[#1A245E] to-[#2D3A5C] text-white shadow-2xl transition-width duration-300 ease-in-out overflow-hidden ${sidebarExpanded ? "w-64" : "w-20"
           }`}
       >
         {/* Top: logo + toggle */}
         <div className="px-3 py-4">
           <div className="flex items-center justify-between">
             <img
-              src="/Logo.png"
-              alt="EPS Logo"
-              className="h-10 w-10 rounded-lg bg-white p-1 shadow"
+              src="/premier logo.jpg"
+              alt="Premier Logistics"
+              className={`rounded-lg shadow ${sidebarExpanded ? "h-12 w-auto" : "h-10 w-10 object-cover"}`}
             />
             {/* Toggle is duplicated here visually hidden on small but kept for layout */}
             <div className="hidden"></div>
@@ -278,8 +278,8 @@ export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
                     href={item.href}
                     className={`group flex items-center gap-3 p-2 rounded-xl transition-colors duration-200 w-full
                       ${isActive
-                        ? "bg-white/90 text-blue-900 shadow-md"
-                        : "text-gray-300 hover:text-white hover:bg-blue-900/40"
+                        ? "bg-white/90 text-[#1A245E] shadow-md"
+                        : "text-gray-300 hover:text-white hover:bg-white/10"
                       }`}
                   >
                     <span
@@ -290,7 +290,7 @@ export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
                       <span
                         className={`p-2 rounded-full flex items-center justify-center transition-colors duration-150
                           ${isActive
-                            ? "bg-white text-blue-900"
+                            ? "bg-[#1A245E] text-white"
                             : "bg-white/10 text-white group-hover:bg-white/20 group-hover:text-white"
                           }`}
                         style={{ width: 36, height: 36 }}
@@ -333,7 +333,7 @@ export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
             <Button
               size="icon"
               onClick={() => setSidebarExpanded(!sidebarExpanded)}
-              className="text-white bg-blue-700 hover:bg-blue-800"
+              className="text-white bg-[#1A245E] hover:bg-[#141D4A]"
               aria-label="Toggle sidebar"
             >
               {sidebarExpanded ? (
@@ -345,7 +345,7 @@ export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
             <div className="flex flex-col">
               <span className="text-sm text-gray-500">Welcome back,</span>
               <span className="text-base font-semibold text-gray-800">
-                EPS Couriers
+                Premier Logistics
               </span>
             </div>
             <div className="flex items-center gap-4">
