@@ -99,7 +99,7 @@ export default function ExecDashTab() {
   // Hardcoded July data
   const kmData = [0, 0, 0, 0, 0, 0, 80, 0, 0, 0, 0, 0];
   const avgRisk = 12;
-  const speedLabels = ['Sipho M.', 'Thabo K.', 'Nkosinathi D.', 'Pieter van R.', 'James M.', 'Andile N.', 'Bongani T.', 'David P.', 'Frank M.', 'Grace N.'];
+  const speedLabels = ['L. Lehanya', 'S. Williams', 'L. Mdingi', 'S. Dumiso', 'V. Wogqoyi', 'T. Sigwili', 'L. Petersen', 'B. Ndabeni', 'M. Khaya', 'A. Leonard'];
   const speedValues = [8, 6, 5, 4, 3, 3, 2, 2, 1, 1];
   const tripLabels = ['COMPLETED', 'ON-TRIP', 'PENDING'];
   const tripValues = [2, 0, 0];
