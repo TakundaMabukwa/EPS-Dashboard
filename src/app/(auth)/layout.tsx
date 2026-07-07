@@ -21,9 +21,9 @@ export default function AuthLayout({ children }: AuthLayoutProps) {
             <img
               src="/premier logo.jpg"
               alt="Premier Logistics Solutions"
-              width={180}
-              height={100}
-              className="object-contain"
+              width={160}
+              height={60}
+              className="object-contain max-h-16"
             />
           </div>
           <p className="text-gray-600 text-sm">Reliable. Professional. Nationwide.</p>
