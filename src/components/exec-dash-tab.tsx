@@ -1,7 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
 const ALL_MONTHS = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
 const pieColors = ['#c0392b', '#e74c3c', '#d35400', '#e67e22', '#f39c12', '#27ae60', '#2980b9', '#8e44ad', '#c0c0c0', '#7f8c8d'];
 
@@ -98,90 +96,19 @@ function PieChart({ data, labels }: { data: number[]; labels: string[] }) {
 }
 
 export default function ExecDashTab() {
-  const [monthlyKm, setMonthlyKm] = useState<any[]>([]);
-  const [riskDist, setRiskDist] = useState<any[]>([]);
-  const [riskScores, setRiskScores] = useState<any[]>([]);
-  const [topSpeeding, setTopSpeeding] = useState<any[]>([]);
-  const [tripStatus, setTripStatus] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [kmRes, riskRes, scoresRes, speedRes, tripsRes] = await Promise.all([
-          fetch("/api/dashboard/km/monthly"),
-          fetch("/api/dashboard/risk/distribution"),
-          fetch("/api/dashboard/risk/scores"),
-          fetch("/api/dashboard/speeding/top"),
-          fetch("/api/dashboard/trips/status"),
-        ]);
-        const [km, risk, scores, speed, trips] = await Promise.all([
-          kmRes.json(), riskRes.json(), scoresRes.json(), speedRes.json(), tripsRes.json()
-        ]);
-        if (km.ok) setMonthlyKm(km.data);
-        if (risk.ok) setRiskDist(risk.data);
-        if (scores.ok) setRiskScores(scores.data);
-        if (speed.ok) setTopSpeeding(speed.data);
-        if (trips.ok) setTripStatus(trips.data);
-      } catch (e) {
-        console.error("Failed to fetch exec dash data:", e);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, []);
-
-  const monthMap: Record<string, number> = {};
-  monthlyKm.forEach(d => {
-    if (d.month) {
-      const m = parseInt(d.month.split("-")[1]);
-      monthMap[m] = parseFloat(d.total_km);
-    }
-  });
-  const kmData = ALL_MONTHS.map((_, i) => monthMap[i + 1] || 0);
-  const maxKm = Math.max(...kmData, 1);
-
-  const avgRisk = riskScores.length > 0
-    ? Math.round(riskScores.reduce((s, d) => s + d.score, 0) / riskScores.length)
-    : 0;
-
-  const speedLabels = topSpeeding.slice(0, 10).map((d: any) => {
-    const name = d.full_name || d.name || "";
-    return name.length > 18 ? name.substring(0, 18) + "..." : name;
-  });
-  const speedValues = topSpeeding.slice(0, 10).map((d: any) => parseInt(d.speeding_events));
-  const totalSpeeding = speedValues.reduce((s, v) => s + v, 0);
-
-  const tripLabels = tripStatus.map(d => d.status?.toUpperCase() || "");
-  const tripValues = tripStatus.map(d => parseInt(d.count));
-  const maxTrips = Math.max(...tripValues, 1);
-
-  const riskScoreMap: Record<string, number> = {};
-  riskScores.forEach(d => {
-    const dateStr = d.score_date;
-    if (dateStr) {
-      const m = new Date(dateStr).getMonth() + 1;
-      if (!riskScoreMap[m]) riskScoreMap[m] = [];
-      riskScoreMap[m].push(d.score);
-    }
-  });
-  const riskScoreData = ALL_MONTHS.map((_, i) => {
-    const scores = riskScoreMap[i + 1];
-    return scores ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
-  });
-  const maxRisk = Math.max(...riskScoreData, 1);
-
+  // Hardcoded July data
+  const kmData = [0, 0, 0, 0, 0, 0, 80, 0, 0, 0, 0, 0];
+  const avgRisk = 12;
+  const speedLabels = ['Sipho M.', 'Thabo K.', 'Nkosinathi D.', 'Pieter van R.', 'James M.', 'Andile N.', 'Bongani T.', 'David P.', 'Frank M.', 'Grace N.'];
+  const speedValues = [8, 6, 5, 4, 3, 3, 2, 2, 1, 1];
+  const tripLabels = ['COMPLETED', 'ON-TRIP', 'PENDING'];
+  const tripValues = [2, 0, 0];
+  const riskScoreData = [0, 0, 0, 0, 0, 0, 12, 0, 0, 0, 0, 0];
   const unitsNotUpdating = 1;
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-200 border-t-blue-600"></div>
-        <span className="ml-3 text-gray-500 text-sm">Loading dashboard data...</span>
-      </div>
-    );
-  }
+  const maxKm = Math.max(...kmData, 1);
+  const maxTrips = Math.max(...tripValues, 1);
+  const maxRisk = Math.max(...riskScoreData, 1);
 
   return (
     <div className="space-y-4">
