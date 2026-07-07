@@ -33,6 +33,29 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
+    const allVehicleIds = new Set<number>()
+    for (const trip of (trips || [])) {
+      const va = parseJson(trip.vehicleassignments)
+      if (!Array.isArray(va)) continue
+      for (const assignment of va) {
+        const vId = Number(assignment?.vehicle?.id)
+        const tId = Number(assignment?.trailer?.id)
+        if (vId) allVehicleIds.add(vId)
+        if (tId) allVehicleIds.add(tId)
+      }
+    }
+
+    const regMap = new Map<number, string>()
+    if (allVehicleIds.size > 0) {
+      const { data: vehicles } = await supabase
+        .from('vehiclesc')
+        .select('id, registration_number')
+        .in('id', Array.from(allVehicleIds))
+      for (const v of (vehicles || [])) {
+        regMap.set(v.id, v.registration_number || '')
+      }
+    }
+
     const workbook = new ExcelJS.Workbook()
     workbook.creator = 'EPS Dashboard'
     workbook.created = new Date()
@@ -86,6 +109,50 @@ export async function GET(request: NextRequest) {
       to: { row: 1, column: headers.length },
     }
 
+    type MileageKey = string
+    const mileageRequests = new Map<MileageKey, { reg: string; from: string; to: string }>()
+    for (const trip of (trips || [])) {
+      const va = parseJson(trip.vehicleassignments)
+      const stopsData = parseJson(trip.stops_data)
+      const statusEntries = Array.isArray(stopsData) ? stopsData : []
+      const horseReg = regMap.get(Number(va?.[0]?.vehicle?.id)) || va?.[0]?.vehicle?.name || ''
+      const fromTs = statusEntries[1]?.timestamp || statusEntries[1]?.recorded_at || ''
+      const toTs = statusEntries.length >= 2
+        ? statusEntries[statusEntries.length - 1]?.timestamp || statusEntries[statusEntries.length - 1]?.recorded_at || ''
+        : ''
+      if (horseReg && fromTs && toTs) {
+        const key = `${horseReg}|${formatMileageTime(fromTs)}|${formatMileageTime(toTs)}`
+        if (!mileageRequests.has(key)) {
+          mileageRequests.set(key, { reg: horseReg, from: formatMileageTime(fromTs), to: formatMileageTime(toTs) })
+        }
+      }
+    }
+
+    const mileageCache = new Map<MileageKey, any>()
+    const entries = Array.from(mileageRequests.entries())
+    let fetchErrors = 0
+    let fetchHits = 0
+    const BATCH = 10
+    for (let i = 0; i < entries.length; i += BATCH) {
+      const batch = entries.slice(i, i + BATCH)
+      const results = await Promise.allSettled(
+        batch.map(async ([key, req]) => {
+          const data = await fetchMileage(req.reg, req.from, req.to)
+          return { key, data }
+        })
+      )
+      for (const r of results) {
+        if (r.status === 'fulfilled' && r.value.data) {
+          mileageCache.set(r.value.key, r.value.data)
+          fetchHits++
+        } else {
+          fetchErrors++
+        }
+      }
+    }
+
+    console.log(`Mileage: ${mileageRequests.size} unique keys, ${fetchHits} hits, ${fetchErrors} misses`)
+
     for (const trip of (trips || [])) {
       const vehicleassignments = parseJson(trip.vehicleassignments)
       const clientdetails = parseJson(trip.clientdetails)
@@ -93,17 +160,11 @@ export async function GET(request: NextRequest) {
       const dropofflocations = parseJson(trip.dropofflocations)
       const stopsData = parseJson(trip.stops_data)
 
-      const leaderVehicle = vehicleassignments?.[0]?.vehicle?.name || ''
-      const followerVehicle = vehicleassignments?.[1]?.vehicle?.name || ''
+      const horseReg = regMap.get(Number(vehicleassignments?.[0]?.vehicle?.id)) || vehicleassignments?.[0]?.vehicle?.name || ''
+      const leaderVehicle = regMap.get(Number(vehicleassignments?.[0]?.trailer?.id)) || vehicleassignments?.[0]?.trailer?.name || ''
+      const followerVehicle = regMap.get(Number(vehicleassignments?.[1]?.vehicle?.id)) || vehicleassignments?.[1]?.vehicle?.name || ''
       const driverData = vehicleassignments?.[0]?.drivers?.[0]
       const driverName = driverData ? `${driverData.first_name || ''} ${driverData.surname || ''}`.trim() : ''
-
-      const openingKm = toNumber(trip.start_mileage)
-      const closingKm = toNumber(trip.end_mileage)
-      const routeKm = closingKm - openingKm
-      const mapKm = 0
-      const emptyKm = toNumber(trip.total_distance) > 0 ? toNumber(trip.total_distance) - mapKm : 0
-      const cpkInc = mapKm > 0 ? toNumber(trip.total_trip_cost) / mapKm : 0
 
       const loadDescrip = pickuplocations?.[0]?.address || trip.origin || ''
       const offLoadDescrip = dropofflocations?.[0]?.address || trip.destination || ''
@@ -121,6 +182,37 @@ export async function GET(request: NextRequest) {
           tripStatuses.push('')
         }
       }
+
+      let openingKm = toNumber(trip.start_mileage)
+      let closingKm = toNumber(trip.end_mileage)
+      let routeKm = closingKm - openingKm
+      let mapKm = 0
+
+      const fromTs = statusEntries[1]?.timestamp || statusEntries[1]?.recorded_at || ''
+      const toTs = statusEntries.length >= 2
+        ? statusEntries[statusEntries.length - 1]?.timestamp || statusEntries[statusEntries.length - 1]?.recorded_at || ''
+        : ''
+      if (horseReg && fromTs && toTs) {
+        const mileageKey = `${horseReg}|${formatMileageTime(fromTs)}|${formatMileageTime(toTs)}`
+        const mileage = mileageCache.get(mileageKey) || null
+        if (mileage) {
+          const startM = toNumber(mileage.start_mileage)
+          const endM = toNumber(mileage.end_mileage)
+          const dist = toNumber(mileage.distance_km)
+          if (startM > 0) openingKm = startM
+          if (endM > 0) closingKm = endM
+          if (dist > 0) {
+            routeKm = dist
+            mapKm = dist
+          } else if (endM > startM) {
+            routeKm = endM - startM
+            mapKm = endM - startM
+          }
+        }
+      }
+
+      const emptyKm = toNumber(trip.total_distance) > 0 ? toNumber(trip.total_distance) - mapKm : 0
+      const cpkInc = mapKm > 0 ? toNumber(trip.total_trip_cost) / mapKm : 0
 
       let totalTime = ''
       if (statusEntries.length >= 2) {
@@ -148,7 +240,7 @@ export async function GET(request: NextRequest) {
         offLoadDescrip,
         trip.load_inspection_id || trip.trip_id || '',
         vehicleassignments?.length || 1,
-        leaderVehicle,
+        horseReg,
         toNumber(trip.rate),
         '',
         '',
@@ -242,6 +334,37 @@ function formatTimestamp(value: string): string {
   const h = String(d.getHours()).padStart(2, '0')
   const min = String(d.getMinutes()).padStart(2, '0')
   return `${y}/${m}/${day} ${h}:${min}`
+}
+
+const MILEAGE_BASE =
+  (process.env.NEXT_PUBLIC_ROUTING || 'http://164.90.217.196:8800').replace(/\/$/, '')
+
+function formatMileageTime(iso: string): string {
+  if (!iso) return ''
+  const clean = iso.replace('Z', '')
+  const match = clean.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/)
+  if (!match) return ''
+  return `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}`
+}
+
+async function fetchMileage(reg: string, from: string, to: string): Promise<any | null> {
+  try {
+    const url = `${MILEAGE_BASE}/api/vehicle/${encodeURIComponent(reg)}/mileage?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+    const res = await fetch(url, {
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(15000),
+    })
+    const json = await res.json()
+    if (!json?.ok) {
+      console.warn(`Mileage miss: ${reg} (${json?.error || 'unknown'})`)
+      return null
+    }
+    return json.data
+  } catch (err: any) {
+    console.error(`Mileage error: ${reg} - ${err?.message || err}`)
+    return null
+  }
 }
 
 
