@@ -336,8 +336,7 @@ function formatTimestamp(value: string): string {
   return `${y}/${m}/${day} ${h}:${min}`
 }
 
-const MILEAGE_BASE =
-  (process.env.NEXT_PUBLIC_ROUTING || 'http://164.90.217.196:8800').replace(/\/$/, '')
+const MILEAGE_BASE = 'http://164.90.217.196:8800'
 
 function formatMileageTime(iso: string): string {
   if (!iso) return ''

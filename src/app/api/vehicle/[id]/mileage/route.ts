@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const MILEAGE_BASE =
-  (process.env.NEXT_PUBLIC_ROUTING || 'http://164.90.217.196:8800').replace(/\/$/, '')
+const MILEAGE_BASE = 'http://164.90.217.196:8800'
 
 export async function GET(
   request: NextRequest,
