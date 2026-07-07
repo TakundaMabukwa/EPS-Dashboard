@@ -4,7 +4,7 @@ import ExcelJS from 'exceljs'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY!
 )
 
 export async function GET(request: NextRequest) {
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
     workbook.creator = 'EPS Dashboard'
     workbook.created = new Date()
 
-    const sheet = workbook.addWorksheet('Premier Logistics ZA', {
+    const sheet = workbook.addWorksheet('EPS', {
       properties: { defaultColWidth: 15 },
     })
 
@@ -48,7 +48,6 @@ export async function GET(request: NextRequest) {
       'Invoice no', 'Inv Date', 'Creditor', 'CrName', 'DriverName',
       'Route Km', 'OpeningKm', 'ClosingKm', 'MapKm (DISTANCE)', 'EmptyKm',
       'CPKInc', 'POD no', 'Leader Reg', 'Follower Reg',
-      'DRIVE TIME (IDLE)', 'DRIVE TIME (MOTION)',
       'TRIP STATUS 1', 'TRIP STATUS 2', 'TRIP STATUS 3', 'TRIP STATUS 4',
       'TRIP STATUS 5', 'TRIP STATUS 6', 'TRIP STATUS 7', 'TRIP STATUS 8',
       'TRIP STATUS 9', 'TRIP STATUS 10', 'TRIP STATUS 11', 'TRIP STATUS 12',
@@ -102,7 +101,7 @@ export async function GET(request: NextRequest) {
       const openingKm = toNumber(trip.start_mileage)
       const closingKm = toNumber(trip.end_mileage)
       const routeKm = closingKm - openingKm
-      const mapKm = toNumber(trip.estimated_distance)
+      const mapKm = 0
       const emptyKm = toNumber(trip.total_distance) > 0 ? toNumber(trip.total_distance) - mapKm : 0
       const cpkInc = mapKm > 0 ? toNumber(trip.total_trip_cost) / mapKm : 0
 
@@ -115,15 +114,15 @@ export async function GET(request: NextRequest) {
         const entry = statusEntries[i]
         if (entry) {
           const ts = entry.timestamp || entry.recorded_at || ''
-          tripStatuses.push(ts ? formatTimestamp(ts) : '')
+          const label = entry.status || ''
+          const timeStr = ts ? formatTimestamp(ts) : ''
+          tripStatuses.push(label && timeStr ? `${label} - ${timeStr}` : label || timeStr || '')
         } else {
           tripStatuses.push('')
         }
       }
 
       let totalTime = ''
-      let driveTimeIdle = ''
-      let driveTimeMotion = ''
       if (statusEntries.length >= 2) {
         const startTime = statusEntries[1]?.timestamp
         const endTime = statusEntries[statusEntries.length - 1]?.timestamp
@@ -133,23 +132,6 @@ export async function GET(request: NextRequest) {
           const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
           totalTime = `${diffHours}h ${diffMins}m`
         }
-
-        let idleMs = 0
-        let motionMs = 0
-        for (let i = 1; i < statusEntries.length; i++) {
-          const prev = statusEntries[i - 1]
-          const curr = statusEntries[i]
-          if (prev?.timestamp && curr?.timestamp) {
-            const segMs = new Date(curr.timestamp).getTime() - new Date(prev.timestamp).getTime()
-            if (curr.elapsed_seconds && curr.elapsed_seconds > 300) {
-              idleMs += segMs
-            } else {
-              motionMs += segMs
-            }
-          }
-        }
-        driveTimeIdle = formatDurationMs(idleMs)
-        driveTimeMotion = formatDurationMs(motionMs)
       }
 
       const rowData = [
@@ -182,8 +164,6 @@ export async function GET(request: NextRequest) {
         trip.trip_id || '',
         leaderVehicle,
         followerVehicle,
-        driveTimeIdle,
-        driveTimeMotion,
         ...tripStatuses,
         totalTime,
       ]
@@ -222,7 +202,7 @@ export async function GET(request: NextRequest) {
     return new NextResponse(buffer, {
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'Content-Disposition': `attachment; filename="premier_logistics_${new Date().toISOString().slice(0, 10)}.xlsx"`,
+        'Content-Disposition': `attachment; filename="eps_trip_loads_${new Date().toISOString().slice(0, 10)}.xlsx"`,
       },
     })
   } catch (err) {
@@ -264,8 +244,4 @@ function formatTimestamp(value: string): string {
   return `${y}/${m}/${day} ${h}:${min}`
 }
 
-function formatDurationMs(ms: number): string {
-  const hours = Math.floor(ms / (1000 * 60 * 60))
-  const mins = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60))
-  return `${hours}h ${mins}m`
-}
+

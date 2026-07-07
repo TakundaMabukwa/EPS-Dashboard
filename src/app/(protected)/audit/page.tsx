@@ -345,7 +345,7 @@ export default function AuditPage() {
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `premier_logistics_${new Date().toISOString().slice(0, 10)}.xlsx`
+      a.download = `trip_export_${new Date().toISOString().slice(0, 10)}.xlsx`
       document.body.appendChild(a)
       a.click()
       window.URL.revokeObjectURL(url)
