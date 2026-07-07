@@ -179,6 +179,9 @@ export default function AuditPage() {
   const [routeModalOpen, setRouteModalOpen] = useState(false)
   const [selectedRouteRecord, setSelectedRouteRecord] = useState<any>(null)
   const [routeLoadingId, setRouteLoadingId] = useState<number | null>(null)
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [exporting, setExporting] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -328,6 +331,32 @@ export default function AuditPage() {
     }
   }
 
+  const exportToExcel = async () => {
+    try {
+      setExporting(true)
+      const params = new URLSearchParams()
+      if (startDate) params.set('startDate', startDate)
+      if (endDate) params.set('endDate', endDate)
+
+      const res = await fetch(`/api/audit/excel-export?${params.toString()}`)
+      if (!res.ok) throw new Error('Export failed')
+
+      const blob = await res.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `premier_logistics_${new Date().toISOString().slice(0, 10)}.xlsx`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    } catch (error) {
+      console.error('Export error:', error)
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const downloadDocument = async (doc: any) => {
     const filePath = String(doc?.file_path || '').trim()
     if (!filePath) return
@@ -452,6 +481,30 @@ export default function AuditPage() {
                 <SelectItem value="completed">Completed</SelectItem>
               </SelectContent>
             </Select>
+
+            <Input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="md:w-40"
+              placeholder="Start date"
+            />
+            <Input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="md:w-40"
+              placeholder="End date"
+            />
+
+            <Button
+              onClick={exportToExcel}
+              disabled={exporting}
+              className="bg-green-600 hover:bg-green-700 text-white"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              {exporting ? 'Exporting...' : 'Export Excel'}
+            </Button>
           </div>
 
           <div className="overflow-x-auto rounded-lg border">
