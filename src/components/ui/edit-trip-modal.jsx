@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { X, FileText, CheckCircle, AlertTriangle, Clock, TrendingUp, Plus, Route, MapPin } from 'lucide-react'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList } from 'recharts'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { LocationAutocomplete } from '@/components/ui/location-autocomplete'
@@ -22,6 +22,34 @@ import { TrailerDropdown } from '@/components/ui/trailer-dropdown'
 import { StopPointDropdown } from '@/components/ui/stop-point-dropdown'
 import { ElevationModal } from '@/components/ui/elevation-modal'
 import { TripHistoryModal } from '@/components/ui/trip-history-modal'
+
+const toCurrencyNumber = (value) => {
+  if (value === null || value === undefined || value === '') return 0
+  const numericValue = typeof value === 'string' ? Number(value.replace(/[^\d.-]/g, '')) : Number(value)
+  return Number.isFinite(numericValue) ? numericValue : 0
+}
+
+const normalizeCostBreakdown = (breakdown = {}, fuelCost = 0) => {
+  const driverCost = toCurrencyNumber(breakdown.driverCost)
+  const fixedAssetCost = toCurrencyNumber(breakdown.fixedAssetCost)
+  const storedFuelCost = toCurrencyNumber(fuelCost)
+  const rmCost = toCurrencyNumber(breakdown.rmCost)
+  const crossBorderCost = toCurrencyNumber(breakdown.crossBorderCost)
+
+  return {
+    ...breakdown,
+    driverCost,
+    fixedAssetCost,
+    fuelCost: storedFuelCost,
+    rmCost,
+    crossBorderCost,
+    totalCost: driverCost + fixedAssetCost + storedFuelCost + rmCost + crossBorderCost,
+    costPerKm: toCurrencyNumber(breakdown.costPerKm),
+  }
+}
+
+const formatChartCurrency = (value) =>
+  `R${toCurrencyNumber(value).toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`
 
 export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = false, showApprovalButtons = false, onApprove, onDecline }) {
   const supabase = createClient()
@@ -77,10 +105,24 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
 
   // Cost engine state
   const [costBreakdown, setCostBreakdown] = useState(null)
+  const [tripFuelCost, setTripFuelCost] = useState(0)
   const [sellingRatePerKm, setSellingRatePerKm] = useState('')
   const [detectedVehicleType, setDetectedVehicleType] = useState('')
   const [fuelMonthLabel, setFuelMonthLabel] = useState('')
   const [fuelMonths, setFuelMonths] = useState([])
+
+  const costDisplayBreakdown = useMemo(
+    () => costBreakdown ? normalizeCostBreakdown(costBreakdown, tripFuelCost) : null,
+    [costBreakdown, tripFuelCost]
+  )
+
+  const costChartData = useMemo(() => ([
+    { name: 'Driver', value: costDisplayBreakdown?.driverCost || 0, fill: 'url(#driverGradient)' },
+    { name: 'Fixed', value: costDisplayBreakdown?.fixedAssetCost || 0, fill: 'url(#vehicleGradient)' },
+    { name: 'Fuel', value: costDisplayBreakdown?.fuelCost || 0, fill: 'url(#fuelGradient)' },
+    { name: 'R&M', value: costDisplayBreakdown?.rmCost || 0, fill: 'url(#rmGradient)' },
+    { name: 'Cross Border', value: costDisplayBreakdown?.crossBorderCost || 0, fill: 'url(#premiumGradient)' },
+  ]), [costDisplayBreakdown])
 
   // Progress stops state
   const DEFAULT_PROGRESS_STOPS = [
@@ -381,17 +423,18 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
       setApproximatedDriverCost(trip.approximated_driver_cost || 0)
       setTotalVehicleCost(trip.total_vehicle_cost || 0)
       setTripDays(trip.trip_days || 1)
+      const storedFuelCost = toCurrencyNumber(trip.fuel_cost)
+      setTripFuelCost(storedFuelCost)
 
       // Cost engine data
-      setCostBreakdown({
+      setCostBreakdown(normalizeCostBreakdown({
         driverCost: trip.driver_cost || 0,
         fixedAssetCost: trip.fixed_cost || 0,
-        fuelCost: trip.fuel_cost || 0,
         rmCost: trip.maintenance_cost || 0,
         crossBorderCost: trip.cross_border_cost || 0,
         totalCost: trip.total_trip_cost || 0,
         costPerKm: trip.cost_per_km || 0,
-      })
+      }, storedFuelCost))
       setSellingRatePerKm(trip.selling_rate_per_km?.toString() || '')
       setDetectedVehicleType(trip.profile_used || '')
 
@@ -499,7 +542,7 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
     setTripDays(calculatedTripDays)
 
     if (!effectiveType || !dist || dist <= 0) {
-      setCostBreakdown({ driverCost: 0, fixedAssetCost: 0, fuelCost: 0, rmCost: 0, crossBorderCost: 0, totalCost: 0, tripDays: 0 })
+      setCostBreakdown(normalizeCostBreakdown({ driverCost: 0, fixedAssetCost: 0, rmCost: 0, crossBorderCost: 0, totalCost: 0, tripDays: 0 }, tripFuelCost))
       return
     }
 
@@ -512,13 +555,13 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
           body: JSON.stringify({ vehicleType: effectiveType, distanceKm: dist, tripDays: calculatedTripDays, monthLabel: month }),
         })
         const data = await res.json()
-        if (!data.error) setCostBreakdown(data)
+        if (!data.error) setCostBreakdown(normalizeCostBreakdown(data, tripFuelCost))
       } catch (err) {
         console.error('Error calculating cost:', err)
       }
     }
     fetchCost()
-  }, [selectedVehicleType, detectedVehicleType, estimatedDistance, fuelMonthLabel, optimizedRoute, selectedVehicleId, vehicles])
+  }, [selectedVehicleType, detectedVehicleType, estimatedDistance, fuelMonthLabel, optimizedRoute, selectedVehicleId, vehicles, tripFuelCost])
 
   // Rate Card Calculation Function
   const calculateRateCardCost = useCallback((vehicleType, kms, days) => {
@@ -714,6 +757,7 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
 
       // Store previous trip data for history
       const previousData = { ...trip }
+      const currentCostBreakdown = costDisplayBreakdown || normalizeCostBreakdown(costBreakdown || {}, tripFuelCost)
 
       const updateData = {
         ordernumber: orderNumber,
@@ -788,15 +832,15 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
         updated_at: new Date().toISOString(),
         
         // Cost engine data
-        driver_cost: costBreakdown?.driverCost || 0,
-        fuel_cost: costBreakdown?.fuelCost || 0,
-        maintenance_cost: costBreakdown?.rmCost || 0,
-        cross_border_cost: costBreakdown?.crossBorderCost || 0,
-        total_trip_cost: costBreakdown?.totalCost || 0,
-        fixed_cost: costBreakdown?.fixedAssetCost || 0,
-        cost_per_km: costBreakdown?.totalCost && estimatedDistance ? Math.round((costBreakdown.totalCost / estimatedDistance) * 100) / 100 : 0,
+        driver_cost: currentCostBreakdown?.driverCost || 0,
+        fuel_cost: currentCostBreakdown?.fuelCost || 0,
+        maintenance_cost: currentCostBreakdown?.rmCost || 0,
+        cross_border_cost: currentCostBreakdown?.crossBorderCost || 0,
+        total_trip_cost: currentCostBreakdown?.totalCost || 0,
+        fixed_cost: currentCostBreakdown?.fixedAssetCost || 0,
+        cost_per_km: currentCostBreakdown?.totalCost && estimatedDistance ? Math.round((currentCostBreakdown.totalCost / estimatedDistance) * 100) / 100 : 0,
         profile_used: detectedVehicleType || '',
-        diesel_rate: costBreakdown?.fuelLinkRate || 0,
+        diesel_rate: currentCostBreakdown?.fuelLinkRate || 0,
         selling_rate_per_km: Number(sellingRatePerKm) || 0,
         trip_days: tripDays || 0,
         
@@ -1405,20 +1449,20 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
                         <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">{detectedVehicleType}</span>
                       )}
                     </div>
-                    {costBreakdown && (
+                    {costDisplayBreakdown && (
                       <div className="bg-slate-50 rounded-lg p-3 space-y-1.5 text-xs">
-                        <div className="flex justify-between"><span className="text-slate-600">Driver</span><span className="font-medium">R{(costBreakdown.driverCost || 0).toFixed(2)} <span className="text-slate-400">({costBreakdown.tripDays || tripDays} DAYS)</span></span></div>
-                        <div className="flex justify-between"><span className="text-slate-600">Fixed - Asset</span><span className="font-medium">R{(costBreakdown.fixedAssetCost || 0).toFixed(2)} <span className="text-slate-400">({costBreakdown.tripDays || tripDays} DAYS)</span></span></div>
-                        <div className="flex justify-between"><span className="text-slate-600">Fuel</span><span className="font-medium">R{(costBreakdown.fuelCost || 0).toFixed(2)}</span></div>
-                        <div className="flex justify-between"><span className="text-slate-600">R&M</span><span className="font-medium">R{(costBreakdown.rmCost || 0).toFixed(2)}</span></div>
-                        <div className="flex justify-between"><span className="text-slate-600">Cross Border</span><span className="font-medium">R{(costBreakdown.crossBorderCost || 0).toFixed(2)}</span></div>
-                        <div className="border-t pt-1.5 flex justify-between font-bold"><span>TOTAL COST</span><span>R{(costBreakdown.totalCost || 0).toFixed(2)}</span></div>
+                        <div className="flex justify-between"><span className="text-slate-600">Driver</span><span className="font-medium">R{(costDisplayBreakdown.driverCost || 0).toFixed(2)} <span className="text-slate-400">({costDisplayBreakdown.tripDays || tripDays} DAYS)</span></span></div>
+                        <div className="flex justify-between"><span className="text-slate-600">Fixed - Asset</span><span className="font-medium">R{(costDisplayBreakdown.fixedAssetCost || 0).toFixed(2)} <span className="text-slate-400">({costDisplayBreakdown.tripDays || tripDays} DAYS)</span></span></div>
+                        <div className="flex justify-between"><span className="text-slate-600">Fuel</span><span className="font-medium">R{(costDisplayBreakdown.fuelCost || 0).toFixed(2)}</span></div>
+                        <div className="flex justify-between"><span className="text-slate-600">R&M</span><span className="font-medium">R{(costDisplayBreakdown.rmCost || 0).toFixed(2)}</span></div>
+                        <div className="flex justify-between"><span className="text-slate-600">Cross Border</span><span className="font-medium">R{(costDisplayBreakdown.crossBorderCost || 0).toFixed(2)}</span></div>
+                        <div className="border-t pt-1.5 flex justify-between font-bold"><span>TOTAL COST</span><span>R{(costDisplayBreakdown.totalCost || 0).toFixed(2)}</span></div>
                         {sellingRatePerKm && Number(sellingRatePerKm) > 0 && (
                           <>
                             <div className="flex justify-between"><span className="text-slate-600">Revenue</span><span className="font-bold">R{Number(sellingRatePerKm).toFixed(2)}</span></div>
-                            <div className={cn("flex justify-between font-bold", (Number(sellingRatePerKm) - (costBreakdown.totalCost || 0)) >= 0 ? "text-emerald-600" : "text-red-600")}>
+                            <div className={cn("flex justify-between font-bold", (Number(sellingRatePerKm) - (costDisplayBreakdown.totalCost || 0)) >= 0 ? "text-emerald-600" : "text-red-600")}>
                               <span>PROFIT</span>
-                              <span>R{(Number(sellingRatePerKm) - (costBreakdown.totalCost || 0)).toFixed(2)}</span>
+                              <span>R{(Number(sellingRatePerKm) - (costDisplayBreakdown.totalCost || 0)).toFixed(2)}</span>
                             </div>
                           </>
                         )}
@@ -1439,14 +1483,8 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
                 <div className="w-full p-4 bg-gradient-to-br from-white to-slate-50 rounded-xl border border-slate-200 shadow-lg" style={{ height: '260px' }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
-                      data={[
-                        { name: 'Driver', value: costBreakdown?.driverCost || 0, fill: 'url(#driverGradient)' },
-                        { name: 'Fixed', value: costBreakdown?.fixedAssetCost || 0, fill: 'url(#vehicleGradient)' },
-                        { name: 'Fuel', value: costBreakdown?.fuelCost || 0, fill: 'url(#fuelGradient)' },
-                        { name: 'R&M', value: costBreakdown?.rmCost || 0, fill: 'url(#rmGradient)' },
-                        { name: 'Cross Border', value: costBreakdown?.crossBorderCost || 0, fill: 'url(#premiumGradient)' },
-                      ]}
-                      margin={{ top: 15, right: 20, left: 35, bottom: 15 }}
+                      data={costChartData}
+                      margin={{ top: 28, right: 20, left: 35, bottom: 15 }}
                     >
                       <defs>
                         <linearGradient id="fuelGradient" x1="0" y1="0" x2="0" y2="1">
@@ -1511,7 +1549,16 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
                         radius={[6, 6, 0, 0]}
                         strokeWidth={2}
                         stroke="rgba(255, 255, 255, 0.3)"
-                      />
+                      >
+                        <LabelList
+                          dataKey="value"
+                          position="top"
+                          formatter={formatChartCurrency}
+                          fill="#334155"
+                          fontSize={10}
+                          fontWeight={700}
+                        />
+                      </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
