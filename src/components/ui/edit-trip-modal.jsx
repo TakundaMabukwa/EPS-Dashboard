@@ -360,7 +360,7 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
       setClient(clientDetails?.name || '')
       setSelectedClient(clientDetails)
       setCommodity(trip.cargo || '')
-      setRate(trip.rate || '')
+      setRate(trip.selling_rate_per_km || trip.rate || '')
       setOrderNumber(trip.ordernumber || '')
       setComment(trip.notes || trip.status_notes || '')
       setLoadingLocation(trip.origin || '')
@@ -717,7 +717,7 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
 
       const updateData = {
         ordernumber: orderNumber,
-        rate: rate,
+        selling_rate_per_km: Number(rate) || 0,
         cargo: commodity,
         origin: loadingLocation,
         destination: dropOffPoint,
