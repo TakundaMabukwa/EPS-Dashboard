@@ -339,7 +339,10 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
             <span className="text-xs font-medium text-slate-700 uppercase">Rate</span>
           </div>
           <div className="text-xs font-medium text-green-600">
-            {trip.rate ? `R${parseFloat(trip.rate).toLocaleString()}` : '—'}
+            {(() => {
+              const displayRate = trip.selling_rate_per_km || trip.rate
+              return displayRate ? `R${parseFloat(displayRate).toLocaleString()}` : '—'
+            })()}
           </div>
         </div>
         <div className="p-2 rounded-lg bg-white/20 border border-white/5">
@@ -2342,7 +2345,7 @@ export default function Dashboard() {
             id: trip.id,
             client: clientDetails?.name || 'Unknown Client',
             commodity: trip.cargo || 'N/A',
-            rate: trip.rate || 'N/A',
+            rate: trip.selling_rate_per_km || trip.rate || 'N/A',
             pickup: trip.origin || 'N/A',
             dropOff: trip.destination || 'N/A',
             status: trip.status || 'Unknown'
