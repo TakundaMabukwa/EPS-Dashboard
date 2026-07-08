@@ -169,6 +169,10 @@ export async function GET(request: NextRequest) {
       const loadDescrip = pickuplocations?.[0]?.address || trip.origin || ''
       const offLoadDescrip = dropofflocations?.[0]?.address || trip.destination || ''
 
+      const locationGeodata = parseJson(trip.location_geodata)
+      const pickupTown = locationGeodata?.pickup?.town || ''
+      const dropoffTown = locationGeodata?.dropoff?.town || ''
+
       const statusEntries = Array.isArray(stopsData) ? stopsData : []
       const tripStatuses: string[] = []
       for (let i = 0; i < 15; i++) {
@@ -236,8 +240,8 @@ export async function GET(request: NextRequest) {
         trip.ordernumber || '',
         trip.cargo_weight || '',
         trip.cargo || '',
-        loadDescrip,
-        offLoadDescrip,
+        pickupTown || loadDescrip,
+        dropoffTown || offLoadDescrip,
         trip.load_inspection_id || trip.trip_id || '',
         vehicleassignments?.length || 1,
         horseReg,
