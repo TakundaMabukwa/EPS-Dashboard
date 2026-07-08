@@ -1617,13 +1617,23 @@ export default function LoadPlanPage() {
                         setLoadingLocation(value)
                         setOptimizedRoute(null)
                       }}
-                      onSelect={(s) => {
+                      onSelect={async (s) => {
                         const coords = s.coordinates
                         const lat = coords?.[1] ?? coords?.lat ?? null
                         const lng = coords?.[0] ?? coords?.lng ?? null
-                        const parts = [s.city, s.state, s.country].filter(Boolean)
-                        const town = parts.length > 0 ? parts.join(', ') : s.name || s.address || ''
-                        setPickupGeoData(lat && lng ? { town, lat, lng } : null)
+                        if (lat && lng) {
+                          try {
+                            const res = await fetch(`/api/location-lookup?lat=${lat}&lng=${lng}`)
+                            const data = await res.json()
+                            const full = data?.results?.[0]
+                            const town = [full?.city, full?.state, full?.country].filter(Boolean).join(', ') || s.name || s.address || ''
+                            setPickupGeoData({ town, lat, lng })
+                          } catch {
+                            setPickupGeoData({ town: s.name || s.address || '', lat, lng })
+                          }
+                        } else {
+                          setPickupGeoData(null)
+                        }
                       }}
                       placeholder="Search for loading location"
                       clientLocations={useMemo(() => {
@@ -1655,13 +1665,23 @@ export default function LoadPlanPage() {
                         setDropOffPoint(value)
                         setOptimizedRoute(null)
                       }}
-                      onSelect={(s) => {
+                      onSelect={async (s) => {
                         const coords = s.coordinates
                         const lat = coords?.[1] ?? coords?.lat ?? null
                         const lng = coords?.[0] ?? coords?.lng ?? null
-                        const parts = [s.city, s.state, s.country].filter(Boolean)
-                        const town = parts.length > 0 ? parts.join(', ') : s.name || s.address || ''
-                        setDropoffGeoData(lat && lng ? { town, lat, lng } : null)
+                        if (lat && lng) {
+                          try {
+                            const res = await fetch(`/api/location-lookup?lat=${lat}&lng=${lng}`)
+                            const data = await res.json()
+                            const full = data?.results?.[0]
+                            const town = [full?.city, full?.state, full?.country].filter(Boolean).join(', ') || s.name || s.address || ''
+                            setDropoffGeoData({ town, lat, lng })
+                          } catch {
+                            setDropoffGeoData({ town: s.name || s.address || '', lat, lng })
+                          }
+                        } else {
+                          setDropoffGeoData(null)
+                        }
                       }}
                       placeholder="Search for drop off location"
                       clientLocations={useMemo(() => {
