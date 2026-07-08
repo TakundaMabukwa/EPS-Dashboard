@@ -88,6 +88,9 @@ export default function LoadPlanPage() {
   const [dropOffPoint, setDropOffPoint] = useState('')
   const [dropoffLocationCoords, setDropoffLocationCoords] = useState<{ lat: number; lng: number } | null>(null)
   const [dropoffGeozoneCoords, setDropoffGeozoneCoords] = useState(null)
+  const [pickupGeoData, setPickupGeoData] = useState<{ town: string; lat: number; lng: number } | null>(null)
+  const [dropoffGeoData, setDropoffGeoData] = useState<{ town: string; lat: number; lng: number } | null>(null)
+  const [stopGeoData, setStopGeoData] = useState<{ town: string; lat: number; lng: number }[]>([])
   const [showSecondSection, setShowSecondSection] = useState(false)
   const secondRef = useRef<HTMLDivElement | null>(null)
   const [optimizedRoute, setOptimizedRoute] = useState<any>(null)
@@ -1467,7 +1470,12 @@ export default function LoadPlanPage() {
         trip_days: tripDays || 0,
         progress_stops: DEFAULT_PROGRESS_STOPS
           .filter(s => selectedStops.has(s.value))
-          .map((s, i) => ({ order: i + 1, label: s.label, value: s.value, isComplete: false }))
+          .map((s, i) => ({ order: i + 1, label: s.label, value: s.value, isComplete: false })),
+        location_geodata: {
+          pickup: pickupGeoData,
+          dropoff: dropoffGeoData,
+          stops: stopGeoData
+        }
       }
       
       console.log('Inserting trip data:', tripData)
@@ -1607,7 +1615,15 @@ export default function LoadPlanPage() {
                       onChange={(value) => {
                         console.log('Loading location changed to:', value)
                         setLoadingLocation(value)
-                        setOptimizedRoute(null) // Force route recalculation
+                        setOptimizedRoute(null)
+                      }}
+                      onSelect={(s) => {
+                        const coords = s.coordinates
+                        const lat = coords?.[1] ?? coords?.lat ?? null
+                        const lng = coords?.[0] ?? coords?.lng ?? null
+                        const parts = [s.city, s.state, s.country].filter(Boolean)
+                        const town = parts.length > 0 ? parts.join(', ') : s.name || s.address || ''
+                        setPickupGeoData(lat && lng ? { town, lat, lng } : null)
                       }}
                       placeholder="Search for loading location"
                       clientLocations={useMemo(() => {
@@ -1637,7 +1653,15 @@ export default function LoadPlanPage() {
                       onChange={(value) => {
                         console.log('Drop off location changed to:', value)
                         setDropOffPoint(value)
-                        setOptimizedRoute(null) // Force route recalculation
+                        setOptimizedRoute(null)
+                      }}
+                      onSelect={(s) => {
+                        const coords = s.coordinates
+                        const lat = coords?.[1] ?? coords?.lat ?? null
+                        const lng = coords?.[0] ?? coords?.lng ?? null
+                        const parts = [s.city, s.state, s.country].filter(Boolean)
+                        const town = parts.length > 0 ? parts.join(', ') : s.name || s.address || ''
+                        setDropoffGeoData(lat && lng ? { town, lat, lng } : null)
                       }}
                       placeholder="Search for drop off location"
                       clientLocations={useMemo(() => {
