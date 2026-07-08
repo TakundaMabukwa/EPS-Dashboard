@@ -163,7 +163,7 @@ export default function LiveMapView() {
     const now = new Date();
     
     return vehicles.map((v: any) => {
-      const plate = v.plate || v.registrationNumber || 'Unknown';
+      const plate = v.plate || v.registration || v.registrationNumber || 'Unknown';
       existingPlates.add(plate);
       const normalizedPlate = plate.trim().toUpperCase();
       const videoDevice = vehiclesWithVideo.get(normalizedPlate);
@@ -174,13 +174,13 @@ export default function LiveMapView() {
       const cameraOnline = hasVideo && !isExpired && isActiveRecently;
       
       const vehicle: Vehicle = {
-        id: v.id || plate || Math.random().toString(),
+        id: v.id || v.vehicle_id || plate || Math.random().toString(),
         plate,
-        driver: v.driver || v.driverName || 'Unassigned',
+        driver: v.driver || v.driver_name || v.driverName || 'Unassigned',
         status: v.status || v.online === true ? 'online' :
                 v.online === false ? 'offline' : 'idle',
-        speed: v.speed != null ? v.speed : (v.gps_speed || 0),
-        lastUpdate: v.lastUpdate || v.loc_time || v.timestamp || new Date().toISOString(),
+        speed: v.speed != null ? parseFloat(v.speed) || 0 : (v.gps_speed || 0),
+        lastUpdate: v.lastUpdate || v.gps_time || v.loc_time || v.timestamp || new Date().toISOString(),
         address: v.address || v.locationAddress || '',
         hasVideo,
         cameraOnline,
@@ -205,7 +205,7 @@ export default function LiveMapView() {
   const fetchVehicles = async () => {
     try {
       setLoading(true);
-      const vehicles = await fetch('/api/eps-vehicles').then(async (res) => {
+      const vehicles = await fetch('/api/vehicle/live/all').then(async (res) => {
         const data = await res.json();
         return processEpsVehicles(data, new Set<string>());
       }).catch((e) => {
