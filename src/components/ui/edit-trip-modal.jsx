@@ -77,7 +77,8 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
 
   // Cost engine state
   const [costBreakdown, setCostBreakdown] = useState(null)
-  const [sellingRatePerKm, setSellingRatePerKm] = useState('')  const [detectedVehicleType, setDetectedVehicleType] = useState('')
+  const [sellingRatePerKm, setSellingRatePerKm] = useState('')
+  const [detectedVehicleType, setDetectedVehicleType] = useState('')
   const [fuelMonthLabel, setFuelMonthLabel] = useState('')
   const [fuelMonths, setFuelMonths] = useState([])
 
