@@ -77,8 +77,7 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
 
   // Cost engine state
   const [costBreakdown, setCostBreakdown] = useState(null)
-  const [sellingRatePerKm, setSellingRatePerKm] = useState('')
-  const [detectedVehicleType, setDetectedVehicleType] = useState('')
+  const [sellingRatePerKm, setSellingRatePerKm] = useState('')  const [detectedVehicleType, setDetectedVehicleType] = useState('')
   const [fuelMonthLabel, setFuelMonthLabel] = useState('')
   const [fuelMonths, setFuelMonths] = useState([])
 
@@ -1362,11 +1361,11 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
                 <div className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="fuelPrice" className="text-sm font-medium text-slate-700">Fuel Price per Liter</Label>
+                      <Label htmlFor="rate" className="text-sm font-medium text-slate-700">Rate</Label>
                       <Input 
-                        value={fuelPricePerLiter} 
-                        onChange={(e) => setFuelPricePerLiter(e.target.value)} 
-                        placeholder="R 20.50" 
+                        value={sellingRatePerKm} 
+                        onChange={(e) => setSellingRatePerKm(e.target.value)} 
+                        placeholder="R 0.00" 
                         type="number"
                         step="0.01"
                         className="border-slate-300 focus:border-slate-500"
