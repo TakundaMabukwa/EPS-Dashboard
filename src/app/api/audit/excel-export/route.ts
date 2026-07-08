@@ -245,7 +245,7 @@ export async function GET(request: NextRequest) {
         trip.load_inspection_id || trip.trip_id || '',
         vehicleassignments?.length || 1,
         horseReg,
-        toNumber(trip.rate),
+        toNumber(trip.rate) || toNumber(trip.selling_rate_per_km),
         '',
         '',
         '5000',
