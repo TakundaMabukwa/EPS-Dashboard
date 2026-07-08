@@ -1464,6 +1464,7 @@ export default function LoadPlanPage() {
         total_trip_cost: costBreakdown?.totalCost || 0,
         profile_used: detectedVehicleType || '',
         diesel_rate: fuelLinkRate || 0,
+        fuel_price_per_liter: fuelLinkRate || 0,
         fixed_cost: costBreakdown?.fixedAssetCost || 0,
         cost_per_km: costBreakdown?.totalCost && estimatedDistance ? Math.round((costBreakdown.totalCost / estimatedDistance) * 100) / 100 : 0,
         selling_rate_per_km: Number(sellingRatePerKm) || 0,
