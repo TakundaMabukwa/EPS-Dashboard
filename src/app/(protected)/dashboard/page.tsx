@@ -869,6 +869,42 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
   )
 }
 
+const getExpectedDuration = (statusValue: string, trip?: any): number => {
+  const s = statusValue?.toLowerCase().replace(/_/g, '-') || ''
+  const DURATIONS: Record<string, number> = {
+    pending: 1800,
+    accepted: 3600,
+    departing: 3600,
+    'arrived-at-loading': 1800,
+    'queuing-at-loading': 3600,
+    'staging-at-loading': 3600,
+    loading: 7200,
+    'on-trip': 0,
+    'truck-stop': 18000,
+    refueling: 3600,
+    'arrived-at-offloading': 1800,
+    'queuing-at-offloading': 3600,
+    offloading: 7200,
+    weighing: 1800,
+    depot: 3600,
+    handover: 3600,
+    delivered: Infinity,
+  }
+  if (s === 'on-trip' && trip) {
+    const distKm = trip.estimated_distance || trip.distance_km || 0
+    if (distKm > 0) return Math.ceil((distKm / 60) * 3600)
+    return 14400
+  }
+  return DURATIONS[s] ?? 0
+}
+
+const getElapsedColor = (elapsed: number, expected: number) => {
+  if (expected <= 0 || expected === Infinity) return 'green'
+  if (elapsed > expected) return 'red'
+  if (elapsed > expected / 2) return 'orange'
+  return 'green'
+}
+
 // Enhanced routing components with proper waypoints
 function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNoteText, setNoteOpen, setAvailableDrivers, setCurrentTripForChange, setChangeDriverOpen, refreshTrigger, setRefreshTrigger, setPickupTimeOpen, setDropoffTimeOpen, setCurrentTripForTime, setTimeType, setSelectedTime, currentUnauthorizedTrip, setCurrentUnauthorizedTrip, setUnauthorizedStopModalOpen, loadingPhotos, setLoadingPhotos, setCurrentTripPhotos, setPhotosModalOpen, setCurrentTripAlerts, setAlertsModalOpen, setCurrentTripForClose, setCloseReason, setCloseTripOpen, setCurrentTripForEdit, setEditTripOpen, setCurrentTripForApproval, setApprovalModalOpen, setVideoModalOpen, setCurrentTripForVideo, onlineDevices, isVisible = true }: any) {
   const [trips, setTrips] = useState<any[]>([])
@@ -1217,42 +1253,6 @@ function RoutingSection({ userRole, handleViewMap, setCurrentTripForNote, setNot
     const h = Math.floor(seconds / 3600)
     const m = Math.floor((seconds % 3600) / 60)
     return m > 0 ? `${h}h ${m}m` : `${h}h`
-  }
-
-  const getExpectedDuration = (statusValue: string, trip?: any): number => {
-    const s = statusValue?.toLowerCase().replace(/_/g, '-') || ''
-    const DURATIONS: Record<string, number> = {
-      pending: 1800,
-      accepted: 3600,
-      departing: 3600,
-      'arrived-at-loading': 1800,
-      'queuing-at-loading': 3600,
-      'staging-at-loading': 3600,
-      loading: 7200,
-      'on-trip': 0,
-      'truck-stop': 18000,
-      refueling: 3600,
-      'arrived-at-offloading': 1800,
-      'queuing-at-offloading': 3600,
-      offloading: 7200,
-      weighing: 1800,
-      depot: 3600,
-      handover: 3600,
-      delivered: Infinity,
-    }
-    if (s === 'on-trip' && trip) {
-      const distKm = trip.estimated_distance || trip.distance_km || 0
-      if (distKm > 0) return Math.ceil((distKm / 60) * 3600)
-      return 14400
-    }
-    return DURATIONS[s] ?? 0
-  }
-
-  const getElapsedColor = (elapsed: number, expected: number) => {
-    if (expected <= 0 || expected === Infinity) return 'green'
-    if (elapsed > expected) return 'red'
-    if (elapsed > expected / 2) return 'orange'
-    return 'green'
   }
 
   const getAcceptanceWarning = (trip: any) => {
