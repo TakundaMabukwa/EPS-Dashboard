@@ -350,45 +350,9 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
             <div className="w-1.5 h-1.5 bg-amber-500 rounded-full" />
             <span className="text-xs font-medium text-slate-700 uppercase">Fuel</span>
           </div>
-          {fuelData && fuelData.fuelLevel > 0 ? (
-            <div className="flex items-center gap-2">
-              {(() => {
-                const MAX_TANK = 1000;
-                const litres = Math.max(0, fuelData.fuelLevel || 0);
-                const fillPct = Math.min(100, (litres / MAX_TANK) * 100);
-                const fuelColor = fillPct <= 10 ? '#ef4444' : fillPct <= 25 ? '#f97316' : fillPct <= 50 ? '#eab308' : '#10b981';
-                const sw = 4;
-                const r = 16;
-                const nr = r - sw / 2;
-                const circ = nr * 2 * Math.PI;
-                const dashoff = circ - (fillPct / 100) * circ;
-                return (
-                  <>
-                    <div className="relative shrink-0">
-                      <svg viewBox="0 0 36 36" className="h-[32px] w-[32px] -rotate-90">
-                        <circle cx="18" cy="18" r={nr} fill="none" stroke="#e2e8f0" strokeWidth={sw} />
-                        <circle
-                          cx="18" cy="18" r={nr} fill="none" stroke={fuelColor}
-                          strokeDasharray={`${circ} ${circ}`} strokeDashoffset={dashoff}
-                          strokeLinecap="round" strokeWidth={sw}
-                          className="transition-[stroke-dashoffset] duration-700 ease-out"
-                        />
-                      </svg>
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <span className="text-[9px] font-black leading-none text-[#1748d8]">{Math.round(litres)}</span>
-                      </div>
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-[10px] font-medium text-slate-700">{Math.round(litres)}L</div>
-                      <div className="text-[9px] text-slate-500">Used: {fuelData.totalFuelUsed ? `${(fuelData.totalFuelUsed / 1000).toFixed(1)}k` : '—'}L</div>
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
-          ) : (
-            <div className="text-xs text-slate-400">No data</div>
-          )}
+          <div className="text-xs font-medium text-amber-600">
+            {trip.fuel_cost ? `R${parseFloat(trip.fuel_cost).toLocaleString()}` : '—'}
+          </div>
         </div>
       </div>
 
