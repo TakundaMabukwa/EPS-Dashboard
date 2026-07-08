@@ -1429,23 +1429,24 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
               </div>
 
               {/* Right Half - Stylish Bar Chart */}
-              <div className="h-full flex flex-col">
-                <div className="flex items-center gap-3 mb-4">
+              <div className="flex flex-col">
+                <div className="flex items-center gap-3 mb-3">
                   <div className="p-2 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg">
                     <TrendingUp className="h-4 w-4 text-white" />
                   </div>
                   <h4 className="text-lg font-semibold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">Cost Breakdown</h4>
                 </div>
-                <div className="flex-1 w-full p-4 bg-gradient-to-br from-white to-slate-50 rounded-xl border border-slate-200 shadow-lg">
+                <div className="w-full p-4 bg-gradient-to-br from-white to-slate-50 rounded-xl border border-slate-200 shadow-lg" style={{ height: '260px' }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
                       data={[
-                        { name: 'Fuel', value: approximateFuelCost, fill: 'url(#fuelGradient)' },
-                        { name: 'Vehicle', value: approximatedVehicleCost, fill: 'url(#vehicleGradient)' },
-                        { name: 'Driver', value: approximatedDriverCost, fill: 'url(#driverGradient)' },
-                        ...(parseFloat(goodsInTransitPremium) > 0 ? [{ name: 'Premium', value: parseFloat(goodsInTransitPremium), fill: 'url(#premiumGradient)' }] : [])
+                        { name: 'Driver', value: costBreakdown?.driverCost || 0, fill: 'url(#driverGradient)' },
+                        { name: 'Fixed', value: costBreakdown?.fixedAssetCost || 0, fill: 'url(#vehicleGradient)' },
+                        { name: 'Fuel', value: costBreakdown?.fuelCost || 0, fill: 'url(#fuelGradient)' },
+                        { name: 'R&M', value: costBreakdown?.rmCost || 0, fill: 'url(#rmGradient)' },
+                        { name: 'Cross Border', value: costBreakdown?.crossBorderCost || 0, fill: 'url(#premiumGradient)' },
                       ]}
-                      margin={{ top: 20, right: 30, left: 40, bottom: 20 }}
+                      margin={{ top: 15, right: 20, left: 35, bottom: 15 }}
                     >
                       <defs>
                         <linearGradient id="fuelGradient" x1="0" y1="0" x2="0" y2="1">
@@ -1460,6 +1461,10 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
                           <stop offset="0%" stopColor="#fbbf24" stopOpacity={0.9}/>
                           <stop offset="100%" stopColor="#f59e0b" stopOpacity={0.7}/>
                         </linearGradient>
+                        <linearGradient id="rmGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#f87171" stopOpacity={0.9}/>
+                          <stop offset="100%" stopColor="#ef4444" stopOpacity={0.7}/>
+                        </linearGradient>
                         <linearGradient id="premiumGradient" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="0%" stopColor="#a78bfa" stopOpacity={0.9}/>
                           <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0.7}/>
@@ -1473,38 +1478,37 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
                       />
                       <XAxis 
                         dataKey="name" 
-                        tick={{ fontSize: 13, fill: '#475569', fontWeight: 500 }}
+                        tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }}
                         axisLine={{ stroke: '#cbd5e1', strokeWidth: 2 }}
                         tickLine={{ stroke: '#cbd5e1' }}
                       />
                       <YAxis 
-                        tick={{ fontSize: 12, fill: '#64748b', fontWeight: 500 }}
+                        tick={{ fontSize: 10, fill: '#64748b', fontWeight: 500 }}
                         axisLine={{ stroke: '#cbd5e1', strokeWidth: 2 }}
                         tickLine={{ stroke: '#cbd5e1' }}
-                        tickFormatter={(value) => `R${value.toLocaleString()}`}
+                        tickFormatter={(value) => `R${(value / 1000).toFixed(0)}k`}
                       />
                       <Tooltip 
                         formatter={(value, name) => [
-                          `R${value.toLocaleString()}`, 
-                          `${name} Cost`
+                          `R${Number(value).toLocaleString()}`, 
+                          name
                         ]}
                         labelStyle={{ 
                           color: '#1e293b', 
                           fontWeight: 600,
-                          fontSize: '14px'
+                          fontSize: '13px'
                         }}
                         contentStyle={{ 
                           backgroundColor: 'rgba(255, 255, 255, 0.95)', 
                           border: 'none',
                           borderRadius: '12px',
-                          boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-                          backdropFilter: 'blur(10px)'
+                          boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)',
                         }}
                         cursor={{ fill: 'rgba(59, 130, 246, 0.05)' }}
                       />
                       <Bar 
                         dataKey="value" 
-                        radius={[8, 8, 0, 0]}
+                        radius={[6, 6, 0, 0]}
                         strokeWidth={2}
                         stroke="rgba(255, 255, 255, 0.3)"
                       />
@@ -1513,25 +1517,27 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
                 </div>
                 
                 {/* Legend */}
-                <div className="flex flex-wrap gap-3 justify-center">
-                  <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 rounded-full border border-blue-200">
-                    <div className="w-3 h-3 rounded-full bg-gradient-to-b from-blue-400 to-blue-600"></div>
-                    <span className="text-xs font-medium text-blue-700">Fuel</span>
+                <div className="flex flex-wrap gap-2 justify-center mt-3">
+                  <div className="flex items-center gap-1.5 px-2 py-1 bg-yellow-50 rounded-full border border-yellow-200">
+                    <div className="w-2.5 h-2.5 rounded-full bg-gradient-to-b from-yellow-400 to-yellow-600"></div>
+                    <span className="text-[10px] font-medium text-yellow-700">Driver</span>
                   </div>
-                  <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 rounded-full border border-green-200">
-                    <div className="w-3 h-3 rounded-full bg-gradient-to-b from-green-400 to-green-600"></div>
-                    <span className="text-xs font-medium text-green-700">Vehicle</span>
+                  <div className="flex items-center gap-1.5 px-2 py-1 bg-green-50 rounded-full border border-green-200">
+                    <div className="w-2.5 h-2.5 rounded-full bg-gradient-to-b from-green-400 to-green-600"></div>
+                    <span className="text-[10px] font-medium text-green-700">Fixed</span>
                   </div>
-                  <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-50 rounded-full border border-yellow-200">
-                    <div className="w-3 h-3 rounded-full bg-gradient-to-b from-yellow-400 to-yellow-600"></div>
-                    <span className="text-xs font-medium text-yellow-700">Driver</span>
+                  <div className="flex items-center gap-1.5 px-2 py-1 bg-blue-50 rounded-full border border-blue-200">
+                    <div className="w-2.5 h-2.5 rounded-full bg-gradient-to-b from-blue-400 to-blue-600"></div>
+                    <span className="text-[10px] font-medium text-blue-700">Fuel</span>
                   </div>
-                  {parseFloat(goodsInTransitPremium) > 0 && (
-                    <div className="flex items-center gap-2 px-3 py-1.5 bg-purple-50 rounded-full border border-purple-200">
-                      <div className="w-3 h-3 rounded-full bg-gradient-to-b from-purple-400 to-purple-600"></div>
-                      <span className="text-xs font-medium text-purple-700">Premium</span>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-1.5 px-2 py-1 bg-red-50 rounded-full border border-red-200">
+                    <div className="w-2.5 h-2.5 rounded-full bg-gradient-to-b from-red-400 to-red-600"></div>
+                    <span className="text-[10px] font-medium text-red-700">R&M</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-2 py-1 bg-purple-50 rounded-full border border-purple-200">
+                    <div className="w-2.5 h-2.5 rounded-full bg-gradient-to-b from-purple-400 to-purple-600"></div>
+                    <span className="text-[10px] font-medium text-purple-700">Cross Border</span>
+                  </div>
                 </div>
               </div>
             </div>
