@@ -1425,26 +1425,6 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
                       </div>
                     )}
                   </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="p-4 bg-white rounded-lg border border-slate-200 shadow-sm">
-                      <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Distance</p>
-                      <p className="text-2xl font-bold text-slate-800 mt-2">{estimatedDistance}</p>
-                      <p className="text-xs text-slate-600">kilometers</p>
-                    </div>
-                    <div className="p-4 bg-white rounded-lg border border-slate-200 shadow-sm">
-                      <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Cost Per KM</p>
-                      <p className="text-2xl font-bold text-slate-800 mt-2">R{costBreakdown?.costPerKm?.toFixed(2) || '0.00'}</p>
-                      <p className="text-xs text-slate-600">per km</p>
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Total Cost - Bottom Aligned */}
-                <div className="p-6 bg-gradient-to-r from-slate-600 to-slate-700 rounded-xl shadow-lg">
-                  <p className="text-sm font-medium text-slate-200 uppercase tracking-wide">Total Estimated Cost</p>
-                  <p className="text-3xl font-bold text-white mt-2">R{totalVehicleCost.toLocaleString()}</p>
-                  <p className="text-sm text-slate-300 mt-1">All expenses included</p>
                 </div>
               </div>
 
