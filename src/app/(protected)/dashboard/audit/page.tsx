@@ -215,7 +215,7 @@ export default function AuditPage() {
                     <td className="p-2">{record.selectedclient || record.selected_client || 'N/A'}</td>
                     <td className="p-2">{record.cargo || 'N/A'}</td>
                     <td className="p-2 font-semibold">
-                      {record.rate ? `R${parseFloat(record.rate).toLocaleString('en-ZA')}` : 'N/A'}
+                      {record.selling_rate_per_km ? `R${parseFloat(record.selling_rate_per_km).toLocaleString('en-ZA')}` : 'N/A'}
                     </td>
                     <td className="p-2 text-sm">{record.origin || 'N/A'}</td>
                     <td className="p-2 text-sm">{record.destination || 'N/A'}</td>

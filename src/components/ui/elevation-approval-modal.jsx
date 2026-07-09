@@ -96,7 +96,7 @@ export function ElevationApprovalModal({ isOpen, onClose, trip, onApprove, onRej
               <div className="space-y-4">
                 <div>
                   <Label>Rate</Label>
-                  <Input value={trip.rate || ''} readOnly className="bg-gray-50" />
+                  <Input value={trip.selling_rate_per_km || ''} readOnly className="bg-gray-50" />
                 </div>
                 <div>
                   <Label>Total Cost</Label>

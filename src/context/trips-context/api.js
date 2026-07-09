@@ -41,7 +41,7 @@ export const upsertTrip = async (id, tripData, tripsDispatch) => {
     const payload = {
         trip_id: tripData.id || tripData.trip_id,
         order_number: tripData.orderNumber || tripData.order_number,
-        rate: tripData.rate,
+        selling_rate_per_km: tripData.rate || tripData.selling_rate_per_km,
         cost_centre: tripData.costCentre || tripData.cost_centre,
         start_date: tripData.startDate || tripData.start_date,
         end_date: tripData.endDate || tripData.end_date,

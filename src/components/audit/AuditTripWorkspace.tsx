@@ -111,7 +111,7 @@ export default function AuditTripWorkspace({
   const actualCurrency = normalizeCurrency(record?.actual_currency)
   const invoiceCurrency = normalizeCurrency(record?.invoice_currency)
 
-  const plannedRate = toNumber(record?.planned_rate || record?.rate)
+  const plannedRate = toNumber(record?.planned_rate || record?.selling_rate_per_km || record?.rate)
   const actualRate = toNumber(record?.actual_rate)
   const invoiceRate = toNumber(record?.invoice_rate)
 

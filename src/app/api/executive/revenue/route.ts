@@ -20,11 +20,11 @@ export async function GET(request: Request) {
       // Fallback: query trips directly if materialized view doesn't exist yet
       const { data: trips, error: tripsError } = await supabase
         .from('trips')
-        .select('rate, created_at')
+        .select('selling_rate_per_km, created_at')
         .gte('created_at', `${year}-01-01`)
         .lte('created_at', `${year}-12-31 23:59:59`)
-        .not('rate', 'is', null)
-        .not('rate', 'eq', '')
+        .not('selling_rate_per_km', 'is', null)
+        .not('selling_rate_per_km', 'eq', '')
 
       if (tripsError) throw tripsError
 
@@ -33,7 +33,7 @@ export async function GET(request: Request) {
       trips.forEach((trip: any) => {
         const d = new Date(trip.created_at)
         const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
-        const rate = parseFloat(trip.rate) || 0
+        const rate = parseFloat(trip.selling_rate_per_km) || 0
         const existing = monthlyMap.get(monthKey) || { revenue: 0, count: 0 }
         existing.revenue += rate
         existing.count += 1

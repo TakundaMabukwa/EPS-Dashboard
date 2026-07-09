@@ -1279,7 +1279,7 @@ export default function LoadPlanPage() {
     try {
       const tripData = {
         ordernumber: orderNumber,
-        rate: rate,
+        selling_rate_per_km: Number(sellingRatePerKm) || Number(rate) || 0,
         cargo: commodity,
         origin: loadingLocation,
         destination: dropOffPoint,
@@ -1397,7 +1397,7 @@ export default function LoadPlanPage() {
       const tripData = {
         trip_id: `LOAD-${Date.now()}`,
         ordernumber: orderNumber,
-        rate: rate,
+        selling_rate_per_km: Number(sellingRatePerKm) || Number(rate) || 0,
         cargo: commodity,
         origin: loadingLocation,
         destination: dropOffPoint,

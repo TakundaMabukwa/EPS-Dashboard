@@ -81,11 +81,14 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
   const [cargoWeight, setCargoWeight] = useState('')
   const [optimizedRoute, setOptimizedRoute] = useState(null)
   const [isOptimizing, setIsOptimizing] = useState(false)
+  const [approvalDiff, setApprovalDiff] = useState(null)
 
   // Driver assignments state
   const [driverAssignments, setDriverAssignments] = useState([{ id: '', name: '' }])
   const [selectedVehicleId, setSelectedVehicleId] = useState('')
+  const [selectedVehicleName, setSelectedVehicleName] = useState('')
   const [selectedTrailerId, setSelectedTrailerId] = useState('')
+  const [selectedTrailerName, setSelectedTrailerName] = useState('')
   const [selectedVehicleType, setSelectedVehicleType] = useState('')
   const [selectedDriverLocation, setSelectedDriverLocation] = useState(null)
   
@@ -450,7 +453,9 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
         const vehicleId = assignment.vehicle?.id?.toString() || ''
         const trailerId = assignment.trailer?.id?.toString() || ''
         setSelectedVehicleId(vehicleId)
+        setSelectedVehicleName(assignment.vehicle?.name || '')
         setSelectedTrailerId(trailerId)
+        setSelectedTrailerName(assignment.trailer?.name || '')
         
         // Detect vehicle type from horse's DB code if available
         if (vehicleId && vehicles.length > 0) {
@@ -494,6 +499,144 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
       }
     }
   }, [trip, isOpen])
+
+  // In approval mode, fetch pending changes from trip_history and overlay on form
+  useEffect(() => {
+    if (!trip || !isOpen || !showApprovalButtons || !supabase) return
+
+    const fetchPending = async () => {
+      const { data } = await supabase
+        .from('trip_history')
+        .select('previous_data, new_data')
+        .eq('trip_id', trip.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+
+      if (!data?.new_data) return
+      const pending = data.new_data
+      const previous = data.previous_data || {}
+
+      if (pending._pending_rate != null) {
+        setSellingRatePerKm(pending._pending_rate.toString())
+        setRate(pending._pending_rate.toString())
+      }
+      if (pending.clientdetails) {
+        const cd = typeof pending.clientdetails === 'string' ? JSON.parse(pending.clientdetails) : pending.clientdetails
+        setSelectedClient(cd)
+        setClient(cd?.name || '')
+      }
+      if (pending.cargo != null) setCommodity(pending.cargo)
+      if (pending.origin != null) setLoadingLocation(pending.origin)
+      if (pending.destination != null) setDropOffPoint(pending.destination)
+      if (pending.notes != null) setComment(pending.notes)
+      if (pending.ordernumber != null) setOrderNumber(pending.ordernumber)
+      if (pending.estimated_distance != null) setEstimatedDistance(pending.estimated_distance)
+      if (pending.trip_type != null) setTripType(pending.trip_type)
+      if (pending._pending_progress_stops != null) {
+        setSelectedStops(new Set(pending._pending_progress_stops.map((s) => s.value)))
+      }
+
+      // Build diff — parse helper for stringified JSON
+      const parseAssignments = (val) => {
+        if (!val) return []
+        const raw = typeof val === 'string' ? JSON.parse(val) : val
+        return Array.isArray(raw) ? raw : []
+      }
+      const parseClientDetails = (val) => {
+        if (!val) return null
+        const raw = typeof val === 'string' ? JSON.parse(val) : val
+        return raw && typeof raw === 'object' ? raw : null
+      }
+
+      const fields = [
+        { key: '_pending_rate', label: 'Rate', oldKey: 'selling_rate_per_km', fallbackOldKey: 'rate' },
+        { key: 'cargo', label: 'Commodity' },
+        { key: 'origin', label: 'Loading Location' },
+        { key: 'destination', label: 'Drop Off Point' },
+        { key: 'ordernumber', label: 'Order Number' },
+        { key: 'notes', label: 'Comment' },
+        { key: 'trip_type', label: 'Trip Type' },
+        { key: 'estimated_distance', label: 'Distance (km)' },
+        { key: 'cargo_weight', label: 'Cargo Weight' },
+        { key: 'startdate', label: 'Start Date' },
+        { key: 'enddate', label: 'End Date' },
+        { key: 'goods_in_transit_premium', label: 'GIT Premium' },
+        { key: 'fuel_price_per_liter', label: 'Fuel Price/L' },
+        { key: 'driver_cost', label: 'Driver Cost' },
+        { key: 'fuel_cost', label: 'Fuel Cost' },
+        { key: 'maintenance_cost', label: 'R&M Cost' },
+        { key: 'cross_border_cost', label: 'Cross Border' },
+        { key: 'fixed_cost', label: 'Fixed Cost' },
+        { key: 'total_trip_cost', label: 'Total Trip Cost' },
+        { key: 'cost_per_km', label: 'Cost/KM' },
+        { key: 'trip_days', label: 'Trip Days' },
+      ]
+
+      const changes = []
+      for (const f of fields) {
+        const newVal = pending[f.key]
+        const oldVal = previous[f.key] ?? previous[f.oldKey] ?? previous[f.fallbackOldKey]
+        const oldStr = oldVal != null ? String(oldVal) : ''
+        const newStr = newVal != null ? String(newVal) : ''
+        if (newStr !== oldStr) {
+          changes.push({ label: f.label, old: oldStr || '—', new: newStr || '—' })
+        }
+      }
+
+      // Client name diff
+      const oldClient = parseClientDetails(previous.clientdetails)
+      const newClient = parseClientDetails(pending.clientdetails)
+      if ((oldClient?.name || '') !== (newClient?.name || '')) {
+        changes.push({ label: 'Client', old: oldClient?.name || '—', new: newClient?.name || '—' })
+      }
+
+      const oldAssignments = parseAssignments(previous.vehicleassignments)
+      const newAssignments = parseAssignments(pending.vehicleassignments)
+      const oldA = oldAssignments[0] || {}
+      const newA = newAssignments[0] || {}
+
+      // Driver diff
+      const oldDrivers = (oldA.drivers || []).map(d => d.name).filter(Boolean).join(', ')
+      const newDrivers = (newA.drivers || []).map(d => d.name).filter(Boolean).join(', ')
+      if (oldDrivers !== newDrivers) {
+        changes.push({ label: 'Driver(s)', old: oldDrivers || '—', new: newDrivers || '—' })
+      }
+
+      // Vehicle diff
+      const oldVehicle = oldA.vehicle?.name || ''
+      const newVehicle = newA.vehicle?.name || ''
+      if (oldVehicle !== newVehicle) {
+        changes.push({ label: 'Vehicle', old: oldVehicle || '—', new: newVehicle || '—' })
+      }
+
+      // Trailer diff
+      const oldTrailer = oldA.trailer?.name || ''
+      const newTrailer = newA.trailer?.name || ''
+      if (oldTrailer !== newTrailer) {
+        changes.push({ label: 'Trailer', old: oldTrailer || '—', new: newTrailer || '—' })
+      }
+
+      // Progress stops diff — show added and removed
+      const parseStops = (val) => {
+        if (!val) return []
+        const raw = typeof val === 'string' ? JSON.parse(val) : val
+        return Array.isArray(raw) ? raw : []
+      }
+      const oldStopValues = new Set(parseStops(previous.progress_stops).map(s => s.value))
+      const newStopValues = new Set(parseStops(pending.progress_stops || pending._pending_progress_stops).map(s => s.value))
+      const allStopLabels = Object.fromEntries(DEFAULT_PROGRESS_STOPS.map(s => [s.value, s.label]))
+      const added = [...newStopValues].filter(v => !oldStopValues.has(v)).map(v => allStopLabels[v] || v)
+      const removed = [...oldStopValues].filter(v => !newStopValues.has(v)).map(v => allStopLabels[v] || v)
+      if (added.length > 0 || removed.length > 0) {
+        changes.push({ label: 'Progress Stops', old: removed.length ? `Removed: ${removed.join(', ')}` : '—', new: added.length ? `Added: ${added.join(', ')}` : '—' })
+      }
+
+      if (changes.length > 0) setApprovalDiff(changes)
+    }
+
+    fetchPending()
+  }, [trip, isOpen, showApprovalButtons])
 
   // Fetch fuel months on open
   useEffect(() => {
@@ -761,7 +904,7 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
 
       const updateData = {
         ordernumber: orderNumber,
-        selling_rate_per_km: Number(rate) || 0,
+        selling_rate_per_km: Number(sellingRatePerKm) || 0,
         cargo: commodity,
         origin: loadingLocation,
         destination: dropOffPoint,
@@ -799,11 +942,11 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
           drivers: driverAssignments,
           vehicle: { 
             id: selectedVehicleId, 
-            name: selectedVehicleId ? vehicles.find(v => v.id.toString() === selectedVehicleId)?.registration_number || '' : ''
+            name: selectedVehicleName
           },
           trailer: {
             id: selectedTrailerId,
-            name: selectedTrailerId ? vehicles.find(v => v.id.toString() === selectedTrailerId)?.registration_number || '' : ''
+            name: selectedTrailerName
           }
         }],
         
@@ -844,10 +987,19 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
         selling_rate_per_km: Number(sellingRatePerKm) || 0,
         trip_days: tripDays || 0,
         
-        // Progress stops
-        progress_stops: DEFAULT_PROGRESS_STOPS
-          .filter(s => selectedStops.has(s.value))
-          .map((s, i) => ({ order: i + 1, label: s.label, value: s.value, isComplete: false })),
+        // Progress stops — preserve existing isComplete state
+        progress_stops: (() => {
+          const existingStops = trip.progress_stops || []
+          const existingMap = Object.fromEntries(existingStops.map((s) => [s.value, s]))
+          return DEFAULT_PROGRESS_STOPS
+            .filter(s => selectedStops.has(s.value))
+            .map((s, i) => ({
+              order: i + 1,
+              label: s.label,
+              value: s.value,
+              isComplete: existingMap[s.value]?.isComplete || false
+            }))
+        })(),
         
         // Always elevate on edit
         elevate: true
@@ -855,6 +1007,14 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
 
       if (!supabase) {
         throw new Error('Supabase client not initialized')
+      }
+
+      // If elevating for approval, don't save rate or progress_stops directly — only on approval
+      const pendingRate = updateData.selling_rate_per_km
+      const pendingProgressStops = updateData.progress_stops
+      if (updateData.elevate) {
+        delete updateData.selling_rate_per_km
+        delete updateData.progress_stops
       }
 
       // Update trip
@@ -866,12 +1026,17 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
       if (updateError) throw updateError
 
       // Store in trip_history table after updateData is defined
+      // Store pending rate and progress_stops in history so approval can apply them
+      const historyNewData = updateData.elevate !== false
+        ? { ...updateData, _pending_rate: pendingRate, _pending_progress_stops: pendingProgressStops }
+        : updateData
+
       const { error: historyError } = await supabase
         .from('trip_history')
         .insert({
           trip_id: trip.id,
           previous_data: previousData,
-          new_data: updateData,
+          new_data: historyNewData,
           change_type: 'edit',
           created_at: new Date().toISOString()
         })
@@ -926,7 +1091,11 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
         'trip_type', 'selected_stop_points', 'selected_vehicle_type',
         'approximate_fuel_cost', 'approximated_cpk', 'approximated_vehicle_cost',
         'approximated_driver_cost', 'total_vehicle_cost', 'goods_in_transit_premium',
-        'estimated_distance', 'fuel_price_per_liter', 'status', 'status_notes'
+        'estimated_distance', 'fuel_price_per_liter', 'status', 'status_notes',
+        'selling_rate_per_km', 'driver_cost', 'fuel_cost', 'maintenance_cost',
+        'cross_border_cost', 'total_trip_cost', 'fixed_cost', 'cost_per_km',
+        'profile_used', 'diesel_rate', 'trip_days', 'progress_stops',
+        'start_date', 'end_date'
       ]
       
       const revertData = {
@@ -995,7 +1164,35 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
             </Dialog.Close>
           </div>
           <div className="p-6">
-        
+
+        {/* Before/After diff for approval */}
+        {showApprovalButtons && approvalDiff && approvalDiff.length > 0 && (
+          <div className="mb-6 p-4 rounded-lg border-2 border-amber-300 bg-amber-50">
+            <h4 className="text-sm font-bold text-amber-800 mb-3 flex items-center gap-2">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              Changes Pending Approval
+            </h4>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-amber-700 uppercase">
+                  <th className="pb-2 pr-4">Field</th>
+                  <th className="pb-2 pr-4">Before</th>
+                  <th className="pb-2">After</th>
+                </tr>
+              </thead>
+              <tbody>
+                {approvalDiff.map((d, i) => (
+                  <tr key={i} className="border-t border-amber-200">
+                    <td className="py-1.5 pr-4 font-medium text-slate-700">{d.label}</td>
+                    <td className="py-1.5 pr-4 text-red-600 line-through">{d.old}</td>
+                    <td className="py-1.5 text-green-700 font-semibold">{d.new}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Basic Load Information */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1033,10 +1230,6 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
                   selectedClient={selectedClient}
                   placeholder="Client name will appear here"
                 />
-              </div>
-              <div>
-                <Label htmlFor="rate">Rate</Label>
-                <Input value={rate} onChange={readOnly ? undefined : (e) => setRate(e.target.value)} placeholder="Rate" readOnly={readOnly} className={readOnly ? 'bg-gray-50' : ''} />
               </div>
             </div>
 
@@ -1355,7 +1548,11 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
               <Label htmlFor="horse" className="text-sm font-medium text-slate-700">Select Horse</Label>
               <VehicleDropdown
                 value={selectedVehicleId}
-                onChange={setSelectedVehicleId}
+                onChange={(id) => {
+                  setSelectedVehicleId(id)
+                  const found = vehicles.find(v => String(v.id) === String(id))
+                  setSelectedVehicleName(found?.registration_number || '')
+                }}
                 vehicles={(() => {
                   const horses = vehicles.filter(v => !v.vehicle_type?.startsWith('TR'))
                   // Ensure trip's assigned horse is always in the list
@@ -1375,7 +1572,11 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
               <Label htmlFor="trailer" className="text-sm font-medium text-slate-700">Select Trailer</Label>
               <TrailerDropdown
                 value={selectedTrailerId}
-                onChange={setSelectedTrailerId}
+                onChange={(id) => {
+                  setSelectedTrailerId(id)
+                  const found = vehicles.find(v => String(v.id) === String(id))
+                  setSelectedTrailerName(found?.registration_number || '')
+                }}
                 trailers={(() => {
                   const trailers = vehicles.filter(v => v.vehicle_type?.startsWith('TR'))
                   // Ensure trip's assigned trailer is always in the list

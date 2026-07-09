@@ -340,7 +340,7 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
           </div>
           <div className="text-xs font-medium text-green-600">
             {(() => {
-              const displayRate = trip.selling_rate_per_km || trip.rate
+              const displayRate = trip.selling_rate_per_km
               return displayRate ? `R${parseFloat(displayRate).toLocaleString()}` : '—'
             })()}
           </div>
@@ -2345,7 +2345,7 @@ export default function Dashboard() {
             id: trip.id,
             client: clientDetails?.name || 'Unknown Client',
             commodity: trip.cargo || 'N/A',
-            rate: trip.selling_rate_per_km || trip.rate || 'N/A',
+            rate: trip.selling_rate_per_km || 'N/A',
             pickup: trip.origin || 'N/A',
             dropOff: trip.destination || 'N/A',
             status: trip.status || 'Unknown'
@@ -2602,7 +2602,7 @@ export default function Dashboard() {
                           <CardContent>
                             <div className="text-2xl font-bold">
                               R{auditData.reduce((sum, record) => {
-                                const rate = parseFloat(record.rate?.toString().replace(/[^0-9.-]/g, '') || '0')
+                                const rate = parseFloat(record.selling_rate_per_km?.toString().replace(/[^0-9.-]/g, '') || record.rate?.toString().replace(/[^0-9.-]/g, '') || '0')
                                 return sum + rate
                               }, 0).toLocaleString('en-ZA')}
                             </div>
@@ -2652,7 +2652,7 @@ export default function Dashboard() {
                           {Object.entries(
                             auditData.reduce((acc, record) => {
                               const client = record.client
-                              const rate = parseFloat(record.rate?.toString().replace(/[^0-9.-]/g, '') || '0')
+                              const rate = parseFloat(record.selling_rate_per_km?.toString().replace(/[^0-9.-]/g, '') || record.rate?.toString().replace(/[^0-9.-]/g, '') || '0')
                               acc[client] = (acc[client] || 0) + rate
                               return acc
                             }, {})
@@ -2726,7 +2726,7 @@ export default function Dashboard() {
                         >
                           <TableCell className="font-medium">{row.client}</TableCell>
                           <TableCell>{row.commodity}</TableCell>
-                          <TableCell>{row.rate}</TableCell>
+                          <TableCell>{row.selling_rate_per_km || row.rate}</TableCell>
                           <TableCell className="max-w-32 truncate" title={row.pickup}>{row.pickup}</TableCell>
                           <TableCell className="max-w-32 truncate" title={row.dropOff}>{row.dropOff}</TableCell>
                           <TableCell>
@@ -3424,7 +3424,7 @@ export default function Dashboard() {
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-600">Rate:</span>
                       <span className="font-medium text-green-600">
-                        {selectedTrip.rate ? `R${parseFloat(selectedTrip.rate).toLocaleString('en-ZA')}` : 'N/A'}
+                        {selectedTrip.selling_rate_per_km ? `R${parseFloat(selectedTrip.selling_rate_per_km).toLocaleString('en-ZA')}` : 'N/A'}
                       </span>
                     </div>
                     <div className="flex justify-between text-sm">
@@ -4040,9 +4040,30 @@ export default function Dashboard() {
         onApprove={async () => {
           try {
             const supabase = createClient();
+
+            // Fetch pending changes from trip history
+            const { data: historyData } = await supabase
+              .from('trip_history')
+              .select('new_data')
+              .eq('trip_id', currentTripForApproval.id)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .single();
+
+            const pendingRate = historyData?.new_data?._pending_rate;
+            const pendingProgressStops = historyData?.new_data?._pending_progress_stops;
+
+            const updatePayload: any = { elevate: false };
+            if (pendingRate != null) {
+              updatePayload.selling_rate_per_km = pendingRate;
+            }
+            if (pendingProgressStops != null) {
+              updatePayload.progress_stops = pendingProgressStops;
+            }
+
             const { error } = await supabase
               .from('trips')
-              .update({ elevate: false })
+              .update(updatePayload)
               .eq('id', currentTripForApproval.id);
             
             if (error) throw error;
