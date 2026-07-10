@@ -1330,7 +1330,7 @@ export default function LoadPlanPage() {
         selected_vehicle_type: selectedVehicleType,
         progress_stops: DEFAULT_PROGRESS_STOPS
           .filter(s => selectedStops.has(s.value))
-          .map((s, i) => ({ order: i + 1, label: s.label, value: s.value, isComplete: false })),
+          .map((s, i) => ({ order: i + 1, label: s.label, value: s.value, isComplete: false, isCompulsory: false })),
         updated_at: new Date().toISOString()
       }
       
@@ -1471,7 +1471,7 @@ export default function LoadPlanPage() {
         trip_days: tripDays || 0,
         progress_stops: DEFAULT_PROGRESS_STOPS
           .filter(s => selectedStops.has(s.value))
-          .map((s, i) => ({ order: i + 1, label: s.label, value: s.value, isComplete: false })),
+          .map((s, i) => ({ order: i + 1, label: s.label, value: s.value, isComplete: false, isCompulsory: false })),
         location_geodata: {
           pickup: pickupGeoData,
           dropoff: dropoffGeoData,
