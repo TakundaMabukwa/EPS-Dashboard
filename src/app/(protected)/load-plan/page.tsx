@@ -12,10 +12,11 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose, DialogPortal, DialogOverlay } from '@/components/ui/dialog'
-import { X, FileText, Plus, Route, MapPin, CheckCircle } from 'lucide-react'
+import { X, FileText, Plus, Route, MapPin, CheckCircle, AlertTriangle, Cloud, CloudRain, Sun, Wind } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { LocationAutocomplete } from '@/components/ui/location-autocomplete'
+import { checkRTMSCompliance, interpolateStopPositions, type RTMSResult, type RecommendedStop } from '@/lib/rtms-rules'
 import { ProgressWithWaypoints } from '@/components/ui/progress-with-waypoints'
 import { RouteOptimizer } from '@/components/ui/route-optimizer'
 import { RouteTracker } from '@/components/ui/route-tracker'
@@ -40,6 +41,7 @@ import { resolveProfileKey } from '@/lib/cost-engine'
 export default function LoadPlanPage() {
   const supabase = createClient()
   const router = useRouter()
+  const processedRouteRef = useRef<string>('')
   const [toast, setToast] = useState({ message: '', type: 'success' as 'success' | 'error', isVisible: false })
   const [isEditMode, setIsEditMode] = useState(false)
   const [editTripId, setEditTripId] = useState(null)
@@ -122,6 +124,17 @@ export default function LoadPlanPage() {
   const [isLoadingStopPoints, setIsLoadingStopPoints] = useState(false)
   const [customStopPoints, setCustomStopPoints] = useState([])
   const [isManuallyOrdered, setIsManuallyOrdered] = useState(false)
+
+  // RTMS compliance state
+  const [rtmsResult, setRtmsResult] = useState<RTMSResult | null>(null)
+  const [rtmsRecommendedStops, setRtmsRecommendedStops] = useState<Array<RecommendedStop & { lat: number; lng: number }>>([])
+
+  // Weather state
+  const [weather, setWeather] = useState<{ departure: any; arrival: any } | null>(null)
+
+  // Fuel state
+  const [fuelData, setFuelData] = useState<{ fuelLevel: number; consumptionRate: number; remainingRange: number; engineHours: number; totalFuelUsed: number } | null>(null)
+  const [fuelStopSuggestion, setFuelStopSuggestion] = useState<{ needed: boolean; stopKm: number; reason: string } | null>(null)
 
   // Progress stops
   const DEFAULT_PROGRESS_STOPS = [
@@ -721,6 +734,112 @@ export default function LoadPlanPage() {
     const timeoutId = setTimeout(previewRoute, 500)
     return () => clearTimeout(timeoutId)
   }, [loadingLocation, dropOffPoint, stopPoints, customStopPoints, driverAssignments, isManuallyOrdered])
+
+  // RTMS compliance check + weather + fuel (separate from route preview to avoid infinite loop)
+  useEffect(() => {
+    if (!optimizedRoute?.route || !loadingLocation || !dropOffPoint) return
+    if (!optimizedRoute.route.geometry) return
+
+    // Reset weather so old data isn't shown for new route
+    setWeather(null)
+
+    // Guard: skip if same route already processed
+    const route = optimizedRoute.route
+    const routeKey = `${route.distance}-${route.duration}-${loadingLocation}-${dropOffPoint}`
+    if (routeKey === processedRouteRef.current) return
+    processedRouteRef.current = routeKey
+
+    const distanceKm = route.distance / 1000
+    const durationSeconds = route.duration
+
+    // 1. RTMS compliance check
+    const result = checkRTMSCompliance({ distanceKm, durationSeconds })
+    setRtmsResult(result)
+
+    // 2. Interpolate recommended stop positions + match against existing DB stops
+    if (result.recommendedStops.length > 0 && route.geometry) {
+      const stopsWithPositions = interpolateStopPositions(route.geometry, result.recommendedStops)
+
+      // Match against existing stop_points from DB by closest lat/lng (within 5km)
+      fetchStopPoints().then(() => {
+        setCustomStopPoints((prevCustom) => {
+          return stopsWithPositions.map((s) => {
+            // Check existing stops for a match within 5km
+            const matchedStop = stopPoints.find((sp: any) => {
+              if (!sp?.lat || !sp?.lng) return false
+              const dist = Math.sqrt(Math.pow(s.lat - sp.lat, 2) + Math.pow(s.lng - sp.lng, 2))
+              return dist < 0.05 // ~5km
+            })
+            if (matchedStop) return matchedStop.name || matchedStop.label
+            return s.label
+          })
+        })
+        setStopPoints((prev) => stopsWithPositions.map(() => ''))
+      })
+
+      setRtmsRecommendedStops(stopsWithPositions)
+    } else {
+      setRtmsRecommendedStops([])
+    }
+
+    // 3. Weather — fetch for this route
+    const coords = route.geometry?.coordinates
+    if (coords?.length > 0) {
+      const originCoord = coords[0]
+      const destCoord = coords[coords.length - 1]
+      Promise.allSettled([
+        fetch(`/api/weather?lat=${originCoord[1]}&lng=${originCoord[0]}`).then((r) => r.json()),
+        fetch(`/api/weather?lat=${destCoord[1]}&lng=${destCoord[0]}`).then((r) => r.json()),
+      ]).then(([dep, arr]) => {
+        setWeather({
+          departure: dep.status === 'fulfilled' ? dep.value : null,
+          arrival: arr.status === 'fulfilled' ? arr.value : null,
+        })
+      })
+    }
+
+    // 4. Fuel check
+    if (selectedVehicleId) {
+      fetch('/api/fuel')
+        .then((r) => r.json())
+        .then((fuelArray) => {
+          const vehicle = vehicles.find((v) => String(v.id) === String(selectedVehicleId))
+          const reg = (vehicle?.registration_number || '').toUpperCase()
+          const fuelEntry = fuelArray.find((f: any) => f.plate?.toUpperCase() === reg)
+          if (fuelEntry && fuelEntry.fuelLevel > 0 && fuelEntry.engineHours > 0) {
+            const consumptionRate = fuelEntry.totalFuelUsed / fuelEntry.engineHours
+            const remainingFuel = fuelEntry.fuelLevel
+            const remainingHours = consumptionRate > 0 ? remainingFuel / consumptionRate : Infinity
+            const remainingKm = remainingHours * 80
+
+            setFuelData({
+              fuelLevel: remainingFuel,
+              consumptionRate: Math.round(consumptionRate * 100) / 100,
+              remainingRange: Math.round(remainingKm),
+              engineHours: fuelEntry.engineHours,
+              totalFuelUsed: fuelEntry.totalFuelUsed,
+            })
+
+            if (remainingKm < distanceKm) {
+              setFuelStopSuggestion({
+                needed: true,
+                stopKm: Math.round(remainingKm * 0.8),
+                reason: `Only ${Math.round(remainingKm)}km range vs ${Math.round(distanceKm)}km trip`,
+              })
+            } else {
+              setFuelStopSuggestion(null)
+            }
+          } else {
+            setFuelData(null)
+            setFuelStopSuggestion(null)
+          }
+        })
+        .catch(() => {
+          setFuelData(null)
+          setFuelStopSuggestion(null)
+        })
+    }
+  }, [optimizedRoute, loadingLocation, dropOffPoint, selectedVehicleId])
 
 
 
@@ -1330,7 +1449,7 @@ export default function LoadPlanPage() {
         selected_vehicle_type: selectedVehicleType,
         progress_stops: DEFAULT_PROGRESS_STOPS
           .filter(s => selectedStops.has(s.value))
-          .map((s, i) => ({ order: i + 1, label: s.label, value: s.value, isComplete: false })),
+          .map((s, i) => ({ order: i + 1, label: s.label, value: s.value, isComplete: false, isCompulsory: false })),
         updated_at: new Date().toISOString()
       }
       
@@ -1471,7 +1590,7 @@ export default function LoadPlanPage() {
         trip_days: tripDays || 0,
         progress_stops: DEFAULT_PROGRESS_STOPS
           .filter(s => selectedStops.has(s.value))
-          .map((s, i) => ({ order: i + 1, label: s.label, value: s.value, isComplete: false })),
+          .map((s, i) => ({ order: i + 1, label: s.label, value: s.value, isComplete: false, isCompulsory: false })),
         location_geodata: {
           pickup: pickupGeoData,
           dropoff: dropoffGeoData,
@@ -1899,13 +2018,14 @@ export default function LoadPlanPage() {
                       )}
                       <div className="space-y-4">
                         <RoutePreviewMap
-                          key={`${loadingLocation}-${dropOffPoint}-${stopPoints.join(',')}-${customStopPoints.join(',')}`}
+                          key={`${loadingLocation}-${dropOffPoint}`}
                           origin={loadingLocation}
                           destination={dropOffPoint}
                           routeData={optimizedRoute}
                           stopPoints={stopPoints.length > 0 || customStopPoints.some(p => p) ? 'async' : []}
                           getStopPointsData={getSelectedStopPointsData}
                           preserveOrder={isManuallyOrdered}
+                          recommendedStops={rtmsRecommendedStops}
                           driverLocation={selectedDriverLocation ? {
                             lat: selectedDriverLocation.latitude,
                             lng: selectedDriverLocation.longitude,
@@ -1923,6 +2043,7 @@ export default function LoadPlanPage() {
                           selectedClient={selectedClient}
                           loadingGeozoneCoords={loadingGeozoneCoords}
                           dropoffGeozoneCoords={dropoffGeozoneCoords}
+                          weather={weather}
                         />
                         
                         {/* Route Summary */}
@@ -1998,7 +2119,126 @@ export default function LoadPlanPage() {
                   </div>
                 ) : null}
 
-                {/* Cost Engine */}
+                {/* RTMS Compliance Panel */}
+                {rtmsResult && optimizedRoute && (
+                  <div className="space-y-4">
+                    {/* Compliance Badge */}
+                    <div className={cn(
+                      "flex items-center gap-3 p-4 rounded-lg border-2",
+                      rtmsResult.isCompliant
+                        ? "bg-green-50 border-green-300"
+                        : "bg-amber-50 border-amber-300"
+                    )}>
+                      {rtmsResult.isCompliant ? (
+                        <CheckCircle className="h-5 w-5 text-green-600 flex-shrink-0" />
+                      ) : (
+                        <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0" />
+                      )}
+                      <div>
+                        <div className={cn(
+                          "font-semibold text-sm",
+                          rtmsResult.isCompliant ? "text-green-800" : "text-amber-800"
+                        )}>
+                          {rtmsResult.isCompliant ? 'RTMS Compliant' : 'RTMS Violation — Rest Stops Required'}
+                        </div>
+                        {!rtmsResult.isCompliant && (
+                          <div className="text-xs text-amber-700 mt-1">
+                            This trip exceeds South African RTMS driving limits. Suggested rest stops have been added to your route.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Violations List */}
+                    {!rtmsResult.isCompliant && rtmsResult.violations.length > 0 && (
+                      <div className="bg-red-50 border border-red-200 p-4 rounded-lg">
+                        <h5 className="font-medium text-red-800 text-sm mb-2">Violations:</h5>
+                        <div className="space-y-1">
+                          {rtmsResult.violations.map((v, i) => (
+                            <div key={i} className="text-xs text-red-700">
+                              <span className="font-medium">{v.rule}:</span> {v.actual} exceeds limit of {v.limit}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Recommended Stops */}
+                    {rtmsRecommendedStops.length > 0 && (
+                      <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
+                        <h5 className="font-medium text-blue-800 text-sm mb-2">
+                          Suggested Rest Stops ({rtmsRecommendedStops.length}):
+                        </h5>
+                        <div className="space-y-1">
+                          {rtmsRecommendedStops.map((stop, i) => (
+                            <div key={i} className="flex items-center gap-2 text-xs text-blue-700">
+                              <div className={cn(
+                                "w-2 h-2 rounded-full",
+                                stop.type === 'rest' ? "bg-red-500" : "bg-amber-500"
+                              )} />
+                              <span className="font-medium">{stop.label}</span>
+                              <span>— {stop.kmFromOrigin} km from origin</span>
+                              <span className="text-blue-500">({stop.reason})</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Weather Panel */}
+
+                {/* Fuel Status Panel */}
+                {fuelData && (
+                  <div className={cn(
+                    "border p-4 rounded-lg",
+                    fuelStopSuggestion ? "bg-amber-50 border-amber-300" : "bg-green-50 border-green-300"
+                  )}>
+                    <h5 className="font-medium text-sm mb-3 flex items-center gap-2">
+                      <span className="text-lg">⛽</span>
+                      Fuel Status
+                    </h5>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                      <div>
+                        <div className="text-xs text-slate-500">Current Level</div>
+                        <div className="font-bold text-lg">{fuelData.fuelLevel}<span className="text-sm font-normal">L</span></div>
+                        <div className="text-xs text-slate-400">/ 1000L tank</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-slate-500">Consumption</div>
+                        <div className="font-bold text-lg">{fuelData.consumptionRate}<span className="text-sm font-normal"> L/hr</span></div>
+                        <div className="text-xs text-slate-400">{fuelData.consumptionRate > 0 ? Math.round(fuelData.consumptionRate * 80) : 0} L/100km</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-slate-500">Est. Range</div>
+                        <div className="font-bold text-lg">{fuelData.remainingRange}<span className="text-sm font-normal"> km</span></div>
+                        <div className="text-xs text-slate-400">@ 80 km/h avg</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-slate-500">Trip Distance</div>
+                        <div className="font-bold text-lg">{optimizedRoute ? Math.round((optimizedRoute.route?.distance || optimizedRoute.distance) / 1000) : 0}<span className="text-sm font-normal"> km</span></div>
+                        <div className="text-xs text-slate-400">
+                          {fuelData.remainingRange >= (optimizedRoute ? (optimizedRoute.route?.distance || optimizedRoute.distance) / 1000 : 0)
+                            ? <span className="text-green-600 font-medium">Sufficient</span>
+                            : <span className="text-amber-600 font-medium">Refuel needed</span>
+                          }
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Fuel Stop Suggestion */}
+                    {fuelStopSuggestion && (
+                      <div className="mt-3 p-3 bg-amber-100 border border-amber-300 rounded text-xs text-amber-800 flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                        <div>
+                          <span className="font-semibold">Fuel stop recommended at ~{fuelStopSuggestion.stopKm} km</span>
+                          <span className="ml-2">— {fuelStopSuggestion.reason}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="space-y-4">
                   <Label className="text-lg font-medium">Trip Cost Estimate</Label>
 
