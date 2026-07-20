@@ -109,49 +109,48 @@ export async function GET(request: NextRequest) {
       to: { row: 1, column: headers.length },
     }
 
-    type MileageKey = string
-    const mileageRequests = new Map<MileageKey, { reg: string; from: string; to: string }>()
+    // Batch mileage fetch — POST per-vehicle date ranges
+    const mileageRequests: { reg: string; from: string; to: string }[] = []
     for (const trip of (trips || [])) {
       const va = parseJson(trip.vehicleassignments)
       const stopsData = parseJson(trip.stops_data)
       const statusEntries = Array.isArray(stopsData) ? stopsData : []
-      const horseReg = regMap.get(Number(va?.[0]?.vehicle?.id)) || va?.[0]?.vehicle?.name || ''
+      const vId = Number(va?.[0]?.vehicle?.id)
+      const reg = regMap.get(vId) || va?.[0]?.vehicle?.name || ''
       const fromTs = statusEntries[1]?.timestamp || statusEntries[1]?.recorded_at || ''
       const toTs = statusEntries.length >= 2
         ? statusEntries[statusEntries.length - 1]?.timestamp || statusEntries[statusEntries.length - 1]?.recorded_at || ''
         : ''
-      if (horseReg && fromTs && toTs) {
-        const key = `${horseReg}|${formatMileageTime(fromTs)}|${formatMileageTime(toTs)}`
-        if (!mileageRequests.has(key)) {
-          mileageRequests.set(key, { reg: horseReg, from: formatMileageTime(fromTs), to: formatMileageTime(toTs) })
+      if (reg && fromTs && toTs) {
+        const key = `${reg}|${fromTs}|${toTs}`
+        if (!mileageRequests.some(r => `${r.reg}|${r.from}|${r.to}` === key)) {
+          mileageRequests.push({ reg, from: fromTs.split('T')[0], to: toTs.split('T')[0] })
         }
       }
     }
 
-    const mileageCache = new Map<MileageKey, any>()
-    const entries = Array.from(mileageRequests.entries())
-    let fetchErrors = 0
-    let fetchHits = 0
-    const BATCH = 10
-    for (let i = 0; i < entries.length; i += BATCH) {
-      const batch = entries.slice(i, i + BATCH)
-      const results = await Promise.allSettled(
-        batch.map(async ([key, req]) => {
-          const data = await fetchMileage(req.reg, req.from, req.to)
-          return { key, data }
+    const mileageByRegDate = new Map<string, any>()
+    if (mileageRequests.length > 0) {
+      try {
+        const res = await fetch(`${MILEAGE_BASE}/api/vehicle/mileage/batch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ vehicles: mileageRequests }),
+          cache: 'no-store',
+          signal: AbortSignal.timeout(30000),
         })
-      )
-      for (const r of results) {
-        if (r.status === 'fulfilled' && r.value.data) {
-          mileageCache.set(r.value.key, r.value.data)
-          fetchHits++
-        } else {
-          fetchErrors++
+        const json = await res.json()
+        if (json?.ok && Array.isArray(json.data)) {
+          for (const entry of json.data) {
+            const key = `${(entry.registration || '').toUpperCase()}|${entry.from}|${entry.to}`
+            mileageByRegDate.set(key, entry)
+          }
         }
+        console.log(`Mileage batch: ${json.data?.length || 0} vehicles returned`)
+      } catch (err: any) {
+        console.error(`Mileage batch error: ${err?.message || err}`)
       }
     }
-
-    console.log(`Mileage: ${mileageRequests.size} unique keys, ${fetchHits} hits, ${fetchErrors} misses`)
 
     for (const trip of (trips || [])) {
       const vehicleassignments = parseJson(trip.vehicleassignments)
@@ -192,26 +191,25 @@ export async function GET(request: NextRequest) {
       let routeKm = closingKm - openingKm
       let mapKm = 0
 
+      const vehicleId = Number(vehicleassignments?.[0]?.vehicle?.id)
       const fromTs = statusEntries[1]?.timestamp || statusEntries[1]?.recorded_at || ''
       const toTs = statusEntries.length >= 2
         ? statusEntries[statusEntries.length - 1]?.timestamp || statusEntries[statusEntries.length - 1]?.recorded_at || ''
         : ''
-      if (horseReg && fromTs && toTs) {
-        const mileageKey = `${horseReg}|${formatMileageTime(fromTs)}|${formatMileageTime(toTs)}`
-        const mileage = mileageCache.get(mileageKey) || null
-        if (mileage) {
-          const startM = toNumber(mileage.start_mileage)
-          const endM = toNumber(mileage.end_mileage)
-          const dist = toNumber(mileage.distance_km)
-          if (startM > 0) openingKm = startM
-          if (endM > 0) closingKm = endM
-          if (dist > 0) {
-            routeKm = dist
-            mapKm = dist
-          } else if (endM > startM) {
-            routeKm = endM - startM
-            mapKm = endM - startM
-          }
+      const mileageKey = fromTs && toTs ? `${horseReg.toUpperCase()}|${fromTs.split('T')[0]}|${toTs.split('T')[0]}` : ''
+      const mileage = mileageKey ? mileageByRegDate.get(mileageKey) || null : null
+      if (mileage) {
+        const startM = toNumber(mileage.start_mileage)
+        const endM = toNumber(mileage.end_mileage)
+        const dist = toNumber(mileage.distance_km)
+        if (startM > 0) openingKm = startM
+        if (endM > 0) closingKm = endM
+        if (dist > 0) {
+          routeKm = dist
+          mapKm = dist
+        } else if (endM > startM) {
+          routeKm = endM - startM
+          mapKm = endM - startM
         }
       }
 
@@ -342,33 +340,5 @@ function formatTimestamp(value: string): string {
 
 const MILEAGE_BASE =
   (process.env.NEXT_PUBLIC_ROUTING || 'http://164.90.217.196:8800').replace(/\/$/, '')
-
-function formatMileageTime(iso: string): string {
-  if (!iso) return ''
-  const clean = iso.replace('Z', '')
-  const match = clean.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/)
-  if (!match) return ''
-  return `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}`
-}
-
-async function fetchMileage(reg: string, from: string, to: string): Promise<any | null> {
-  try {
-    const url = `${MILEAGE_BASE}/api/vehicle/${encodeURIComponent(reg)}/mileage?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
-    const res = await fetch(url, {
-      headers: { Accept: 'application/json' },
-      cache: 'no-store',
-      signal: AbortSignal.timeout(15000),
-    })
-    const json = await res.json()
-    if (!json?.ok) {
-      console.warn(`Mileage miss: ${reg} (${json?.error || 'unknown'})`)
-      return null
-    }
-    return json.data
-  } catch (err: any) {
-    console.error(`Mileage error: ${reg} - ${err?.message || err}`)
-    return null
-  }
-}
 
 

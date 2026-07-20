@@ -3,62 +3,30 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { resolveProfileKey, VEHICLE_COST_PROFILES, WORKING_DAYS_PER_MONTH } from '@/lib/cost-engine'
 
-const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || ''
-const ROUTING_URL = process.env.NEXT_PUBLIC_ROUTING || 'http://164.90.217.196:8800/'
+const MILEAGE_BASE = (process.env.NEXT_PUBLIC_ROUTING || 'http://164.90.217.196:8800').replace(/\/$/, '')
 const DRIVER_MONTHLY_SALARY = 23453.14
 const DAILY_DRIVER_COST = DRIVER_MONTHLY_SALARY / WORKING_DAYS_PER_MONTH
 
-async function geocode(query: string): Promise<[number, number] | null> {
-  if (!MAPBOX_TOKEN || !query) return null
-  const enriched = query.toLowerCase().includes('south africa') || query.toLowerCase().includes(', za')
-    ? query
-    : `${query}, South Africa`
-  try {
-    const res = await fetch(
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(enriched)}.json?access_token=${MAPBOX_TOKEN}&limit=1&country=ZA`
-    )
-    const data = await res.json()
-    if (data.features?.length > 0) {
-      return data.features[0].center
-    }
-  } catch {}
-  return null
+function parseJson(value: unknown): any {
+  if (!value) return null
+  if (typeof value === 'string') { try { return JSON.parse(value) } catch { return null } }
+  return value
 }
 
-async function getDrivingDistance(origin: string, destination: string) {
-  if (!MAPBOX_TOKEN || !origin || !destination) return null
+async function getMileageBatch(vehicles: { reg: string; from: string; to: string }[]) {
+  if (vehicles.length === 0) return []
   try {
-    const [originCoords, destCoords] = await Promise.all([geocode(origin), geocode(destination)])
-    if (!originCoords || !destCoords) return null
-    const res = await fetch(
-      `https://api.mapbox.com/directions/v5/mapbox/driving/${originCoords[0]},${originCoords[1]};${destCoords[0]},${destCoords[1]}?access_token=${MAPBOX_TOKEN}`
-    )
-    const data = await res.json()
-    if (data.routes?.length > 0) {
-      const route = data.routes[0]
-      return {
-        distanceKm: Math.round(route.distance / 1000),
-        durationHours: Math.round((route.duration / 3600) * 10) / 10,
-      }
-    }
+    const res = await fetch(`${MILEAGE_BASE}/api/vehicle/mileage/batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ vehicles }),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(15000),
+    })
+    const json = await res.json()
+    if (json?.ok && Array.isArray(json.data)) return json.data
   } catch {}
-  return null
-}
-
-async function getTripReport(tripId: string) {
-  try {
-    const res = await fetch(`${ROUTING_URL}api/trip/${tripId}/report`, { signal: AbortSignal.timeout(15000) })
-    if (!res.ok) return null
-    const data = await res.json()
-    if (data.ok && data.data) {
-      return {
-        distanceKm: Number(data.data.total_distance_km || 0),
-        fuelLitres: Number(data.data.total_fuel_used_liters || 0),
-        durationHours: Number(data.data.total_duration_seconds || 0) / 3600,
-      }
-    }
-  } catch {}
-  return null
+  return []
 }
 
 function recalcCost(profileKey: string, distanceKm: number, tripDays: number, fuelLinkRate: number) {
@@ -128,16 +96,55 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tri
       planned.rmRatePerKm = Math.round((planned.rmCost / planned.distance) * 100) / 100
     }
 
-    // ── ACTUAL: fetch real distance, recalculate with same formulas ──
-    const [mapboxResult, tripReport] = await Promise.all([
-      getDrivingDistance(trip.origin || '', trip.destination || ''),
-      getTripReport(trip.trip_id || ''),
-    ])
+    // ── ACTUAL: fetch real mileage from batch API, recalculate with same formulas ──
+    const vehicleassignments = parseJson(trip.vehicleassignments)
+    const stopsData = parseJson(trip.stops_data)
+    const statusEntries = Array.isArray(stopsData) ? stopsData : []
 
-    const actualDistanceKm = mapboxResult?.distanceKm || tripReport?.distanceKm || 0
-    const distanceSource = mapboxResult ? 'mapbox' : tripReport ? 'trip_report' : 'none'
-    const durationHours = mapboxResult?.durationHours || tripReport?.durationHours || 0
-    const fuelLitres = tripReport?.fuelLitres || 0
+    // Get vehicle reg from vehicleassignments
+    const regMap = new Map<number, string>()
+    const vId = Number(vehicleassignments?.[0]?.vehicle?.id)
+    if (vId) {
+      const { data: v } = await supabase.from('vehiclesc').select('registration_number').eq('id', vId).single()
+      if (v?.registration_number) regMap.set(vId, v.registration_number)
+    }
+    const horseReg = regMap.get(vId) || vehicleassignments?.[0]?.vehicle?.name || ''
+
+    // Get trip time period from stops_data
+    const fromTs = statusEntries[1]?.timestamp || statusEntries[1]?.recorded_at || ''
+    const toTs = statusEntries.length >= 2
+      ? statusEntries[statusEntries.length - 1]?.timestamp || statusEntries[statusEntries.length - 1]?.recorded_at || ''
+      : ''
+
+    let actualDistanceKm = 0
+    let durationHours = 0
+    let distanceSource = 'none'
+    let fuelLitres = 0
+
+    if (horseReg && fromTs && toTs) {
+      const from = fromTs.split('T')[0]
+      const to = toTs.split('T')[0]
+      const [mileageData] = await getMileageBatch([{ reg: horseReg, from, to }])
+
+      if (mileageData) {
+        const startM = Number(mileageData.start_mileage) || 0
+        const endM = Number(mileageData.end_mileage) || 0
+        const dist = Number(mileageData.distance_km) || 0
+
+        if (dist > 0) {
+          actualDistanceKm = dist
+        } else if (endM > startM) {
+          actualDistanceKm = endM - startM
+        }
+        if (actualDistanceKm > 0) distanceSource = 'mileage_batch'
+
+        // Calculate duration from timestamps
+        if (fromTs && toTs) {
+          const diffMs = new Date(toTs).getTime() - new Date(fromTs).getTime()
+          durationHours = Math.round((diffMs / (1000 * 60 * 60)) * 10) / 10
+        }
+      }
+    }
 
     const actualTripDays = durationHours > 0
       ? Math.max(0.5, Math.ceil((durationHours / 8) * 2) / 2)

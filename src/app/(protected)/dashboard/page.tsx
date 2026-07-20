@@ -471,7 +471,9 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
       </div>
 
       <div className="grid grid-cols-2 gap-2">
-        <Button
+        <SecureButton
+          page="dashboard"
+          action="edit"
           size="sm"
           variant="link"
           className="h-8 text-xs border"
@@ -497,9 +499,11 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
           }}
         >
           <FileText className="w-3 h-3" /> Edit
-        </Button>
+        </SecureButton>
 
-        <Button
+        <SecureButton
+          page="dashboard"
+          action="view"
           size="sm"
           variant="link"
           className="h-8 text-xs border"
@@ -507,9 +511,8 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
             const supabase = createClient();
             let routeCoords = null;
             let stopPoints = [];
-            let vehicleLocationData = vehicleLocation; // Use already fetched vehicle location
+            let vehicleLocationData = vehicleLocation;
 
-            // If no vehicle location was found during initialization, check cached data
             if (!vehicleLocationData && vehicleInfo?.registration_number) {
               try {
                 await vehicleDataCache.fetch();
@@ -769,11 +772,11 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
           }}
         >
           <MapPin className="w-3 h-3" /> Track
-        </Button>
+        </SecureButton>
 
         <SecureButton
           page="dashboard"
-          action="edit"
+          action="view"
           size="sm"
           variant="link"
           className="h-8 text-xs border"
@@ -801,23 +804,23 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
           <User className="w-3 h-3" /> Change
         </SecureButton>
 
-        {userRole === 'admin' && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-8 text-xs border"
-            onClick={() => {
-              setCurrentTripForEdit({ ...trip, showHistoryOnly: true });
-              setEditTripOpen(true);
-            }}
-          >
-            <Clock className="w-3 h-3" /> History
-          </Button>
-        )}
+        <SecureButton
+          page="dashboard"
+          action="view"
+          size="sm"
+          variant="link"
+          className="h-8 text-xs border"
+          onClick={() => {
+            setCurrentTripForEdit({ ...trip, showHistoryOnly: true });
+            setEditTripOpen(true);
+          }}
+        >
+          <Clock className="w-3 h-3" /> History
+        </SecureButton>
 
         <SecureButton
           page="dashboard"
-          action="delete"
+          action="edit"
           size="sm"
           variant="destructive"
           className="h-8 text-xs border"

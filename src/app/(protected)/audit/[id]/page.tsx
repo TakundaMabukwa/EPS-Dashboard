@@ -209,7 +209,7 @@ export default function AuditTripDetailPage() {
               <div className="flex items-center justify-between">
                 <span className="text-xs text-gray-600">Source</span>
                 <span className={`text-xs font-semibold ${d?.distanceSource !== 'none' ? 'text-emerald-600' : 'text-gray-400'}`}>
-                  {d?.distanceSource === 'mapbox' ? 'Mapbox' : d?.distanceSource === 'trip_report' ? 'Trip Report' : 'No data'}
+                  {d?.distanceSource === 'mileage_batch' ? 'Mileage' : d?.distanceSource === 'trip_report' ? 'Trip Report' : 'No data'}
                 </span>
               </div>
             )}
