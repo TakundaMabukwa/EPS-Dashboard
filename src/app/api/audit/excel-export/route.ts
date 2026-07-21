@@ -64,6 +64,21 @@ export async function GET(request: NextRequest) {
       properties: { defaultColWidth: 15 },
     })
 
+    // Status labels for column headers
+    const STATUS_LABELS = [
+      'Pending', 'Departing', 'Queuing', 'Staging', 'Loading',
+      'On Trip', 'Truck Stop', 'Refueling', 'Arrived', 'Offloading',
+      'Weighing', 'Depot', 'Handover', 'Delivered',
+    ]
+    const STATUS_KEYS = [
+      'accepted', 'departing', 'queuing-at-loading', 'staging-at-loading', 'loading',
+      'on-trip', 'truck-stop', 'refueling', 'arrived-at-offloading', 'offloading',
+      'weighing', 'depot', 'handover', 'delivered',
+    ]
+
+    // Duration column labels (time between consecutive statuses)
+    const DURATION_LABELS = STATUS_LABELS.slice(0, -1).map((label, i) => `${label} → ${STATUS_LABELS[i + 1]}`)
+
     const headers = [
       'Load nr', 'Load date', 'Debtor', 'DrName', 'Load/Del', 'Pink CV/PO',
       'Order No 3', 'Load Size', 'Commodity', 'LoadDescrip', 'OffLoadDescrip',
@@ -71,10 +86,9 @@ export async function GET(request: NextRequest) {
       'Invoice no', 'Inv Date', 'Creditor', 'CrName', 'DriverName',
       'Route Km', 'OpeningKm', 'ClosingKm', 'MapKm (DISTANCE)', 'EmptyKm',
       'CPKInc', 'POD no', 'Leader Reg', 'Follower Reg',
-      'TRIP STATUS 1', 'TRIP STATUS 2', 'TRIP STATUS 3', 'TRIP STATUS 4',
-      'TRIP STATUS 5', 'TRIP STATUS 6', 'TRIP STATUS 7', 'TRIP STATUS 8',
-      'TRIP STATUS 9', 'TRIP STATUS 10', 'TRIP STATUS 11', 'TRIP STATUS 12',
-      'TRIP STATUS 13', 'TRIP STATUS 14', 'TRIP STATUS 15', 'TOTAL TIME',
+      ...STATUS_LABELS.map(s => `Status: ${s}`),
+      ...DURATION_LABELS.map(d => `Duration: ${d}`),
+      'TOTAL TIME',
     ]
 
     const headerRow = sheet.addRow(headers)
@@ -173,16 +187,40 @@ export async function GET(request: NextRequest) {
       const dropoffTown = locationGeodata?.dropoff?.town || ''
 
       const statusEntries = Array.isArray(stopsData) ? stopsData : []
-      const tripStatuses: string[] = []
-      for (let i = 0; i < 15; i++) {
-        const entry = statusEntries[i]
-        if (entry) {
-          const ts = entry.timestamp || entry.recorded_at || ''
-          const label = entry.status || ''
-          const timeStr = ts ? formatTimestamp(ts) : ''
-          tripStatuses.push(label && timeStr ? `${label} - ${timeStr}` : label || timeStr || '')
+
+      // Map each status key to its timestamp
+      const statusTimestamps = new Map<string, Date>()
+      for (const entry of statusEntries) {
+        const statusVal = (entry.status || '').toLowerCase().trim().replace(/\s+/g, '-')
+        const ts = entry.timestamp || entry.recorded_at || ''
+        if (statusVal && ts) {
+          const d = new Date(ts)
+          if (!isNaN(d.getTime())) statusTimestamps.set(statusVal, d)
+        }
+      }
+
+      // Build status timestamp strings (one per status column)
+      const tripStatuses: string[] = STATUS_KEYS.map((key) => {
+        const ts = statusTimestamps.get(key)
+        return ts ? formatTimestamp(ts.toISOString()) : ''
+      })
+
+      // Build duration strings (time between consecutive statuses)
+      const tripDurations: string[] = []
+      for (let i = 0; i < STATUS_KEYS.length - 1; i++) {
+        const fromTs = statusTimestamps.get(STATUS_KEYS[i])
+        const toTs = statusTimestamps.get(STATUS_KEYS[i + 1])
+        if (fromTs && toTs) {
+          const diffMs = toTs.getTime() - fromTs.getTime()
+          if (diffMs >= 0) {
+            const hours = Math.floor(diffMs / (1000 * 60 * 60))
+            const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
+            tripDurations.push(hours > 0 ? `${hours}h ${mins}m` : `${mins}m`)
+          } else {
+            tripDurations.push('')
+          }
         } else {
-          tripStatuses.push('')
+          tripDurations.push('')
         }
       }
 
@@ -259,6 +297,7 @@ export async function GET(request: NextRequest) {
         leaderVehicle,
         followerVehicle,
         ...tripStatuses,
+        ...tripDurations,
         totalTime,
       ]
 
