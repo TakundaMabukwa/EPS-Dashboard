@@ -66,14 +66,14 @@ export async function GET(request: NextRequest) {
 
     // Status labels for column headers
     const STATUS_LABELS = [
-      'Pending', 'Departing', 'Queuing', 'Staging', 'Loading',
-      'On Trip', 'Truck Stop', 'Refueling', 'Arrived', 'Offloading',
-      'Weighing', 'Depot', 'Handover', 'Delivered',
+      'Departing', 'Queuing', 'Staging', 'Loading',
+      'On Trip', 'Truck Stop', 'Refueling', 'Arrived',
+      'Offloading', 'Weighing', 'Depot', 'Handover', 'Delivered',
     ]
     const STATUS_KEYS = [
-      'accepted', 'departing', 'queuing-at-loading', 'staging-at-loading', 'loading',
-      'on-trip', 'truck-stop', 'refueling', 'arrived-at-offloading', 'offloading',
-      'weighing', 'depot', 'handover', 'delivered',
+      'departing', 'queuing-at-loading', 'staging-at-loading', 'loading',
+      'on-trip', 'truck-stop', 'refueling', 'arrived-at-offloading',
+      'offloading', 'weighing', 'depot', 'handover', 'delivered',
     ]
 
     // Duration column labels (time between consecutive statuses)
@@ -189,13 +189,28 @@ export async function GET(request: NextRequest) {
       const statusEntries = Array.isArray(stopsData) ? stopsData : []
 
       // Map each status key to its timestamp
+      // Build alias map: "arriving" → "arrived-at-loading", "queue" → "queuing-at-loading", etc.
+      const STATUS_ALIASES: Record<string, string> = {
+        'pending': '', 'accepted': '', 'arriving': 'arrived-at-loading',
+        'arrived': 'arrived-at-offloading', 'queue': 'queuing-at-loading',
+        'staging': 'staging-at-loading', 'on': 'on-trip', 'truck': 'truck-stop',
+        'refuel': 'refueling', 'depot': 'depot', 'handover': 'handover',
+        'delivered': 'delivered', 'complete': 'delivered', 'completed': 'delivered',
+        'departing': 'departing', 'loading': 'loading', 'offloading': 'offloading',
+        'weighing': 'weighing',
+      }
+
       const statusTimestamps = new Map<string, Date>()
       for (const entry of statusEntries) {
-        const statusVal = (entry.status || '').toLowerCase().trim().replace(/\s+/g, '-')
+        const raw = (entry.status || '').toLowerCase().trim()
+        const normalized = raw.replace(/\s+/g, '-')
+        const canonical = STATUS_ALIASES[normalized] || normalized
         const ts = entry.timestamp || entry.recorded_at || ''
-        if (statusVal && ts) {
+        if (canonical && ts) {
           const d = new Date(ts)
-          if (!isNaN(d.getTime())) statusTimestamps.set(statusVal, d)
+          if (!isNaN(d.getTime()) && !statusTimestamps.has(canonical)) {
+            statusTimestamps.set(canonical, d)
+          }
         }
       }
 
