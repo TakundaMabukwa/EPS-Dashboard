@@ -12,10 +12,13 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose, DialogPortal, DialogOverlay } from '@/components/ui/dialog'
-import { X, FileText, Plus, Route, MapPin, CheckCircle } from 'lucide-react'
+import { X, FileText, Plus, Route, MapPin, CheckCircle, AlertTriangle, Cloud, CloudRain, Sun, Wind, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { LocationAutocomplete } from '@/components/ui/location-autocomplete'
+import { checkRTMSCompliance, interpolateStopPositions, DEFAULT_RTMS_RULES, type RTMSResult, type RecommendedStop, type RTMSRuleConfig } from '@/lib/rtms-rules'
+import { RTMSRulesModal } from '@/components/ui/rtms-rules-modal'
+import { RTMSStopConfirmModal } from '@/components/ui/rtms-stop-confirm-modal'
 import { ProgressWithWaypoints } from '@/components/ui/progress-with-waypoints'
 import { RouteOptimizer } from '@/components/ui/route-optimizer'
 import { RouteTracker } from '@/components/ui/route-tracker'
@@ -40,6 +43,7 @@ import { resolveProfileKey } from '@/lib/cost-engine'
 export default function LoadPlanPage() {
   const supabase = createClient()
   const router = useRouter()
+  const processedRouteRef = useRef<string>('')
   const [toast, setToast] = useState({ message: '', type: 'success' as 'success' | 'error', isVisible: false })
   const [isEditMode, setIsEditMode] = useState(false)
   const [editTripId, setEditTripId] = useState(null)
@@ -122,6 +126,21 @@ export default function LoadPlanPage() {
   const [isLoadingStopPoints, setIsLoadingStopPoints] = useState(false)
   const [customStopPoints, setCustomStopPoints] = useState([])
   const [isManuallyOrdered, setIsManuallyOrdered] = useState(false)
+
+  // RTMS compliance state
+  const [rtmsResult, setRtmsResult] = useState<RTMSResult | null>(null)
+  const [rtmsRecommendedStops, setRtmsRecommendedStops] = useState<Array<RecommendedStop & { lat: number; lng: number }>>([])
+  const [rtmsRules, setRtmsRules] = useState<RTMSRuleConfig[]>(DEFAULT_RTMS_RULES.map(r => ({ ...r })))
+  const [rtmsModalOpen, setRtmsModalOpen] = useState(false)
+  const [proposedRtmsStops, setProposedRtmsStops] = useState<Array<RecommendedStop & { lat: number; lng: number }>>([])
+  const [rtmsConfirmOpen, setRtmsConfirmOpen] = useState(false)
+
+  // Weather state
+  const [weather, setWeather] = useState<{ departure: any; arrival: any } | null>(null)
+
+  // Fuel state
+  const [fuelData, setFuelData] = useState<{ fuelLevel: number; consumptionRate: number; remainingRange: number; engineHours: number; totalFuelUsed: number } | null>(null)
+  const [fuelStopSuggestion, setFuelStopSuggestion] = useState<{ needed: boolean; stopKm: number; reason: string } | null>(null)
 
   // Progress stops
   const DEFAULT_PROGRESS_STOPS = [
@@ -721,6 +740,97 @@ export default function LoadPlanPage() {
     const timeoutId = setTimeout(previewRoute, 500)
     return () => clearTimeout(timeoutId)
   }, [loadingLocation, dropOffPoint, stopPoints, customStopPoints, driverAssignments, isManuallyOrdered])
+
+  // RTMS compliance check + weather + fuel (separate from route preview to avoid infinite loop)
+  useEffect(() => {
+    if (!optimizedRoute?.route || !loadingLocation || !dropOffPoint) return
+    if (!optimizedRoute.route.geometry) return
+
+    // Reset weather so old data isn't shown for new route
+    setWeather(null)
+
+    // Guard: skip if same route already processed
+    const route = optimizedRoute.route
+    const routeKey = `${route.distance}-${route.duration}-${loadingLocation}-${dropOffPoint}`
+    if (routeKey === processedRouteRef.current) return
+    processedRouteRef.current = routeKey
+
+    const distanceKm = route.distance / 1000
+    const durationSeconds = route.duration
+
+    // 1. RTMS compliance check
+    const result = checkRTMSCompliance({ distanceKm, durationSeconds }, rtmsRules)
+    setRtmsResult(result)
+
+    // 2. Interpolate recommended stop positions (but don't auto-add to route)
+    if (result.recommendedStops.length > 0 && route.geometry) {
+      const stopsWithPositions = interpolateStopPositions(route.geometry, result.recommendedStops)
+      setProposedRtmsStops(stopsWithPositions)
+      setRtmsRecommendedStops([])
+      setRtmsConfirmOpen(true)
+    } else {
+      setProposedRtmsStops([])
+      setRtmsRecommendedStops([])
+    }
+
+    // 3. Weather — fetch for this route
+    const coords = route.geometry?.coordinates
+    if (coords?.length > 0) {
+      const originCoord = coords[0]
+      const destCoord = coords[coords.length - 1]
+      Promise.allSettled([
+        fetch(`/api/weather?lat=${originCoord[1]}&lng=${originCoord[0]}`).then((r) => r.json()),
+        fetch(`/api/weather?lat=${destCoord[1]}&lng=${destCoord[0]}`).then((r) => r.json()),
+      ]).then(([dep, arr]) => {
+        setWeather({
+          departure: dep.status === 'fulfilled' ? dep.value : null,
+          arrival: arr.status === 'fulfilled' ? arr.value : null,
+        })
+      })
+    }
+
+    // 4. Fuel check
+    if (selectedVehicleId) {
+      fetch('/api/fuel')
+        .then((r) => r.json())
+        .then((fuelArray) => {
+          const vehicle = vehicles.find((v) => String(v.id) === String(selectedVehicleId))
+          const reg = (vehicle?.registration_number || '').toUpperCase()
+          const fuelEntry = fuelArray.find((f: any) => f.plate?.toUpperCase() === reg)
+          if (fuelEntry && fuelEntry.fuelLevel > 0 && fuelEntry.engineHours > 0) {
+            const consumptionRate = fuelEntry.totalFuelUsed / fuelEntry.engineHours
+            const remainingFuel = fuelEntry.fuelLevel
+            const remainingHours = consumptionRate > 0 ? remainingFuel / consumptionRate : Infinity
+            const remainingKm = remainingHours * 80
+
+            setFuelData({
+              fuelLevel: remainingFuel,
+              consumptionRate: Math.round(consumptionRate * 100) / 100,
+              remainingRange: Math.round(remainingKm),
+              engineHours: fuelEntry.engineHours,
+              totalFuelUsed: fuelEntry.totalFuelUsed,
+            })
+
+            if (remainingKm < distanceKm) {
+              setFuelStopSuggestion({
+                needed: true,
+                stopKm: Math.round(remainingKm * 0.8),
+                reason: `Only ${Math.round(remainingKm)}km range vs ${Math.round(distanceKm)}km trip`,
+              })
+            } else {
+              setFuelStopSuggestion(null)
+            }
+          } else {
+            setFuelData(null)
+            setFuelStopSuggestion(null)
+          }
+        })
+        .catch(() => {
+          setFuelData(null)
+          setFuelStopSuggestion(null)
+        })
+    }
+  }, [optimizedRoute, loadingLocation, dropOffPoint, selectedVehicleId, rtmsRules])
 
 
 
@@ -1700,10 +1810,10 @@ export default function LoadPlanPage() {
                 </div>
 
                 {/* Progress Stops */}
-                <div className="space-y-3 p-4 bg-slate-50 rounded-lg border border-slate-200">
-                  <div className="flex items-center justify-between mb-2">
-                    <Label className="text-lg font-medium">Trip Progress Stops</Label>
-                    <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                <div className="space-y-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium">Progress Stops</Label>
+                    <label className="flex items-center gap-1.5 text-[10px] cursor-pointer select-none">
                       <input
                         type="checkbox"
                         checked={useDefaultStops}
@@ -1715,60 +1825,58 @@ export default function LoadPlanPage() {
                               : new Set()
                           )
                         }}
-                        className="w-4 h-4 rounded border-slate-300"
+                        className="w-3 h-3 rounded border-slate-300"
                       />
-                      Use Default (All Stops)
+                      All
                     </label>
                   </div>
-                  <div className="relative">
-                    <div className="flex justify-between items-center">
-                      {DEFAULT_PROGRESS_STOPS.map((stop, index) => {
-                        const isSelected = selectedStops.has(stop.value)
-                        return (
-                          <button
-                            key={stop.value}
-                            type="button"
-                            onClick={() => {
-                              if (useDefaultStops) return
-                              const next = new Set(selectedStops)
-                              if (next.has(stop.value)) {
-                                next.delete(stop.value)
-                              } else {
-                                next.add(stop.value)
-                              }
-                              setSelectedStops(next)
-                            }}
-                            className="flex flex-col items-center relative group"
-                          >
-                            <div className={cn(
-                              "w-7 h-7 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all duration-200",
-                              isSelected
-                                ? "bg-emerald-600 border-emerald-700 text-white animate-pulse"
-                                : "bg-slate-100 border-slate-200 text-slate-400",
-                              !useDefaultStops && "hover:scale-110 cursor-pointer"
-                            )}>
-                              {isSelected
-                                ? <CheckCircle className="w-3 h-3" />
-                                : <span className="text-[9px]">{index + 1}</span>}
-                            </div>
-                            <span className={cn(
-                              "text-[10px] mt-1 text-center max-w-[52px] leading-tight",
-                              isSelected ? "text-emerald-700 font-medium" : "text-gray-400"
-                            )}>
-                              {stop.value}
-                            </span>
-                          </button>
-                        )
-                      })}
-                    </div>
+                  <div className="flex justify-between items-center gap-0.5">
+                    {DEFAULT_PROGRESS_STOPS.map((stop, index) => {
+                      const isSelected = selectedStops.has(stop.value)
+                      return (
+                        <button
+                          key={stop.value}
+                          type="button"
+                          onClick={() => {
+                            if (useDefaultStops) return
+                            const next = new Set(selectedStops)
+                            if (next.has(stop.value)) {
+                              next.delete(stop.value)
+                            } else {
+                              next.add(stop.value)
+                            }
+                            setSelectedStops(next)
+                          }}
+                          className="flex flex-col items-center relative group"
+                        >
+                          <div className={cn(
+                            "w-5 h-5 rounded-full border flex items-center justify-center text-[8px] font-bold transition-all",
+                            isSelected
+                              ? "bg-emerald-600 border-emerald-700 text-white"
+                              : "bg-slate-100 border-slate-200 text-slate-400",
+                            !useDefaultStops && "hover:scale-110 cursor-pointer"
+                          )}>
+                            {isSelected
+                              ? <CheckCircle className="w-2.5 h-2.5" />
+                              : <span>{index + 1}</span>}
+                          </div>
+                          <span className={cn(
+                            "text-[8px] mt-0.5 text-center max-w-[38px] leading-tight truncate",
+                            isSelected ? "text-emerald-700 font-medium" : "text-gray-400"
+                          )}>
+                            {stop.label}
+                          </span>
+                        </button>
+                      )
+                    })}
                   </div>
                 </div>
 
                 {/* Trip Type Selection */}
-                <div className="space-y-4">
-                  <Label className="text-lg font-medium">Trip Type</Label>
-                  <div className="flex space-x-6">
-                    <div className="flex items-center space-x-2">
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">Trip Type</Label>
+                  <div className="flex space-x-4">
+                    <div className="flex items-center space-x-1.5">
                       <input 
                         type="radio" 
                         id="local" 
@@ -1776,11 +1884,11 @@ export default function LoadPlanPage() {
                         value="local" 
                         checked={tripType === 'local'}
                         onChange={(e) => setTripType(e.target.value)}
-                        className="w-4 h-4"
+                        className="w-3 h-3"
                       />
-                      <Label htmlFor="local">Local Trip</Label>
+                      <Label htmlFor="local" className="text-xs">Local</Label>
                     </div>
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-1.5">
                       <input 
                         type="radio" 
                         id="national" 
@@ -1789,35 +1897,31 @@ export default function LoadPlanPage() {
                         checked={tripType === 'national'}
                         onChange={(e) => {
                           setTripType(e.target.value)
-                          fetchStopPoints() // Load stop points for both trip types
+                          fetchStopPoints()
                         }}
-                        className="w-4 h-4"
+                        className="w-3 h-3"
                       />
-                      <Label htmlFor="national">Long Distance</Label>
+                      <Label htmlFor="national" className="text-xs">Long Distance</Label>
                     </div>
                   </div>
                 </div>
 
                 {/* Stop Points - Available for both Local and Long Distance */}
-                <div className="space-y-4">
+                <div className="space-y-2">
                   <div className="flex justify-between items-center">
-                    <div>
-                      <Label className="text-lg font-medium">Stop Points</Label>
-                      <p className="text-sm text-gray-500 mt-1">
-                        Add stops from existing points or search for custom locations
-                      </p>
-                    </div>
-                    <Button 
-                      type="button" 
+                    <Label className="text-xs font-medium">Stop Points</Label>
+                    <Button
+                      type="button"
                       onClick={async (e) => {
                         e.preventDefault()
                         e.stopPropagation()
                         await fetchStopPoints()
                         setStopPoints([...stopPoints, ''])
-                      }} 
+                      }}
                       size="sm"
+                      className="h-6 text-[10px] px-2"
                     >
-                      <Plus className="h-4 w-4 mr-1" /> Add Stop Point
+                      <Plus className="h-3 w-3 mr-0.5" /> Add
                     </Button>
                   </div>
                   
@@ -1899,13 +2003,14 @@ export default function LoadPlanPage() {
                       )}
                       <div className="space-y-4">
                         <RoutePreviewMap
-                          key={`${loadingLocation}-${dropOffPoint}-${stopPoints.join(',')}-${customStopPoints.join(',')}`}
+                          key={`${loadingLocation}-${dropOffPoint}`}
                           origin={loadingLocation}
                           destination={dropOffPoint}
                           routeData={optimizedRoute}
                           stopPoints={stopPoints.length > 0 || customStopPoints.some(p => p) ? 'async' : []}
                           getStopPointsData={getSelectedStopPointsData}
                           preserveOrder={isManuallyOrdered}
+                          recommendedStops={rtmsRecommendedStops}
                           driverLocation={selectedDriverLocation ? {
                             lat: selectedDriverLocation.latitude,
                             lng: selectedDriverLocation.longitude,
@@ -1923,6 +2028,7 @@ export default function LoadPlanPage() {
                           selectedClient={selectedClient}
                           loadingGeozoneCoords={loadingGeozoneCoords}
                           dropoffGeozoneCoords={dropoffGeozoneCoords}
+                          weather={weather}
                         />
                         
                         {/* Route Summary */}
@@ -1998,25 +2104,136 @@ export default function LoadPlanPage() {
                   </div>
                 ) : null}
 
-                {/* Cost Engine */}
-                <div className="space-y-4">
-                  <Label className="text-lg font-medium">Trip Cost Estimate</Label>
+                {/* RTMS Compliance Panel */}
+                {rtmsResult && optimizedRoute && (
+                  <div className="space-y-2">
+                    {/* Duration warning bar */}
+                    {(() => {
+                      const duration = optimizedRoute.route?.duration || optimizedRoute.duration || 0
+                      const hours = duration / 3600
+                      const dailyLimit = rtmsRules.find(r => r.id === 'daily_driving_limit' && r.enabled)?.value || 10
+                      const maxTotal = rtmsRules.find(r => r.id === 'max_total_driving' && r.enabled)?.value || 15
+                      const exceedsDaily = hours > dailyLimit
+                      const exceedsMax = hours > maxTotal
+                      if (!exceedsDaily && !exceedsMax) return null
+                      return (
+                        <div className={cn(
+                          "flex items-center gap-2 px-3 py-1.5 rounded text-xs font-medium",
+                          exceedsMax
+                            ? "bg-red-100 border border-red-300 text-red-700"
+                            : "bg-amber-100 border border-amber-300 text-amber-700"
+                        )}>
+                          <AlertTriangle className="h-3 w-3 flex-shrink-0" />
+                          Trip {Math.floor(hours)}h {Math.floor((hours % 1) * 60)}m exceeds {exceedsMax ? `${maxTotal}h max` : `${dailyLimit}h daily`} limit
+                        </div>
+                      )
+                    })()}
+
+                    {/* Compliance badge — single compact line */}
+                    <div className={cn(
+                      "flex items-center gap-2 px-3 py-1.5 rounded border text-xs",
+                      rtmsResult.isCompliant
+                        ? "bg-green-50 border-green-200 text-green-700"
+                        : "bg-amber-50 border-amber-200 text-amber-700"
+                    )}>
+                      {rtmsResult.isCompliant ? (
+                        <CheckCircle className="h-3 w-3 flex-shrink-0" />
+                      ) : (
+                        <AlertTriangle className="h-3 w-3 flex-shrink-0" />
+                      )}
+                      <span className="font-medium">
+                        {rtmsResult.isCompliant ? 'RTMS Compliant' : 'RTMS Non-Compliant'}
+                      </span>
+
+                      {/* Inline violations */}
+                      {!rtmsResult.isCompliant && rtmsResult.violations.length > 0 && (
+                        <span className="text-[10px] ml-1">
+                          — {rtmsResult.violations.map(v => v.rule).join(', ')}
+                        </span>
+                      )}
+
+                      {/* Inline recommended stops count */}
+                      {rtmsRecommendedStops.length > 0 && (
+                        <span className="text-[10px] ml-1">
+                          — {rtmsRecommendedStops.length} rest stop{rtmsRecommendedStops.length !== 1 ? 's' : ''} added
+                        </span>
+                      )}
+
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="ml-auto h-5 w-5 p-0 text-gray-400 hover:text-gray-600"
+                        onClick={() => setRtmsModalOpen(true)}
+                      >
+                        <Settings className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Weather Panel */}
+
+                {/* Fuel Status Panel */}
+                {fuelData && (
+                  <div className={cn(
+                    "border px-3 py-2 rounded-lg",
+                    fuelStopSuggestion ? "bg-amber-50 border-amber-200" : "bg-green-50 border-green-200"
+                  )}>
+                    <div className="flex items-center gap-2 text-xs font-medium mb-2">
+                      <span>⛽</span>
+                      Fuel Status
+                    </div>
+                    <div className="grid grid-cols-4 gap-3 text-xs">
+                      <div>
+                        <div className="text-[10px] text-slate-500">Level</div>
+                        <div className="font-bold">{fuelData.fuelLevel}<span className="font-normal">L</span></div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-slate-500">Consumption</div>
+                        <div className="font-bold">{fuelData.consumptionRate}<span className="font-normal"> L/hr</span></div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-slate-500">Range</div>
+                        <div className="font-bold">{fuelData.remainingRange}<span className="font-normal"> km</span></div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-slate-500">Trip</div>
+                        <div className="font-bold">{optimizedRoute ? Math.round((optimizedRoute.route?.distance || optimizedRoute.distance) / 1000) : 0}<span className="font-normal"> km</span></div>
+                        <div className="text-[10px]">
+                          {fuelData.remainingRange >= (optimizedRoute ? (optimizedRoute.route?.distance || optimizedRoute.distance) / 1000 : 0)
+                            ? <span className="text-green-600">OK</span>
+                            : <span className="text-amber-600">Refuel</span>
+                          }
+                        </div>
+                      </div>
+                    </div>
+                    {fuelStopSuggestion && (
+                      <div className="mt-2 px-2 py-1 bg-amber-100 border border-amber-200 rounded text-[10px] text-amber-700 flex items-center gap-1">
+                        <AlertTriangle className="h-2.5 w-2.5 flex-shrink-0" />
+                        Fuel stop at ~{fuelStopSuggestion.stopKm}km — {fuelStopSuggestion.reason}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">Cost Estimate</Label>
 
                   {vehicleTypeNotFound && (
-                    <div className="bg-amber-50 border border-amber-200 p-4 rounded-lg text-amber-800 text-sm">
-                      Selected vehicle doesn't have a matching cost type. Please select a different vehicle or set the vehicle type above.
+                    <div className="bg-amber-50 border border-amber-200 p-2 rounded text-amber-800 text-[10px]">
+                      Vehicle type not found — select a different vehicle or set type above.
                     </div>
                   )}
 
                     <>
-                    <div className="grid grid-cols-3 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="fuelMonth" className="text-sm font-medium text-slate-700">Fuel Month</Label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="space-y-1">
+                        <Label htmlFor="fuelMonth" className="text-[10px] font-medium text-slate-600">Fuel Month</Label>
                         <select
                           id="fuelMonth"
                           value={fuelMonthLabel}
                           onChange={(e) => setFuelMonthLabel(e.target.value)}
-                          className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="flex h-8 w-full items-center justify-between rounded border border-input bg-background px-2 text-xs ring-offset-background focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           {fuelMonths.map((m) => (
                             <option key={m.month_label} value={m.month_label}>
@@ -2026,8 +2243,8 @@ export default function LoadPlanPage() {
                         </select>
                       </div>
 
-                      <div className="space-y-2">
-                        <Label htmlFor="sellingRate" className="text-sm font-medium text-slate-700">Rate (R) *</Label>
+                      <div className="space-y-1">
+                        <Label htmlFor="sellingRate" className="text-[10px] font-medium text-slate-600">Rate (R) *</Label>
                         <Input
                           id="sellingRate"
                           type="number"
@@ -2037,54 +2254,54 @@ export default function LoadPlanPage() {
                           placeholder="e.g. 4000"
                           value={sellingRatePerKm}
                           onChange={(e) => setSellingRatePerKm(e.target.value)}
+                          className="h-8 text-xs"
                         />
                       </div>
 
-                      <div className="space-y-2">
-                        <Label className="text-sm font-medium text-slate-700">Trip Days</Label>
+                      <div className="space-y-1">
+                        <Label className="text-[10px] font-medium text-slate-600">Trip Days</Label>
                         <Input
                           type="text"
-                          value={tripDays > 0 ? `${tripDays} day${tripDays !== 1 ? 's' : ''}` : '—'}
+                          value={tripDays > 0 ? `${tripDays}d` : '—'}
                           readOnly
-                          className="bg-muted"
+                          className="bg-muted h-8 text-xs"
                         />
                       </div>
                     </div>
 
                     {/* Cost Breakdown */}
-                    <div className="bg-gray-50 p-4 rounded-lg">
-                      <h4 className="font-medium mb-3">COST B/D</h4>
-                      <div className="space-y-2 text-sm">
+                    <div className="bg-gray-50 p-2 rounded text-xs">
+                      <div className="space-y-1">
                         <div className="flex justify-between">
-                          <span>DRIVER</span>
-                          <span className="font-medium">{costBreakdown ? `R${costBreakdown.driverCost.toFixed(2)} (${costBreakdown.tripDays} DAYS)` : '—'}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>FIXED - ASSET</span>
-                          <span className="font-medium">{costBreakdown ? `R${costBreakdown.fixedAssetCost.toFixed(2)} (${costBreakdown.tripDays} DAYS)` : '—'}</span>
+                          <span className="text-gray-600">Driver</span>
+                          <span>{costBreakdown ? `R${costBreakdown.driverCost.toFixed(2)}` : '—'}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span>FUEL</span>
-                          <span className="font-medium">{costBreakdown ? `R${costBreakdown.fuelCost.toFixed(2)}` : '—'}</span>
+                          <span className="text-gray-600">Fixed Asset</span>
+                          <span>{costBreakdown ? `R${costBreakdown.fixedAssetCost.toFixed(2)}` : '—'}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span>R&M</span>
-                          <span className="font-medium">{costBreakdown ? `R${costBreakdown.rmCost.toFixed(2)} CPK` : '—'}</span>
+                          <span className="text-gray-600">Fuel</span>
+                          <span>{costBreakdown ? `R${costBreakdown.fuelCost.toFixed(2)}` : '—'}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span>CROSS BORDER</span>
-                          <span className="font-medium">{costBreakdown ? `R${costBreakdown.crossBorderCost.toFixed(2)}` : '—'}</span>
-                        </div>
-                        <div className="border-t pt-2 mt-2 flex justify-between">
-                          <span className="font-bold">TOTAL COST</span>
-                          <span className="font-bold">{costBreakdown ? `R${costBreakdown.totalCost.toFixed(2)}` : '—'}</span>
-                        </div>
-                        <div className="border-t pt-2 mt-2 flex justify-between">
-                          <span className="font-bold">REVENUE</span>
-                          <span className="font-bold">{Number(sellingRatePerKm) > 0 ? `R${Number(sellingRatePerKm).toFixed(2)}` : '—'}</span>
+                          <span className="text-gray-600">R&M</span>
+                          <span>{costBreakdown ? `R${costBreakdown.rmCost.toFixed(2)}` : '—'}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className={`font-bold ${costBreakdown && Number(sellingRatePerKm) > 0 ? ((Number(sellingRatePerKm) - costBreakdown.totalCost) >= 0 ? 'text-green-600' : 'text-red-600') : ''}`}>PROFIT</span>
+                          <span className="text-gray-600">Cross Border</span>
+                          <span>{costBreakdown ? `R${costBreakdown.crossBorderCost.toFixed(2)}` : '—'}</span>
+                        </div>
+                        <div className="border-t pt-1 mt-1 flex justify-between font-bold">
+                          <span>Total Cost</span>
+                          <span>{costBreakdown ? `R${costBreakdown.totalCost.toFixed(2)}` : '—'}</span>
+                        </div>
+                        <div className="flex justify-between font-bold">
+                          <span>Revenue</span>
+                          <span>{Number(sellingRatePerKm) > 0 ? `R${Number(sellingRatePerKm).toFixed(2)}` : '—'}</span>
+                        </div>
+                        <div className="flex justify-between font-bold">
+                          <span className={costBreakdown && Number(sellingRatePerKm) > 0 ? ((Number(sellingRatePerKm) - costBreakdown.totalCost) >= 0 ? 'text-green-600' : 'text-red-600') : ''}>Profit</span>
                           <span className={`font-bold ${costBreakdown && Number(sellingRatePerKm) > 0 ? ((Number(sellingRatePerKm) - costBreakdown.totalCost) >= 0 ? 'text-green-600' : 'text-red-600') : ''}`}>
                             {costBreakdown && Number(sellingRatePerKm) > 0 ? `R${(Number(sellingRatePerKm) - costBreakdown.totalCost).toFixed(2)}` : '—'}
                           </span>
@@ -2095,20 +2312,21 @@ export default function LoadPlanPage() {
                   </div>
 
                 {/* Driver Assignments */}
-                <div className="space-y-4">
+                <div className="space-y-2">
                   <div className="flex justify-between items-center">
-                    <Label className="text-lg font-medium">Driver Assignments</Label>
-                    <Button 
-                      type="button" 
-                      onClick={addDriver} 
+                    <Label className="text-xs font-medium">Drivers</Label>
+                    <Button
+                      type="button"
+                      onClick={addDriver}
                       size="sm"
+                      className="h-6 text-[10px] px-2"
                     >
-                      <Plus className="h-4 w-4 mr-1" /> Add Driver
+                      <Plus className="h-3 w-3 mr-0.5" /> Add
                     </Button>
                   </div>
                   
                   {driverAssignments.map((driver, driverIndex) => (
-                    <div key={driverIndex} className="mb-2">
+                    <div key={driverIndex}>
                       <DriverDropdown
                         value={driver.id}
                         onChange={(value) => handleDriverChange(driverIndex, value)}
@@ -2120,24 +2338,24 @@ export default function LoadPlanPage() {
                 </div>
 
                 {/* Vehicle Selection */}
-                <div className="space-y-4">
-                  <Label className="text-lg font-medium">Vehicle Assignment</Label>
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">Vehicle Assignment</Label>
                 
 
                   {/* Horse Dropdown - Filtered by selected type */}
-                  <div className="space-y-2">
-                    <Label htmlFor="horse" className="text-sm font-medium text-slate-700">Select Horse</Label>
+                  <div className="space-y-1">
+                    <Label htmlFor="horse" className="text-[10px] font-medium text-slate-600">Horse</Label>
                     <VehicleDropdown
                       value={selectedVehicleId}
                       onChange={setSelectedVehicleId}
                       vehicles={filteredVehicles}
-                      placeholder="Select horse (vehicle)"
+                      placeholder="Select horse"
                     />
                   </div>
 
                   {/* Trailer Dropdown - Only trailers */}
-                  <div className="space-y-2">
-                    <Label htmlFor="trailer" className="text-sm font-medium text-slate-700">Select Trailer</Label>
+                  <div className="space-y-1">
+                    <Label htmlFor="trailer" className="text-[10px] font-medium text-slate-600">Trailer</Label>
                     <TrailerDropdown
                       value={selectedTrailerId}
                       onChange={setSelectedTrailerId}
@@ -2225,6 +2443,42 @@ export default function LoadPlanPage() {
       >
         {toast.message}
       </Toast>
+
+      <RTMSRulesModal
+        open={rtmsModalOpen}
+        onOpenChange={setRtmsModalOpen}
+        rules={rtmsRules}
+        onRulesChange={setRtmsRules}
+      />
+
+      <RTMSStopConfirmModal
+        open={rtmsConfirmOpen}
+        onOpenChange={setRtmsConfirmOpen}
+        stops={proposedRtmsStops}
+        violations={rtmsResult?.violations || []}
+        onAccept={() => {
+          // Match against existing stop_points from DB by closest lat/lng (within 5km)
+          fetchStopPoints().then(() => {
+            setCustomStopPoints((prevCustom) => {
+              return proposedRtmsStops.map((s) => {
+                const matchedStop = stopPoints.find((sp: any) => {
+                  if (!sp?.lat || !sp?.lng) return false
+                  const dist = Math.sqrt(Math.pow(s.lat - sp.lat, 2) + Math.pow(s.lng - sp.lng, 2))
+                  return dist < 0.05
+                })
+                if (matchedStop) return matchedStop.name || matchedStop.label
+                return s.label
+              })
+            })
+            setStopPoints((prev) => proposedRtmsStops.map(() => ''))
+          })
+          setRtmsRecommendedStops(proposedRtmsStops)
+        }}
+        onDismiss={() => {
+          setProposedRtmsStops([])
+          setRtmsRecommendedStops([])
+        }}
+      />
     </div>
   )
 }
