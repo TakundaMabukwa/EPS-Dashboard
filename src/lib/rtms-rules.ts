@@ -1,6 +1,27 @@
 // RTMS (Road Traffic Management System) driving rules for South Africa
 // Source: National Road Traffic Act
 
+export interface RTMSRuleConfig {
+  id: string
+  name: string
+  description: string
+  defaultValue: number
+  unit: string
+  enabled: boolean
+  value: number
+}
+
+export const DEFAULT_RTMS_RULES: RTMSRuleConfig[] = [
+  { id: 'continuous_driving_hours', name: 'Continuous Driving (Hours)', description: 'Max hours of continuous driving before mandatory rest', defaultValue: 5, unit: 'hours', enabled: true, value: 5 },
+  { id: 'continuous_driving_km', name: 'Continuous Driving (KM)', description: 'Max km of continuous driving before mandatory rest', defaultValue: 400, unit: 'km', enabled: true, value: 400 },
+  { id: 'mandatory_break', name: 'Mandatory Break', description: 'Minimum rest break duration after continuous driving', defaultValue: 30, unit: 'min', enabled: true, value: 30 },
+  { id: 'daily_driving_limit', name: 'Daily Driving Limit', description: 'Max driving hours in a 24-hour period', defaultValue: 10, unit: 'hours', enabled: true, value: 10 },
+  { id: 'max_total_driving', name: 'Max Total Driving', description: 'Maximum total driving hours in any single trip', defaultValue: 15, unit: 'hours', enabled: true, value: 15 },
+  { id: 'daily_rest_hours', name: 'Daily Rest Period', description: 'Consecutive rest hours required after daily driving limit', defaultValue: 8, unit: 'hours', enabled: true, value: 8 },
+  { id: 'rest_stop_interval_km', name: 'Rest Stop Interval (KM)', description: 'Suggest a rest stop every N km', defaultValue: 350, unit: 'km', enabled: true, value: 350 },
+  { id: 'rest_stop_interval_hours', name: 'Rest Stop Interval (Hours)', description: 'Suggest a rest stop every N hours', defaultValue: 4.5, unit: 'hours', enabled: true, value: 4.5 },
+]
+
 export interface TripInput {
   distanceKm: number
   durationSeconds: number
@@ -27,15 +48,6 @@ export interface RTMSResult {
   recommendedStops: RecommendedStop[]
 }
 
-const CONTINUOUS_DRIVING_LIMIT_HOURS = 5
-const CONTINUOUS_DRIVING_LIMIT_KM = 400
-const MANDATORY_BREAK_MINUTES = 30
-const DAILY_DRIVING_LIMIT_HOURS = 10
-const MAX_TOTAL_DRIVING_HOURS = 15
-const DAILY_REST_HOURS = 8
-const REST_STOP_INTERVAL_KM = 350
-const REST_STOP_INTERVAL_HOURS = 4.5
-
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371
   const dLat = ((lat2 - lat1) * Math.PI) / 180
@@ -46,15 +58,29 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
-export function checkRTMSCompliance(input: TripInput): RTMSResult {
+export function checkRTMSCompliance(input: TripInput, rules: RTMSRuleConfig[] = DEFAULT_RTMS_RULES): RTMSResult {
   const distanceKm = input.distanceKm
   const durationHours = input.durationSeconds / 3600
   const violations: Violation[] = []
   const recommendedStops: RecommendedStop[] = []
 
-  // Rule 1: Continuous driving limit (5h or 400km)
-  if (durationHours > CONTINUOUS_DRIVING_LIMIT_HOURS || distanceKm > CONTINUOUS_DRIVING_LIMIT_KM) {
-    const limitingFactor = distanceKm > CONTINUOUS_DRIVING_LIMIT_KM ? `${CONTINUOUS_DRIVING_LIMIT_KM} km` : `${CONTINUOUS_DRIVING_LIMIT_HOURS} hours`
+  // Build a lookup from enabled rules
+  const cfg = (id: string) => rules.find(r => r.id === id && r.enabled)
+  const val = (id: string) => cfg(id)?.value ?? 0
+
+  const CONTINUOUS_DRIVING_LIMIT_HOURS = val('continuous_driving_hours')
+  const CONTINUOUS_DRIVING_LIMIT_KM = val('continuous_driving_km')
+  const MANDATORY_BREAK_MINUTES = val('mandatory_break')
+  const DAILY_DRIVING_LIMIT_HOURS = val('daily_driving_limit')
+  const MAX_TOTAL_DRIVING_HOURS = val('max_total_driving')
+  const DAILY_REST_HOURS = val('daily_rest_hours')
+  const REST_STOP_INTERVAL_KM = val('rest_stop_interval_km')
+  const REST_STOP_INTERVAL_HOURS = val('rest_stop_interval_hours')
+
+  // Rule 1: Continuous driving limit
+  if ((CONTINUOUS_DRIVING_LIMIT_HOURS > 0 || CONTINUOUS_DRIVING_LIMIT_KM > 0) &&
+      (durationHours > (CONTINUOUS_DRIVING_LIMIT_HOURS || Infinity) || distanceKm > (CONTINUOUS_DRIVING_LIMIT_KM || Infinity))) {
+    const limitingFactor = distanceKm > (CONTINUOUS_DRIVING_LIMIT_KM || 0) ? `${CONTINUOUS_DRIVING_LIMIT_KM} km` : `${CONTINUOUS_DRIVING_LIMIT_HOURS} hours`
     violations.push({
       rule: 'Continuous Driving Limit',
       limit: `Max ${limitingFactor}`,
@@ -64,17 +90,17 @@ export function checkRTMSCompliance(input: TripInput): RTMSResult {
   }
 
   // Rule 2: Daily driving limit (10h)
-  if (durationHours > DAILY_DRIVING_LIMIT_HOURS) {
+  if (DAILY_DRIVING_LIMIT_HOURS > 0 && durationHours > DAILY_DRIVING_LIMIT_HOURS) {
     violations.push({
       rule: 'Daily Driving Time',
       limit: `Max ${DAILY_DRIVING_LIMIT_HOURS} hours in 24h period`,
       actual: `${durationHours.toFixed(1)} hours`,
-      severity: durationHours > MAX_TOTAL_DRIVING_HOURS ? 'critical' : 'warning',
+      severity: MAX_TOTAL_DRIVING_HOURS > 0 && durationHours > MAX_TOTAL_DRIVING_HOURS ? 'critical' : 'warning',
     })
   }
 
   // Rule 3: Total driving time (15h max)
-  if (durationHours > MAX_TOTAL_DRIVING_HOURS) {
+  if (MAX_TOTAL_DRIVING_HOURS > 0 && durationHours > MAX_TOTAL_DRIVING_HOURS) {
     violations.push({
       rule: 'Maximum Total Driving Time',
       limit: `Max ${MAX_TOTAL_DRIVING_HOURS} hours total`,
@@ -83,9 +109,9 @@ export function checkRTMSCompliance(input: TripInput): RTMSResult {
     })
   }
 
-  // Rule 4: Daily rest period (8h rest needed if trip > 16h total cycle)
-  const totalCycleHours = durationHours + MANDATORY_BREAK_MINUTES / 60
-  if (totalCycleHours > DAILY_DRIVING_LIMIT_HOURS + DAILY_REST_HOURS) {
+  // Rule 4: Daily rest period
+  const totalCycleHours = durationHours + (MANDATORY_BREAK_MINUTES > 0 ? MANDATORY_BREAK_MINUTES / 60 : 0)
+  if (DAILY_REST_HOURS > 0 && DAILY_DRIVING_LIMIT_HOURS > 0 && totalCycleHours > DAILY_DRIVING_LIMIT_HOURS + DAILY_REST_HOURS) {
     violations.push({
       rule: 'Daily Rest Period',
       limit: `${DAILY_REST_HOURS} consecutive hours of rest required`,
@@ -95,12 +121,11 @@ export function checkRTMSCompliance(input: TripInput): RTMSResult {
   }
 
   // Generate recommended stops
-  // Stop every ~350 km or ~4.5 hours, whichever comes first
-  const kmInterval = REST_STOP_INTERVAL_KM
-  const hourInterval = REST_STOP_INTERVAL_HOURS
+  const kmInterval = REST_STOP_INTERVAL_KM || Infinity
+  const hourInterval = REST_STOP_INTERVAL_HOURS || Infinity
 
-  const numStopsByKm = Math.floor(distanceKm / kmInterval)
-  const numStopsByTime = Math.floor(durationHours / hourInterval)
+  const numStopsByKm = kmInterval < Infinity ? Math.floor(distanceKm / kmInterval) : 0
+  const numStopsByTime = hourInterval < Infinity ? Math.floor(durationHours / hourInterval) : 0
   const numStops = Math.max(numStopsByKm, numStopsByTime)
 
   if (numStops > 0) {

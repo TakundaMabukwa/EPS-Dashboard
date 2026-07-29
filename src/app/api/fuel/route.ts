@@ -21,18 +21,18 @@ export async function GET() {
     console.log('Fetching fuel data from:', url)
 
     let response: Response | null = null
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
       try {
         response = await fetch(url, {
           headers: { Accept: 'application/json' },
-          signal: AbortSignal.timeout(10000),
+          signal: AbortSignal.timeout(5000),
         })
         if (response.ok) break
         console.error(`Fuel API attempt ${attempt}: ${response.status} ${response.statusText}`)
       } catch (fetchErr: any) {
         console.error(`Fuel API attempt ${attempt} failed:`, fetchErr?.name || fetchErr)
       }
-      if (attempt < 3) await new Promise((r) => setTimeout(r, 1000 * attempt))
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 1000 * attempt))
     }
 
     if (!response || !response.ok) {

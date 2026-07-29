@@ -12,7 +12,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose, DialogPortal, DialogOverlay } from '@/components/ui/dialog'
-import { X, FileText, Plus, Route, MapPin, CheckCircle, AlertTriangle, Cloud, CloudRain, Sun, Wind, Settings } from 'lucide-react'
+import { X, FileText, Plus, Route, MapPin, CheckCircle, AlertTriangle, Cloud, CloudRain, Sun, Wind, Settings, PlusSquare, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { LocationAutocomplete } from '@/components/ui/location-autocomplete'
@@ -32,6 +32,7 @@ import { ClientNameDisplay } from '@/components/ui/client-name-display'
 import { ClientAddressPopup } from '@/components/ui/client-address-popup'
 import { QuickGeozoneDialog } from '@/components/ui/quick-geozone-dialog'
 import { Toast } from '@/components/ui/toast'
+import { Switch } from '@/components/ui/switch'
 import { DriverDropdown } from '@/components/ui/driver-dropdown'
 import { VehicleDropdown } from '@/components/ui/vehicle-dropdown'
 import { TrailerDropdown } from '@/components/ui/trailer-dropdown'
@@ -140,6 +141,7 @@ export default function LoadPlanPage() {
   const [isManuallyOrdered, setIsManuallyOrdered] = useState(false)
 
   // RTMS compliance state
+  const [rtmsEnabled, setRtmsEnabled] = useState(false)
   const [rtmsResult, setRtmsResult] = useState<RTMSResult | null>(null)
   const [rtmsRecommendedStops, setRtmsRecommendedStops] = useState<Array<RecommendedStop & { lat: number; lng: number }>>([])
   const [rtmsRules, setRtmsRules] = useState<RTMSRuleConfig[]>(DEFAULT_RTMS_RULES.map(r => ({ ...r })))
@@ -773,11 +775,12 @@ export default function LoadPlanPage() {
     const durationSeconds = route.duration
 
     // 1. RTMS compliance check
-    const result = checkRTMSCompliance({ distanceKm, durationSeconds }, rtmsRules)
-    setRtmsResult(result)
+    if (rtmsEnabled) {
+      const result = checkRTMSCompliance({ distanceKm, durationSeconds }, rtmsRules)
+      setRtmsResult(result)
 
-    // 2. Interpolate recommended stop positions + find nearby DB stop_points
-    if (result.recommendedStops.length > 0 && route.geometry) {
+      // 2. Interpolate recommended stop positions + find nearby DB stop_points
+      if (result.recommendedStops.length > 0 && route.geometry) {
       const stopsWithPositions = interpolateStopPositions(route.geometry, result.recommendedStops)
 
       // Fetch stop_points from DB and find nearby matches for each suggested stop
@@ -849,6 +852,12 @@ export default function LoadPlanPage() {
       setProposedRtmsStops([])
       setProposedNearbyOptions([])
     }
+    } else {
+      setRtmsResult(null)
+      setRtmsRecommendedStops([])
+      setProposedRtmsStops([])
+      setProposedNearbyOptions([])
+    }
 
     // 3. Weather — fetch for this route
     const coords = route.geometry?.coordinates
@@ -907,7 +916,7 @@ export default function LoadPlanPage() {
           setFuelStopSuggestion(null)
         })
     }
-  }, [optimizedRoute, loadingLocation, dropOffPoint, selectedVehicleId, rtmsRules])
+  }, [optimizedRoute, loadingLocation, dropOffPoint, selectedVehicleId, rtmsRules, rtmsEnabled])
 
 
 
@@ -1708,11 +1717,18 @@ export default function LoadPlanPage() {
 
   return (
     <div className="p-6 space-y-6 w-full">
-      <h1 className="text-2xl font-bold mb-6">Load Plan</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold">Load Plan</h1>
+        <div className="flex items-center gap-2">
+          <Label className="text-xs text-slate-500">RTMS</Label>
+          <Switch checked={rtmsEnabled} onCheckedChange={setRtmsEnabled} />
+        </div>
+      </div>
       
       <Tabs defaultValue="create" className="w-full">
-        <TabsList className="grid w-full grid-cols-1">
+        <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="create">Create Load</TabsTrigger>
+          <TabsTrigger value="stoppoints">Stop Points</TabsTrigger>
         </TabsList>
 
         <TabsContent value="create" className="space-y-6">
@@ -2146,7 +2162,7 @@ export default function LoadPlanPage() {
                           stopPoints={stopPoints.length > 0 ? 'async' : []}
                           getStopPointsData={getSelectedStopPointsData}
                           preserveOrder={isManuallyOrdered}
-                          recommendedStops={rtmsRecommendedStops}
+                          recommendedStops={rtmsEnabled ? rtmsRecommendedStops : []}
                           driverLocation={selectedDriverLocation ? {
                             lat: selectedDriverLocation.latitude,
                             lng: selectedDriverLocation.longitude,
@@ -2241,7 +2257,7 @@ export default function LoadPlanPage() {
                 ) : null}
 
                 {/* RTMS Compliance Panel */}
-                {rtmsResult && optimizedRoute && (
+                {rtmsEnabled && rtmsResult && optimizedRoute && (
                   <div className="space-y-2">
                     {/* Duration warning bar */}
                     {(() => {
@@ -2383,13 +2399,13 @@ export default function LoadPlanPage() {
                         <Label htmlFor="sellingRate" className="text-[10px] font-medium text-slate-600">Rate (R) *</Label>
                         <Input
                           id="sellingRate"
-                          type="number"
-                          step="0.01"
-                          min="0"
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
                           required
                           placeholder="e.g. 4000"
                           value={sellingRatePerKm}
-                          onChange={(e) => setSellingRatePerKm(e.target.value)}
+                          onChange={(e) => setSellingRatePerKm(e.target.value.replace(/[^0-9.]/g, ''))}
                           className="h-8 text-xs"
                         />
                       </div>
@@ -2531,6 +2547,10 @@ export default function LoadPlanPage() {
             </Card>
           </div>
         </TabsContent>
+
+        <TabsContent value="stoppoints" className="space-y-6">
+          <StopPointsTab />
+        </TabsContent>
       </Tabs>
       
       <ClientAddressPopup
@@ -2619,6 +2639,246 @@ export default function LoadPlanPage() {
           setSelectedNearbyStops({})
         }}
       />
+    </div>
+  )
+}
+
+/* ─── STOP POINTS TAB ─── */
+function StopPointsTab() {
+  const supabase = createClient()
+  const [points, setPoints] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [formOpen, setFormOpen] = useState(false)
+  const [editItem, setEditItem] = useState<any>(null)
+  const [saving, setSaving] = useState(false)
+  const [formData, setFormData] = useState({
+    name: '', name2: '', type: '', address: '', street: '', city: '', state: '', country: '',
+    coordinates: '', contact_person: '', contact_phone: '', contact_email: '',
+    operating_hours: '', capacity: '', notes: '', radius: 100,
+  })
+
+  const fetchPoints = async () => {
+    setLoading(true)
+    const { data } = await supabase.from('stop_points').select('*').order('name')
+    setPoints(data || [])
+    setLoading(false)
+  }
+
+  useEffect(() => { fetchPoints() }, [])
+
+  const filtered = useMemo(() => {
+    if (!search) return points
+    const s = search.toLowerCase()
+    return points.filter(p =>
+      (p.name || '').toLowerCase().includes(s) ||
+      (p.name2 || '').toLowerCase().includes(s) ||
+      (p.type || '').toLowerCase().includes(s) ||
+      (p.city || '').toLowerCase().includes(s) ||
+      (p.address || '').toLowerCase().includes(s)
+    )
+  }, [points, search])
+
+  const typeBadge = (type: string) => {
+    const colors: Record<string, string> = {
+      warehouse: 'bg-blue-100 text-blue-700 border-blue-200',
+      distribution: 'bg-green-100 text-green-700 border-green-200',
+      hub: 'bg-purple-100 text-purple-700 border-purple-200',
+      loading: 'bg-orange-100 text-orange-700 border-orange-200',
+      transit: 'bg-amber-100 text-amber-700 border-amber-200',
+    }
+    return <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-medium ${colors[type] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>{type || 'N/A'}</span>
+  }
+
+  const openAdd = () => {
+    setEditItem(null)
+    setFormData({ name: '', name2: '', type: '', address: '', street: '', city: '', state: '', country: '', coordinates: '', contact_person: '', contact_phone: '', contact_email: '', operating_hours: '', capacity: '', notes: '', radius: 100 })
+    setFormOpen(true)
+  }
+
+  const openEdit = (item: any) => {
+    setEditItem(item)
+    setFormData({
+      name: item.name || '', name2: item.name2 || '', type: item.type || '', address: item.address || '',
+      street: item.street || '', city: item.city || '', state: item.state || '', country: item.country || '',
+      coordinates: item.coordinates || '', contact_person: item.contact_person || '', contact_phone: item.contact_phone || '',
+      contact_email: item.contact_email || '', operating_hours: item.operating_hours || '', capacity: item.capacity || '',
+      notes: item.notes || '', radius: item.radius || 100,
+    })
+    setFormOpen(true)
+  }
+
+  const handleSave = async () => {
+    setSaving(true)
+    const payload = { ...formData, updated_at: new Date().toISOString() }
+    if (editItem) {
+      await supabase.from('stop_points').update(payload).eq('id', editItem.id)
+    } else {
+      payload.created_at = new Date().toISOString()
+      await supabase.from('stop_points').insert(payload)
+    }
+    setSaving(false)
+    setFormOpen(false)
+    fetchPoints()
+  }
+
+  const handleDelete = async (id: number) => {
+    if (!confirm('Delete this stop point?')) return
+    await supabase.from('stop_points').delete().eq('id', id)
+    fetchPoints()
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold">Stop Points ({filtered.length})</h2>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-400" />
+            <Input
+              placeholder="Search..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-8 w-48 pl-7 text-xs"
+            />
+          </div>
+          <Button size="sm" className="h-8 text-xs" onClick={openAdd}>
+            <PlusSquare className="h-3 w-3 mr-1" /> Add Stop Point
+          </Button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-12 text-slate-500">Loading...</div>
+      ) : (
+        <div className="overflow-auto max-h-[600px] rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-slate-200">
+                <TableHead className="text-xs text-slate-700">Name</TableHead>
+                <TableHead className="text-xs text-slate-700">Alias</TableHead>
+                <TableHead className="text-xs text-slate-700">Type</TableHead>
+                <TableHead className="text-xs text-slate-700">City</TableHead>
+                <TableHead className="text-xs text-slate-700">Address</TableHead>
+                <TableHead className="text-xs text-slate-700">Contact</TableHead>
+                <TableHead className="text-xs text-slate-700 text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.map((p) => (
+                <TableRow key={p.id} className="hover:bg-slate-50">
+                  <TableCell className="text-xs font-medium max-w-[200px] truncate" title={p.name}>{p.name || '-'}</TableCell>
+                  <TableCell className="text-xs max-w-[150px] truncate" title={p.name2}>{p.name2 || '-'}</TableCell>
+                  <TableCell className="text-xs">{typeBadge(p.type)}</TableCell>
+                  <TableCell className="text-xs">{p.city || '-'}</TableCell>
+                  <TableCell className="text-xs max-w-[200px] truncate" title={p.address}>{p.address || '-'}</TableCell>
+                  <TableCell className="text-xs">{p.contact_person || '-'}</TableCell>
+                  <TableCell className="text-xs text-right">
+                    <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => openEdit(p)}>Edit</Button>
+                    <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-red-600 hover:text-red-700" onClick={() => handleDelete(p.id)}>Delete</Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {filtered.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center text-xs text-slate-500 py-8">No stop points found</TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {/* Add/Edit Dialog */}
+      {formOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-auto p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold">{editItem ? 'Edit Stop Point' : 'Add Stop Point'}</h3>
+              <Button variant="ghost" size="sm" onClick={() => setFormOpen(false)}>X</Button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-[10px] font-medium text-slate-600">Name *</Label>
+                <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className="h-8 text-xs" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[10px] font-medium text-slate-600">Alias</Label>
+                <Input value={formData.name2} onChange={(e) => setFormData({ ...formData, name2: e.target.value })} className="h-8 text-xs" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[10px] font-medium text-slate-600">Type</Label>
+                <select value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value })} className="flex h-8 w-full items-center justify-between rounded border border-input bg-background px-2 text-xs">
+                  <option value="">Select...</option>
+                  <option value="warehouse">Warehouse</option>
+                  <option value="distribution">Distribution</option>
+                  <option value="hub">Hub</option>
+                  <option value="loading">Loading</option>
+                  <option value="transit">Transit</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[10px] font-medium text-slate-600">Radius (m)</Label>
+                <Input type="number" value={formData.radius} onChange={(e) => setFormData({ ...formData, radius: Number(e.target.value) })} className="h-8 text-xs" />
+              </div>
+              <div className="col-span-2 space-y-1">
+                <Label className="text-[10px] font-medium text-slate-600">Address</Label>
+                <Input value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} className="h-8 text-xs" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[10px] font-medium text-slate-600">Street</Label>
+                <Input value={formData.street} onChange={(e) => setFormData({ ...formData, street: e.target.value })} className="h-8 text-xs" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[10px] font-medium text-slate-600">City</Label>
+                <Input value={formData.city} onChange={(e) => setFormData({ ...formData, city: e.target.value })} className="h-8 text-xs" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[10px] font-medium text-slate-600">State</Label>
+                <Input value={formData.state} onChange={(e) => setFormData({ ...formData, state: e.target.value })} className="h-8 text-xs" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[10px] font-medium text-slate-600">Country</Label>
+                <Input value={formData.country} onChange={(e) => setFormData({ ...formData, country: e.target.value })} className="h-8 text-xs" />
+              </div>
+              <div className="col-span-2 space-y-1">
+                <Label className="text-[10px] font-medium text-slate-600">Coordinates (lng,lat)</Label>
+                <Input value={formData.coordinates} onChange={(e) => setFormData({ ...formData, coordinates: e.target.value })} className="h-8 text-xs" placeholder="-26.2041, 28.0473" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[10px] font-medium text-slate-600">Contact Person</Label>
+                <Input value={formData.contact_person} onChange={(e) => setFormData({ ...formData, contact_person: e.target.value })} className="h-8 text-xs" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[10px] font-medium text-slate-600">Contact Phone</Label>
+                <Input value={formData.contact_phone} onChange={(e) => setFormData({ ...formData, contact_phone: e.target.value })} className="h-8 text-xs" />
+              </div>
+              <div className="col-span-2 space-y-1">
+                <Label className="text-[10px] font-medium text-slate-600">Contact Email</Label>
+                <Input value={formData.contact_email} onChange={(e) => setFormData({ ...formData, contact_email: e.target.value })} className="h-8 text-xs" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[10px] font-medium text-slate-600">Operating Hours</Label>
+                <Input value={formData.operating_hours} onChange={(e) => setFormData({ ...formData, operating_hours: e.target.value })} className="h-8 text-xs" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[10px] font-medium text-slate-600">Capacity</Label>
+                <Input value={formData.capacity} onChange={(e) => setFormData({ ...formData, capacity: e.target.value })} className="h-8 text-xs" />
+              </div>
+              <div className="col-span-2 space-y-1">
+                <Label className="text-[10px] font-medium text-slate-600">Notes</Label>
+                <textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} className="w-full rounded border border-input bg-background px-2 py-1 text-xs h-16" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={() => setFormOpen(false)}>Cancel</Button>
+              <Button size="sm" onClick={handleSave} disabled={saving || !formData.name}>
+                {saving ? 'Saving...' : editItem ? 'Update' : 'Create'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

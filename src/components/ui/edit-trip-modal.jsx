@@ -1610,10 +1610,11 @@ export function EditTripModal({ isOpen, onClose, trip, onUpdate, readOnly = fals
                       <Label htmlFor="rate" className="text-sm font-medium text-slate-700">Rate</Label>
                       <Input 
                         value={sellingRatePerKm} 
-                        onChange={(e) => setSellingRatePerKm(e.target.value)} 
+                        onChange={(e) => setSellingRatePerKm(e.target.value.replace(/[^0-9.]/g, ''))} 
                         placeholder="R 0.00" 
-                        type="number"
-                        step="0.01"
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
                         className="border-slate-300 focus:border-slate-500"
                       />
                     </div>
