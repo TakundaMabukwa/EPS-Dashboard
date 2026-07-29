@@ -201,6 +201,7 @@ export default function AuditPage() {
   const [exporting, setExporting] = useState(false)
   const [editTripOpen, setEditTripOpen] = useState(false)
   const [currentTripForEdit, setCurrentTripForEdit] = useState<any>(null)
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
   const router = useRouter()
 
   useEffect(() => {
@@ -296,7 +297,7 @@ export default function AuditPage() {
     }
 
     loadRecords()
-  }, [supabase])
+  }, [supabase, refreshTrigger])
 
   useEffect(() => {
     let next = records
@@ -579,13 +580,19 @@ export default function AuditPage() {
                           size="sm"
                           variant="link"
                           className="h-7 px-2 text-xs border"
-                          onClick={() => {
-                            setCurrentTripForEdit({
-                              ...record,
-                              id: record.trip_row_id || record.trip_id,
-                              trip_id: record.trip_id,
-                              vehicleassignments: record.vehicleassignments || record.vehicle_assignments,
-                            })
+                          onClick={async () => {
+                            const tripId = record.trip_row_id || record.trip_id
+                            const { data: fullTrip } = await supabase
+                              .from('trips')
+                              .select('*')
+                              .or(`id.eq.${tripId},trip_id.eq.${record.trip_id}`)
+                              .single()
+
+                            const merged = fullTrip
+                              ? { ...fullTrip, ...record, id: fullTrip.id, trip_id: fullTrip.trip_id }
+                              : { ...record, id: tripId, trip_id: record.trip_id }
+
+                            setCurrentTripForEdit(merged)
                             setEditTripOpen(true)
                           }}
                         >
@@ -692,6 +699,7 @@ export default function AuditPage() {
         onUpdate={() => {
           setEditTripOpen(false)
           setCurrentTripForEdit(null)
+          setRefreshTrigger(prev => prev + 1)
         }}
       />
     </div>
