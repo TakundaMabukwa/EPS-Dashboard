@@ -102,11 +102,10 @@ export default function LoadPlanPage() {
   const [dropOffPoint, setDropOffPoint] = useState('')
   const [dropoffLocationCoords, setDropoffLocationCoords] = useState<{ lat: number; lng: number } | null>(null)
   const [dropoffGeozoneCoords, setDropoffGeozoneCoords] = useState(null)
-  // Multiple pickup/dropoff points
-  const [pickupPoints, setPickupPoints] = useState<Array<{ location: string; time: string }>>([{ location: '', time: '' }])
-  const [dropoffPoints, setDropoffPoints] = useState<Array<{ location: string; time: string }>>([{ location: '', time: '' }])
   const [pickupGeoData, setPickupGeoData] = useState<{ town: string; lat: number; lng: number } | null>(null)
   const [dropoffGeoData, setDropoffGeoData] = useState<{ town: string; lat: number; lng: number } | null>(null)
+  const [additionalPickups, setAdditionalPickups] = useState<Array<{ location: string; time: string }>>([])
+  const [additionalDropoffs, setAdditionalDropoffs] = useState<Array<{ location: string; time: string }>>([])
   const [stopGeoData, setStopGeoData] = useState<{ town: string; lat: number; lng: number }[]>([])
   const [showSecondSection, setShowSecondSection] = useState(false)
   const secondRef = useRef<HTMLDivElement | null>(null)
@@ -135,7 +134,6 @@ export default function LoadPlanPage() {
   const [vehicleTypeNotFound, setVehicleTypeNotFound] = useState(false)
   const [tripType, setTripType] = useState('local')
   const [stopPoints, setStopPoints] = useState([])
-  const [stopPointTimes, setStopPointTimes] = useState([])
   const [availableStopPoints, setAvailableStopPoints] = useState([])
   const [isLoadingStopPoints, setIsLoadingStopPoints] = useState(false)
   const [customStopPoints, setCustomStopPoints] = useState([])
@@ -1471,17 +1469,19 @@ export default function LoadPlanPage() {
           contactPerson: ''
         },
         
-        pickuplocations: pickupPoints.filter(p => p.location).map(p => ({
-          location: p.location || '',
-          address: p.location || '',
-          scheduled_time: p.time || ''
-        })),
+        pickuplocations: [
+          { location: loadingLocation || '', address: loadingLocation || '', scheduled_time: etaPickup || '' },
+          ...additionalPickups.filter(p => p.location).map(p => ({
+            location: p.location, address: p.location, scheduled_time: p.time || ''
+          }))
+        ],
         
-        dropofflocations: dropoffPoints.filter(p => p.location).map(p => ({
-          location: p.location || '',
-          address: p.location || '',
-          scheduled_time: p.time || ''
-        })),
+        dropofflocations: [
+          { location: dropOffPoint || '', address: dropOffPoint || '', scheduled_time: etaDropoff || '' },
+          ...additionalDropoffs.filter(d => d.location).map(d => ({
+            location: d.location, address: d.location, scheduled_time: d.time || ''
+          }))
+        ],
         
         vehicleassignments: [{
           drivers: driverAssignments,
@@ -1592,16 +1592,18 @@ export default function LoadPlanPage() {
           address: '',
           contactPerson: ''
         },
-        pickuplocations: pickupPoints.filter(p => p.location).map(p => ({
-          location: p.location || '',
-          address: p.location || '',
-          scheduled_time: p.time || ''
-        })),
-        dropofflocations: dropoffPoints.filter(p => p.location).map(p => ({
-          location: p.location || '',
-          address: p.location || '',
-          scheduled_time: p.time || ''
-        })),
+        pickuplocations: [
+          { location: loadingLocation || '', address: loadingLocation || '', scheduled_time: etaPickup || '' },
+          ...additionalPickups.filter(p => p.location).map(p => ({
+            location: p.location, address: p.location, scheduled_time: p.time || ''
+          }))
+        ],
+        dropofflocations: [
+          { location: dropOffPoint || '', address: dropOffPoint || '', scheduled_time: etaDropoff || '' },
+          ...additionalDropoffs.filter(d => d.location).map(d => ({
+            location: d.location, address: d.location, scheduled_time: d.time || ''
+          }))
+        ],
         vehicleassignments: [{
           drivers: driverAssignments,
           vehicle: { 
@@ -1617,7 +1619,7 @@ export default function LoadPlanPage() {
         selected_stop_points: stopPoints.map((pointId, index) => {
           if (pointId) {
             const point = availableStopPoints.find(p => p.id.toString() === pointId)
-            return point ? { type: 'existing', ...point, scheduled_time: stopPointTimes[index] || '' } : null
+            return point ? { type: 'existing', ...point } : null
           }
           return null
         }).filter(Boolean),
@@ -1678,14 +1680,12 @@ export default function LoadPlanPage() {
       // Reset form
       setClient(''); setSelectedClient(null); setManualClientName(''); setCommodity(''); setRate(''); setOrderNumber(''); setComment('')
       setEtaPickup(''); setLoadingLocation(''); setEtaDropoff(''); setDropOffPoint('')
-      setPickupPoints([{ location: '', time: '' }])
-      setDropoffPoints([{ location: '', time: '' }])
+      setAdditionalPickups([]); setAdditionalDropoffs([])
       setDriverAssignments([{ id: '', name: '' }])
       setSelectedVehicleId('')
       setSelectedTrailerId('')
       setTripType('local')
       setStopPoints([])
-      setStopPointTimes([])
       setCustomStopPoints([])
       setSelectedVehicleType('')
       setSelectedStops(new Set())
@@ -1770,182 +1770,207 @@ export default function LoadPlanPage() {
                   </div>
                 </div>
 
-                {/* Pickup Points */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs font-medium">Pickup Points</Label>
+                {/* Location & Timing */}
+                <div className="space-y-3">
+                  {/* Primary pickup */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="etaPickup">ETA Pick Up</Label>
+                      <DateTimePicker
+                        value={etaPickup}
+                        onChange={setEtaPickup}
+                        placeholder="Select pickup date and time"
+                      />
+                    </div>
+                    <div>
+                      <LocationAutocomplete
+                        label="Loading Location"
+                        value={loadingLocation}
+                        onChange={(value) => {
+                          setLoadingLocation(value)
+                          setOptimizedRoute(null)
+                        }}
+                        onSelect={async (s) => {
+                          const coords = s.coordinates
+                          const lat = coords?.[1] ?? coords?.lat ?? null
+                          const lng = coords?.[0] ?? coords?.lng ?? null
+                          if (lat && lng) {
+                            try {
+                              const res = await fetch(`/api/location-lookup?lat=${lat}&lng=${lng}`)
+                              const data = await res.json()
+                              const full = data?.results?.[0]
+                              const town = [full?.city, full?.state, full?.country].filter(Boolean).join(', ') || s.name || s.address || ''
+                              setPickupGeoData({ town, lat, lng })
+                            } catch {
+                              setPickupGeoData({ town: s.name || s.address || '', lat, lng })
+                            }
+                          } else {
+                            setPickupGeoData(null)
+                          }
+                        }}
+                        placeholder="Search for loading location"
+                        clientLocations={useMemo(() => {
+                          const selectedClient = clients.find(c => c.name === client)
+                          if (!selectedClient) return []
+                          try {
+                            return typeof selectedClient.pickupLocations === 'string' ? 
+                              JSON.parse(selectedClient.pickupLocations) : 
+                              (selectedClient.pickupLocations || selectedClient.pickup_locations || [])
+                          } catch { return [] }
+                        }, [clients, client])}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Additional pickups */}
+                  {additionalPickups.map((pickup, i) => (
+                    <div key={`pickup-${i}`} className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4 border-l-2 border-blue-200">
+                      <div>
+                        <Label className="text-[10px] text-blue-600">Pickup {i + 2} — Time</Label>
+                        <DateTimePicker
+                          value={pickup.time}
+                          onChange={(val) => {
+                            const updated = [...additionalPickups]
+                            updated[i] = { ...updated[i], time: val }
+                            setAdditionalPickups(updated)
+                          }}
+                          placeholder="Select time"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <div className="flex-1">
+                          <LocationAutocomplete
+                            label={`Loading Point ${i + 2}`}
+                            value={pickup.location}
+                            onChange={(value) => {
+                              const updated = [...additionalPickups]
+                              updated[i] = { ...updated[i], location: value }
+                              setAdditionalPickups(updated)
+                            }}
+                            placeholder="Search location"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setAdditionalPickups(additionalPickups.filter((_, j) => j !== i))}
+                          className="mt-5 p-1 text-gray-400 hover:text-red-500"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Primary dropoff */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="etaDropoff">ETA Drop Off</Label>
+                      <DateTimePicker
+                        value={etaDropoff}
+                        onChange={setEtaDropoff}
+                        placeholder="Select drop-off date and time"
+                      />
+                    </div>
+                    <div>
+                      <LocationAutocomplete
+                        label="Drop Off Point"
+                        value={dropOffPoint}
+                        onChange={(value) => {
+                          setDropOffPoint(value)
+                          setOptimizedRoute(null)
+                        }}
+                        onSelect={async (s) => {
+                          const coords = s.coordinates
+                          const lat = coords?.[1] ?? coords?.lat ?? null
+                          const lng = coords?.[0] ?? coords?.lng ?? null
+                          if (lat && lng) {
+                            try {
+                              const res = await fetch(`/api/location-lookup?lat=${lat}&lng=${lng}`)
+                              const data = await res.json()
+                              const full = data?.results?.[0]
+                              const town = [full?.city, full?.state, full?.country].filter(Boolean).join(', ') || s.name || s.address || ''
+                              setDropoffGeoData({ town, lat, lng })
+                            } catch {
+                              setDropoffGeoData({ town: s.name || s.address || '', lat, lng })
+                            }
+                          } else {
+                            setDropoffGeoData(null)
+                          }
+                        }}
+                        placeholder="Search for drop off location"
+                        clientLocations={useMemo(() => {
+                          const selectedClient = clients.find(c => c.name === client)
+                          if (!selectedClient) return []
+                          try {
+                            return typeof selectedClient.dropoffLocations === 'string' ? 
+                              JSON.parse(selectedClient.dropoffLocations) : 
+                              (selectedClient.dropoffLocations || selectedClient.dropoff_locations || [])
+                          } catch { return [] }
+                        }, [clients, client])}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Additional dropoffs */}
+                  {additionalDropoffs.map((dropoff, i) => (
+                    <div key={`dropoff-${i}`} className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4 border-l-2 border-amber-200">
+                      <div>
+                        <Label className="text-[10px] text-amber-600">Dropoff {i + 2} — Time</Label>
+                        <DateTimePicker
+                          value={dropoff.time}
+                          onChange={(val) => {
+                            const updated = [...additionalDropoffs]
+                            updated[i] = { ...updated[i], time: val }
+                            setAdditionalDropoffs(updated)
+                          }}
+                          placeholder="Select time"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <div className="flex-1">
+                          <LocationAutocomplete
+                            label={`Drop Off Point ${i + 2}`}
+                            value={dropoff.location}
+                            onChange={(value) => {
+                              const updated = [...additionalDropoffs]
+                              updated[i] = { ...updated[i], location: value }
+                              setAdditionalDropoffs(updated)
+                            }}
+                            placeholder="Search location"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setAdditionalDropoffs(additionalDropoffs.filter((_, j) => j !== i))}
+                          className="mt-5 p-1 text-gray-400 hover:text-red-500"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Add buttons */}
+                  <div className="flex gap-3">
                     <Button
                       type="button"
+                      variant="outline"
                       size="sm"
-                      className="h-6 text-[10px] px-2"
-                      onClick={() => setPickupPoints([...pickupPoints, { location: '', time: '' }])}
+                      className="h-7 text-[10px] px-2 text-blue-600 border-blue-200 hover:bg-blue-50"
+                      onClick={() => setAdditionalPickups([...additionalPickups, { location: '', time: '' }])}
                     >
                       <Plus className="h-3 w-3 mr-0.5" /> Add Pickup
                     </Button>
-                  </div>
-                  {pickupPoints.map((pt, idx) => (
-                    <div key={idx} className="flex gap-2 items-start">
-                      <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-2">
-                        <LocationAutocomplete
-                          label={idx === 0 ? 'Pickup Location' : `Pickup ${idx + 1}`}
-                          value={pt.location}
-                          onChange={(value) => {
-                            const updated = [...pickupPoints]
-                            updated[idx] = { ...updated[idx], location: value }
-                            setPickupPoints(updated)
-                            if (idx === 0) setLoadingLocation(value)
-                            setOptimizedRoute(null)
-                          }}
-                          onSelect={async (s) => {
-                            const coords = s.coordinates
-                            const lat = coords?.[1] ?? coords?.lat ?? null
-                            const lng = coords?.[0] ?? coords?.lng ?? null
-                            if (lat && lng) {
-                              try {
-                                const res = await fetch(`/api/location-lookup?lat=${lat}&lng=${lng}`)
-                                const data = await res.json()
-                                const full = data?.results?.[0]
-                                const town = [full?.city, full?.state, full?.country].filter(Boolean).join(', ') || s.name || s.address || ''
-                                if (idx === 0) setPickupGeoData({ town, lat, lng })
-                              } catch {
-                                if (idx === 0) setPickupGeoData({ town: s.name || s.address || '', lat, lng })
-                              }
-                            }
-                          }}
-                          placeholder="Search pickup location"
-                          clientLocations={useMemo(() => {
-                            const sel = clients.find(c => c.name === client)
-                            if (!sel) return []
-                            try {
-                              return typeof sel.pickupLocations === 'string'
-                                ? JSON.parse(sel.pickupLocations)
-                                : (sel.pickupLocations || sel.pickup_locations || [])
-                            } catch { return [] }
-                          }, [clients, client])}
-                        />
-                        <div>
-                          <Label className="text-[10px] font-medium text-slate-600">ETA</Label>
-                          <DateTimePicker
-                            value={pt.time}
-                            onChange={(time) => {
-                              const updated = [...pickupPoints]
-                              updated[idx] = { ...updated[idx], time }
-                              setPickupPoints(updated)
-                              if (idx === 0) setEtaPickup(time)
-                            }}
-                            placeholder="Pickup date & time"
-                          />
-                        </div>
-                      </div>
-                      {pickupPoints.length > 1 && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0 mt-4 text-gray-400 hover:text-red-500"
-                          onClick={() => {
-                            const updated = pickupPoints.filter((_, i) => i !== idx)
-                            setPickupPoints(updated)
-                            if (idx === 0 && updated.length > 0) {
-                              setLoadingLocation(updated[0].location)
-                              setEtaPickup(updated[0].time)
-                            }
-                          }}
-                        >
-                          <X className="h-3 w-3" />
-                        </Button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                {/* Dropoff Points */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs font-medium">Drop-off Points</Label>
                     <Button
                       type="button"
+                      variant="outline"
                       size="sm"
-                      className="h-6 text-[10px] px-2"
-                      onClick={() => setDropoffPoints([...dropoffPoints, { location: '', time: '' }])}
+                      className="h-7 text-[10px] px-2 text-amber-600 border-amber-200 hover:bg-amber-50"
+                      onClick={() => setAdditionalDropoffs([...additionalDropoffs, { location: '', time: '' }])}
                     >
-                      <Plus className="h-3 w-3 mr-0.5" /> Add Drop-off
+                      <Plus className="h-3 w-3 mr-0.5" /> Add Dropoff
                     </Button>
                   </div>
-                  {dropoffPoints.map((pt, idx) => (
-                    <div key={idx} className="flex gap-2 items-start">
-                      <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-2">
-                        <LocationAutocomplete
-                          label={idx === 0 ? 'Drop-off Location' : `Drop-off ${idx + 1}`}
-                          value={pt.location}
-                          onChange={(value) => {
-                            const updated = [...dropoffPoints]
-                            updated[idx] = { ...updated[idx], location: value }
-                            setDropoffPoints(updated)
-                            if (idx === updated.length - 1) setDropOffPoint(value)
-                            setOptimizedRoute(null)
-                          }}
-                          onSelect={async (s) => {
-                            const coords = s.coordinates
-                            const lat = coords?.[1] ?? coords?.lat ?? null
-                            const lng = coords?.[0] ?? coords?.lng ?? null
-                            if (lat && lng) {
-                              try {
-                                const res = await fetch(`/api/location-lookup?lat=${lat}&lng=${lng}`)
-                                const data = await res.json()
-                                const full = data?.results?.[0]
-                                const town = [full?.city, full?.state, full?.country].filter(Boolean).join(', ') || s.name || s.address || ''
-                                if (idx === dropoffPoints.length - 1) setDropoffGeoData({ town, lat, lng })
-                              } catch {
-                                if (idx === dropoffPoints.length - 1) setDropoffGeoData({ town: s.name || s.address || '', lat, lng })
-                              }
-                            }
-                          }}
-                          placeholder="Search drop-off location"
-                          clientLocations={useMemo(() => {
-                            const sel = clients.find(c => c.name === client)
-                            if (!sel) return []
-                            try {
-                              return typeof sel.dropoffLocations === 'string'
-                                ? JSON.parse(sel.dropoffLocations)
-                                : (sel.dropoffLocations || sel.dropoff_locations || [])
-                            } catch { return [] }
-                          }, [clients, client])}
-                        />
-                        <div>
-                          <Label className="text-[10px] font-medium text-slate-600">ETA</Label>
-                          <DateTimePicker
-                            value={pt.time}
-                            onChange={(time) => {
-                              const updated = [...dropoffPoints]
-                              updated[idx] = { ...updated[idx], time }
-                              setDropoffPoints(updated)
-                              if (idx === updated.length - 1) setEtaDropoff(time)
-                            }}
-                            placeholder="Drop-off date & time"
-                          />
-                        </div>
-                      </div>
-                      {dropoffPoints.length > 1 && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0 mt-4 text-gray-400 hover:text-red-500"
-                          onClick={() => {
-                            const updated = dropoffPoints.filter((_, i) => i !== idx)
-                            setDropoffPoints(updated)
-                            if (idx === updated.length - 1 && updated.length > 0) {
-                              setDropOffPoint(updated[updated.length - 1].location)
-                              setEtaDropoff(updated[updated.length - 1].time)
-                            }
-                          }}
-                        >
-                          <X className="h-3 w-3" />
-                        </Button>
-                      )}
-                    </div>
-                  ))}
                 </div>
 
                 {/* Progress Stops */}
@@ -2056,7 +2081,6 @@ export default function LoadPlanPage() {
                         e.stopPropagation()
                         await fetchStopPoints()
                         setStopPoints([...stopPoints, ''])
-                        setStopPointTimes([...stopPointTimes, ''])
                       }}
                       size="sm"
                       className="h-6 text-[10px] px-2"
@@ -2066,53 +2090,39 @@ export default function LoadPlanPage() {
                   </div>
                   
                   {stopPoints.map((stopPoint, index) => (
-                    <div key={index} className="flex gap-2 items-start">
-                      <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-2">
-                        <StopPointDropdown
-                          value={stopPoint}
-                          onChange={(value) => {
-                            console.log('StopPointDropdown onChange called with value:', value)
-                            const updated = [...stopPoints]
-                            updated[index] = value
-                            console.log('Setting stopPoints from:', stopPoints, 'to:', updated)
-                            setStopPoints(updated)
-                            setOptimizedRoute(null)
-                          }}
-                          stopPoints={filteredStopPoints}
-                          placeholder="Select from existing stop points"
-                          isLoading={isLoadingStopPoints}
-                        />
-                        <div>
-                          <Label className="text-[10px] font-medium text-slate-600">ETA</Label>
-                          <DateTimePicker
-                            value={stopPointTimes[index] || ''}
-                            onChange={(time) => {
-                              const updated = [...stopPointTimes]
-                              while (updated.length <= index) updated.push('')
-                              updated[index] = time
-                              setStopPointTimes(updated)
+                    <div key={index} className="space-y-2">
+                      <div className="flex gap-2 items-center">
+                        <div className="flex-1">
+                          <StopPointDropdown
+                            value={stopPoint}
+                            onChange={(value) => {
+                              console.log('StopPointDropdown onChange called with value:', value)
+                              const updated = [...stopPoints]
+                              updated[index] = value
+                              console.log('Setting stopPoints from:', stopPoints, 'to:', updated)
+                              setStopPoints(updated)
+                              setOptimizedRoute(null)
                             }}
-                            placeholder="Arrival time"
+                            stopPoints={filteredStopPoints}
+                            placeholder="Select from existing stop points"
+                            isLoading={isLoadingStopPoints}
                           />
                         </div>
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          size="sm"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            const updated = stopPoints.filter((_, i) => i !== index)
+                            setStopPoints(updated)
+                            setIsManuallyOrdered(false)
+                          }}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
                       </div>
-                      <Button 
-                        type="button" 
-                        variant="outline" 
-                        size="sm"
-                        className="h-8 w-8 p-0 mt-0.5"
-                        onClick={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          const updated = stopPoints.filter((_, i) => i !== index)
-                          setStopPoints(updated)
-                          const updatedTimes = stopPointTimes.filter((_, i) => i !== index)
-                          setStopPointTimes(updatedTimes)
-                          setIsManuallyOrdered(false)
-                        }}
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
                     </div>
                   ))}
                 </div>
