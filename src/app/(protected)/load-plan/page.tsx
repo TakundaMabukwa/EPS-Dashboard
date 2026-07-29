@@ -39,6 +39,35 @@ import { StopPointDropdown } from '@/components/ui/stop-point-dropdown'
 import { markDriversUnavailable } from '@/lib/utils/driver-availability'
 import { resolveProfileKey } from '@/lib/cost-engine'
 
+// Decode Google Maps encoded polyline to [lat, lng][] pairs
+function decodeGooglePolyline(encoded: string): [number, number][] {
+  const points: [number, number][] = []
+  let index = 0
+  let lat = 0
+  let lng = 0
+  while (index < encoded.length) {
+    let b: number
+    let shift = 0
+    let result = 0
+    do {
+      b = encoded.charCodeAt(index++) - 63
+      result |= (b & 0x1f) << shift
+      shift += 5
+    } while (b >= 0x20)
+    lat += (result & 1) ? ~(result >> 1) : (result >> 1)
+    shift = 0
+    result = 0
+    do {
+      b = encoded.charCodeAt(index++) - 63
+      result |= (b & 0x1f) << shift
+      shift += 5
+    } while (b >= 0x20)
+    lng += (result & 1) ? ~(result >> 1) : (result >> 1)
+    points.push([lat / 1e5, lng / 1e5])
+  }
+  return points
+}
+
 
 export default function LoadPlanPage() {
   const supabase = createClient()
@@ -591,7 +620,7 @@ export default function LoadPlanPage() {
 
 
 
-  // Preview route when locations change - get Mapbox timing data
+  // Preview route when locations change - get route timing data
   useEffect(() => {
     const previewRoute = async () => {
       console.log('Route preview triggered:', { loadingLocation, dropOffPoint, stopPoints, customStopPoints })
@@ -602,9 +631,8 @@ export default function LoadPlanPage() {
       
       setIsOptimizing(true)
       try {
-        const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN
         const googleKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_TOKEN
-        if (!mapboxToken) {
+        if (!googleKey) {
           setIsOptimizing(false)
           return
         }
@@ -658,11 +686,11 @@ export default function LoadPlanPage() {
           const { lat: originLat, lng: originLng } = loadingData.results[0].geometry.location
           const { lat: destLat, lng: destLng } = dropOffData.results[0].geometry.location
           
-          // Build waypoints string for Mapbox Directions (lng,lat;lng,lat)
-          let waypoints = `${originLng},${originLat}`
+          // Build waypoints for Google Directions (pipe-separated, | delimiter)
+          const waypointList: string[] = []
           
           if (driverLocation) {
-            waypoints = `${driverLocation.lng},${driverLocation.lat};${waypoints}`
+            waypointList.push(`${driverLocation.lat},${driverLocation.lng}`)
           }
           
           if (stopPointsData.length > 0) {
@@ -670,23 +698,19 @@ export default function LoadPlanPage() {
               const coords = point.coordinates
               const avgLng = coords.reduce((sum, coord) => sum + coord[0], 0) / coords.length
               const avgLat = coords.reduce((sum, coord) => sum + coord[1], 0) / coords.length
-              return `${avgLng},${avgLat}`
+              return `${avgLat},${avgLng}`
             }).filter(waypoint => waypoint && !waypoint.includes('NaN'))
             
-            if (stopWaypoints.length > 0) {
-              waypoints += `;${stopWaypoints.join(';')}`
-            }
+            waypointList.push(...stopWaypoints)
           }
           
-          waypoints += `;${destLng},${destLat}`
+          const waypointsParam = waypointList.length > 0 ? `&waypoints=${waypointList.join('|')}` : ''
           
-          console.log('Calculating route with waypoints:', waypoints)
+          console.log('Calculating route:', { origin: `${originLat},${originLng}`, dest: `${destLat},${destLng}`, waypoints: waypointList })
           
-          const apiEndpoint = `https://api.mapbox.com/directions/v5/mapbox/driving/${waypoints}`
-          const apiParams = 'geometries=geojson&overview=full&annotations=duration,distance&exclude=ferry'
-          
+          const directionsUrl = 'https://maps.googleapis.com/maps/api/directions/json'
           const directionsResponse = await fetch(
-            `${apiEndpoint}?access_token=${mapboxToken}&${apiParams}`
+            `${directionsUrl}?origin=${originLat},${originLng}&destination=${destLat},${destLng}${waypointsParam}&key=${googleKey}&mode=driving`
           )
           
           if (!directionsResponse.ok) {
@@ -698,29 +722,50 @@ export default function LoadPlanPage() {
           const directionsData = await directionsResponse.json()
           console.log('Directions API response:', directionsData)
           
-          if (directionsData.code !== 'Ok') {
+          if (directionsData.status !== 'OK') {
             console.error('API returned error:', directionsData)
             setOptimizedRoute(null)
             return
           }
           
-          const route = directionsData.routes?.[0]
-          if (route) {
+          const googleRoute = directionsData.routes?.[0]
+          if (googleRoute) {
+            // Sum distance and duration across all legs
+            let totalDistanceM = 0
+            let totalDurationS = 0
+            for (const leg of googleRoute.legs || []) {
+              totalDistanceM += leg.distance?.value || 0
+              totalDurationS += leg.duration?.value || 0
+            }
+            
             const numStops = stopPointsData.length
-            const totalDurationHours = route.duration / 3600
+            const totalDurationHours = totalDurationS / 3600
             const stopDelayHours = numStops * 1
             const totalHours = totalDurationHours + stopDelayHours
             const calculatedDays = Math.ceil(totalHours / 10)
             setStopsCount(numStops)
             setTripDays((prev) => Math.max(prev, calculatedDays || 1))
             
+            // Build a geometry object compatible with the rest of the app
+            // Google returns overview_polyline; decode it for geometry
+            const geometry = {
+              type: 'LineString' as const,
+              coordinates: decodeGooglePolyline(googleRoute.overview_polyline?.points || '').map(([lat, lng]) => [lng, lat])
+            }
+            
             const routeInfo = {
-              route: route,
-              distance: route.distance,
-              duration: route.duration,
+              route: {
+                distance: totalDistanceM,
+                duration: totalDurationS,
+                geometry: geometry,
+                legs: googleRoute.legs,
+                summary: googleRoute.summary,
+              },
+              distance: totalDistanceM,
+              duration: totalDurationS,
               hasDriverLocation: !!driverLocation,
               stopPoints: stopPointsData,
-              geometry: route.geometry
+              geometry: geometry
             }
             console.log('Setting optimized route:', routeInfo)
             setOptimizedRoute(routeInfo)
@@ -894,15 +939,15 @@ export default function LoadPlanPage() {
         
         console.log('Origin coords:', originLoc, 'Dest coords:', destLoc)
         
-        const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN
+        const directionsUrl = 'https://maps.googleapis.com/maps/api/directions/json'
         const directionsResponse = await fetch(
-          `https://api.mapbox.com/directions/v5/mapbox/driving/${originLoc.lng},${originLoc.lat};${destLoc.lng},${destLoc.lat}?access_token=${mapboxToken}&geometries=geojson`
+          `${directionsUrl}?origin=${originLoc.lat},${originLoc.lng}&destination=${destLoc.lat},${destLoc.lng}&key=${googleKey}&mode=driving`
         )
         const data = await directionsResponse.json()
-        console.log('Mapbox Directions response:', data)
+        console.log('Google Directions response:', data)
         
-        if (data.routes?.[0]?.distance) {
-          const distanceKm = Math.round(data.routes[0].distance / 1000)
+        if (data.status === 'OK' && data.routes?.[0]?.legs?.[0]?.distance?.value) {
+          const distanceKm = Math.round(data.routes[0].legs[0].distance.value / 1000)
           console.log('Distance calculated:', distanceKm, 'km')
           setEstimatedDistance(distanceKm)
         } else {
