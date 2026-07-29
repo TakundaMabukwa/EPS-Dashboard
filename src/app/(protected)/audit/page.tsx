@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
-import { Download, MapPin, Paperclip, Route, Truck } from 'lucide-react'
+import { Download, FileText, MapPin, Paperclip, Route, Truck } from 'lucide-react'
 
 import { SecureButton } from '@/components/SecureButton'
 import { Badge } from '@/components/ui/badge'
@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { loadGoogleMaps } from '@/lib/google-maps'
+import { EditTripModal } from '@/components/ui/edit-trip-modal'
 
 function RouteMap({ routePoints }: { routePoints: string | Array<{ lng: number; lat: number; datetime?: string }> | null }) {
   const mapRef = useRef<any>(null)
@@ -198,6 +199,8 @@ export default function AuditPage() {
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [exporting, setExporting] = useState(false)
+  const [editTripOpen, setEditTripOpen] = useState(false)
+  const [currentTripForEdit, setCurrentTripForEdit] = useState<any>(null)
   const router = useRouter()
 
   useEffect(() => {
@@ -311,7 +314,10 @@ export default function AuditPage() {
           record.trip_id?.toLowerCase().includes(query) ||
           record.ordernumber?.toLowerCase().includes(query) ||
           record.origin?.toLowerCase().includes(query) ||
-          record.destination?.toLowerCase().includes(query)
+          record.destination?.toLowerCase().includes(query) ||
+          record.driverName?.toLowerCase().includes(query) ||
+          record.vehicleReg?.toLowerCase().includes(query) ||
+          record.trailerReg?.toLowerCase().includes(query)
       )
     }
 
@@ -486,7 +492,7 @@ export default function AuditPage() {
         <CardContent className="pt-6">
           <div className="mb-4 flex flex-col gap-4 md:flex-row">
             <Input
-              placeholder="Search by trip, order, origin, or destination..."
+              placeholder="Search by trip, order, driver, vehicle, origin, or destination..."
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
               className="md:max-w-sm"
@@ -567,6 +573,24 @@ export default function AuditPage() {
                     </td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex justify-end gap-1">
+                        <SecureButton
+                          page="financials"
+                          action="edit"
+                          size="sm"
+                          variant="link"
+                          className="h-7 px-2 text-xs border"
+                          onClick={() => {
+                            setCurrentTripForEdit({
+                              ...record,
+                              id: record.trip_row_id || record.trip_id,
+                              trip_id: record.trip_id,
+                              vehicleassignments: record.vehicleassignments || record.vehicle_assignments,
+                            })
+                            setEditTripOpen(true)
+                          }}
+                        >
+                          <FileText className="h-3 w-3" /> Edit
+                        </SecureButton>
                         <Button
                           size="sm"
                           variant="outline"
@@ -657,6 +681,19 @@ export default function AuditPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <EditTripModal
+        isOpen={editTripOpen}
+        onClose={() => {
+          setEditTripOpen(false)
+          setCurrentTripForEdit(null)
+        }}
+        trip={currentTripForEdit}
+        onUpdate={() => {
+          setEditTripOpen(false)
+          setCurrentTripForEdit(null)
+        }}
+      />
     </div>
   )
 }
