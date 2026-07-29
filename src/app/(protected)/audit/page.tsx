@@ -228,7 +228,11 @@ export default function AuditPage() {
 
         const enriched = (auditData || []).map((auditRecord) => {
           const tripData = tripsData.find((trip) => trip.trip_id === auditRecord.trip_id)
-          if (!tripData) return auditRecord
+
+          const vaSource = tripData?.vehicleassignments || auditRecord.vehicleassignments || auditRecord.vehicle_assignments
+          const driverVehicle = parseVehicleAssignments(vaSource)
+
+          if (!tripData) return { ...auditRecord, ...driverVehicle }
 
           let pickupLocs: any[] = []
           let dropoffLocs: any[] = []
@@ -276,7 +280,7 @@ export default function AuditPage() {
             cargo: auditRecord.cargo || tripData.cargo,
             selectedclient: auditRecord.selectedclient || tripData.selectedclient,
             clientdetails: auditRecord.clientdetails || tripData.clientdetails,
-            ...parseVehicleAssignments(tripData.vehicleassignments),
+            ...driverVehicle,
           }
         })
 
