@@ -39,6 +39,16 @@ import { StopPointDropdown } from '@/components/ui/stop-point-dropdown'
 import { markDriversUnavailable } from '@/lib/utils/driver-availability'
 import { resolveProfileKey } from '@/lib/cost-engine'
 
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371
+  const dLat = ((lat2 - lat1) * Math.PI) / 180
+  const dLng = ((lng2 - lng1) * Math.PI) / 180
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
 
 export default function LoadPlanPage() {
   const supabase = createClient()
@@ -133,6 +143,14 @@ export default function LoadPlanPage() {
   const [rtmsRules, setRtmsRules] = useState<RTMSRuleConfig[]>(DEFAULT_RTMS_RULES.map(r => ({ ...r })))
   const [rtmsModalOpen, setRtmsModalOpen] = useState(false)
   const [proposedRtmsStops, setProposedRtmsStops] = useState<Array<RecommendedStop & { lat: number; lng: number }>>([])
+  const [proposedNearbyOptions, setProposedNearbyOptions] = useState<Array<{
+    proposedLabel: string
+    proposedKm: number
+    proposedLat: number
+    proposedLng: number
+    options: Array<{ id: number; name: string; name2: string; distanceKm: number; centroidLat: number; centroidLng: number }>
+  }>>([])
+  const [selectedNearbyStops, setSelectedNearbyStops] = useState<Record<number, { id: number; name: string } | null>>({})
   const [rtmsConfirmOpen, setRtmsConfirmOpen] = useState(false)
 
   // Weather state
@@ -756,15 +774,78 @@ export default function LoadPlanPage() {
     const result = checkRTMSCompliance({ distanceKm, durationSeconds }, rtmsRules)
     setRtmsResult(result)
 
-    // 2. Interpolate recommended stop positions (but don't auto-add to route)
+    // 2. Interpolate recommended stop positions + find nearby DB stop_points
     if (result.recommendedStops.length > 0 && route.geometry) {
       const stopsWithPositions = interpolateStopPositions(route.geometry, result.recommendedStops)
-      setProposedRtmsStops(stopsWithPositions)
-      setRtmsRecommendedStops([])
-      setRtmsConfirmOpen(true)
+
+      // Fetch stop_points from DB and find nearby matches for each suggested stop
+      const fetchNearby = async () => {
+        try {
+          const { data: allStops } = await supabase
+            .from('stop_points')
+            .select('id, name, name2, coordinates')
+
+          if (!allStops || allStops.length === 0) {
+            setProposedRtmsStops(stopsWithPositions)
+            setProposedNearbyOptions([])
+            setRtmsConfirmOpen(true)
+            return
+          }
+
+          // Parse centroids from geozone coordinates
+          const stopsWithCentroids = allStops
+            .filter(s => s.coordinates)
+            .map(s => {
+              const pairs = s.coordinates.split(' ')
+                .filter((c: string) => c.trim())
+                .map((c: string) => {
+                  const [lng, lat] = c.split(',').map(Number)
+                  return { lat, lng }
+                })
+                .filter(p => !isNaN(p.lat) && !isNaN(p.lng))
+              if (pairs.length === 0) return null
+              const centroidLat = pairs.reduce((sum, p) => sum + p.lat, 0) / pairs.length
+              const centroidLng = pairs.reduce((sum, p) => sum + p.lng, 0) / pairs.length
+              return { ...s, centroidLat, centroidLng }
+            })
+            .filter(Boolean)
+
+          // For each proposed stop, find nearest DB stop_points (within ~50km)
+          const NEARBY_RADIUS_KM = 50
+          const nearbyOptions = stopsWithPositions.map(proposed => {
+            const scored = stopsWithCentroids
+              .map(s => {
+                const d = haversineKm(proposed.lat, proposed.lng, s.centroidLat, s.centroidLng)
+                return { ...s, distanceKm: Math.round(d) }
+              })
+              .filter(s => s.distanceKm <= NEARBY_RADIUS_KM)
+              .sort((a, b) => a.distanceKm - b.distanceKm)
+              .slice(0, 5)
+            return {
+              proposedLabel: proposed.label,
+              proposedKm: proposed.kmFromOrigin,
+              proposedLat: proposed.lat,
+              proposedLng: proposed.lng,
+              options: scored,
+            }
+          })
+
+          setProposedRtmsStops(stopsWithPositions)
+          setProposedNearbyOptions(nearbyOptions)
+          setSelectedNearbyStops({})
+          setRtmsConfirmOpen(true)
+        } catch (err) {
+          console.error('Error finding nearby stops:', err)
+          setProposedRtmsStops(stopsWithPositions)
+          setProposedNearbyOptions([])
+          setSelectedNearbyStops({})
+          setRtmsConfirmOpen(true)
+        }
+      }
+      fetchNearby()
     } else {
       setProposedRtmsStops([])
-      setRtmsRecommendedStops([])
+      setProposedNearbyOptions([])
     }
 
     // 3. Weather — fetch for this route
@@ -2397,28 +2478,35 @@ export default function LoadPlanPage() {
         open={rtmsConfirmOpen}
         onOpenChange={setRtmsConfirmOpen}
         stops={proposedRtmsStops}
+        nearbyOptions={proposedNearbyOptions}
         violations={rtmsResult?.violations || []}
+        selectedStops={selectedNearbyStops}
+        onSelectStop={(index, option) => {
+          setSelectedNearbyStops(prev => ({ ...prev, [index]: option }))
+        }}
         onAccept={() => {
-          // Match against existing stop_points from DB by closest lat/lng (within 5km)
-          fetchStopPoints().then(() => {
-            setCustomStopPoints((prevCustom) => {
-              return proposedRtmsStops.map((s) => {
-                const matchedStop = stopPoints.find((sp: any) => {
-                  if (!sp?.lat || !sp?.lng) return false
-                  const dist = Math.sqrt(Math.pow(s.lat - sp.lat, 2) + Math.pow(s.lng - sp.lng, 2))
-                  return dist < 0.05
-                })
-                if (matchedStop) return matchedStop.name || matchedStop.label
-                return s.label
-              })
-            })
-            setStopPoints((prev) => proposedRtmsStops.map(() => ''))
-          })
-          setRtmsRecommendedStops(proposedRtmsStops)
+          // Add the selected stop_points to the route
+          const newStopIds: string[] = []
+          for (let i = 0; i < proposedRtmsStops.length; i++) {
+            const selected = selectedNearbyStops[i]
+            if (selected && selected.id) {
+              newStopIds.push(String(selected.id))
+            }
+          }
+          if (newStopIds.length > 0) {
+            setStopPoints(prev => [...prev, ...newStopIds])
+            // Also store the selected stop info for display
+            setRtmsRecommendedStops(proposedRtmsStops.filter((_, i) => selectedNearbyStops[i] !== null))
+          } else {
+            setRtmsRecommendedStops([])
+          }
+          setSelectedNearbyStops({})
         }}
         onDismiss={() => {
           setProposedRtmsStops([])
+          setProposedNearbyOptions([])
           setRtmsRecommendedStops([])
+          setSelectedNearbyStops({})
         }}
       />
     </div>
