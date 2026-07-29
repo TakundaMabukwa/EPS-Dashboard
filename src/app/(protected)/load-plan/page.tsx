@@ -594,7 +594,7 @@ export default function LoadPlanPage() {
   // Preview route when locations change - get route timing data
   useEffect(() => {
     const previewRoute = async () => {
-      console.log('Route preview triggered:', { loadingLocation, dropOffPoint, stopPoints, customStopPoints })
+      console.log('Route preview triggered:', { loadingLocation, dropOffPoint, stopPoints })
       if (!loadingLocation || !dropOffPoint) {
         setOptimizedRoute(null)
         return
@@ -627,7 +627,7 @@ export default function LoadPlanPage() {
         
         // Get stop points data if available
         let stopPointsData = []
-        if (stopPoints.length > 0 || customStopPoints.some(p => p)) {
+        if (stopPoints.length > 0) {
           try {
             stopPointsData = await getSelectedStopPointsData()
             console.log('Stop points data for route:', stopPointsData)
@@ -733,7 +733,7 @@ export default function LoadPlanPage() {
     // Add a small delay to prevent too frequent updates
     const timeoutId = setTimeout(previewRoute, 500)
     return () => clearTimeout(timeoutId)
-  }, [loadingLocation, dropOffPoint, stopPoints, customStopPoints, driverAssignments, isManuallyOrdered])
+  }, [loadingLocation, dropOffPoint, stopPoints, driverAssignments, isManuallyOrdered])
 
   // RTMS compliance check + weather + fuel (separate from route preview to avoid infinite loop)
   useEffect(() => {
@@ -998,10 +998,10 @@ export default function LoadPlanPage() {
 
   // Get selected stop points with coordinates including custom locations
   const getSelectedStopPointsData = useCallback(async () => {
-    console.log('getSelectedStopPointsData called with:', { stopPoints, customStopPoints, availableStopPoints: availableStopPoints.length })
+    console.log('getSelectedStopPointsData called with:', { stopPoints, availableStopPoints: availableStopPoints.length })
     
     // Ensure stop points are loaded if not already available
-    if (availableStopPoints.length === 0 && (stopPoints.length > 0 || customStopPoints.some(p => p))) {
+    if (availableStopPoints.length === 0 && stopPoints.length > 0) {
       console.log('Loading stop points from database...')
       try {
         const { data: stopPointsData, error: stopPointsError } = await supabase
@@ -1024,81 +1024,60 @@ export default function LoadPlanPage() {
     
     for (let i = 0; i < stopPoints.length; i++) {
       const pointId = stopPoints[i]
-      const customLocation = customStopPoints[i]
-      console.log(`Processing stop point ${i}:`, { pointId, customLocation })
+      if (!pointId) continue
       
-      if (customLocation) {
-        // Geocode custom location using Google
+      console.log(`Processing stop point ${i}:`, { pointId })
+      
+      // Use existing stop point - use current availableStopPoints or fetch directly
+      let point = availableStopPoints.find(p => p.id.toString() === pointId)
+      
+      // If not found in current array, fetch directly from database
+      if (!point) {
+        console.log('Stop point not found in cache, fetching from database...')
         try {
-          const googleKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_TOKEN
-          const response = await fetch(
-            `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(customLocation)}&key=${googleKey}&region=za`
-          )
-          const data = await response.json()
-          if (data.status === 'OK' && data.results?.[0]) {
-            const { lat, lng } = data.results[0].geometry.location
-            results.push({
-              id: `custom_${i}`,
-              name: customLocation,
-              coordinates: [[lng, lat]]
-            })
+          const { data: pointData, error } = await supabase
+            .from('stop_points')
+            .select('id, name, name2, coordinates')
+            .eq('id', pointId)
+            .single()
+          
+          if (!error && pointData) {
+            point = pointData
+            console.log('Fetched stop point from database:', point)
           }
+        } catch (err) {
+          console.error('Error fetching individual stop point:', err)
+        }
+      }
+      
+      console.log('Found stop point for ID', pointId, ':', point)
+      if (point?.coordinates) {
+        try {
+          const coordPairs = point.coordinates.split(' ')
+            .filter(coord => coord.trim())
+            .map(coord => {
+              const [lng, lat] = coord.split(',')
+              return [parseFloat(lng), parseFloat(lat)]
+            })
+            .filter(pair => !isNaN(pair[0]) && !isNaN(pair[1]))
+          
+          console.log('Parsed coordinates:', coordPairs)
+          results.push({
+            id: point.id,
+            name: point.name,
+            coordinates: coordPairs
+          })
         } catch (error) {
-          console.error('Error geocoding custom location:', error)
+          console.error('Error parsing coordinates:', error)
         }
-      } else if (pointId) {
-        // Use existing stop point - use current availableStopPoints or fetch directly
-        let point = availableStopPoints.find(p => p.id.toString() === pointId)
-        
-        // If not found in current array, fetch directly from database
-        if (!point) {
-          console.log('Stop point not found in cache, fetching from database...')
-          try {
-            const { data: pointData, error } = await supabase
-              .from('stop_points')
-              .select('id, name, name2, coordinates')
-              .eq('id', pointId)
-              .single()
-            
-            if (!error && pointData) {
-              point = pointData
-              console.log('Fetched stop point from database:', point)
-            }
-          } catch (err) {
-            console.error('Error fetching individual stop point:', err)
-          }
-        }
-        
-        console.log('Found stop point for ID', pointId, ':', point)
-        if (point?.coordinates) {
-          try {
-            const coordPairs = point.coordinates.split(' ')
-              .filter(coord => coord.trim())
-              .map(coord => {
-                const [lng, lat] = coord.split(',')
-                return [parseFloat(lng), parseFloat(lat)]
-              })
-              .filter(pair => !isNaN(pair[0]) && !isNaN(pair[1]))
-            
-            console.log('Parsed coordinates:', coordPairs)
-            results.push({
-              id: point.id,
-              name: point.name,
-              coordinates: coordPairs
-            })
-          } catch (error) {
-            console.error('Error parsing coordinates:', error)
-          }
-        } else {
-          console.log('No coordinates found for point:', pointId)
-          console.log('Point found but no coordinates:', point)
-        }
+      } else {
+        console.log('No coordinates found for point:', pointId)
       }
     }
     
     console.log('getSelectedStopPointsData returning:', results)
     return results
-  }, [stopPoints, customStopPoints, availableStopPoints])
+  }, [stopPoints, availableStopPoints])
 
   // Optimized handlers with useCallback
   const handleDriverChange = useCallback((driverIndex, driverId) => {
@@ -1551,9 +1530,7 @@ export default function LoadPlanPage() {
         }],
         trip_type: tripType,
         selected_stop_points: stopPoints.map((pointId, index) => {
-          if (customStopPoints[index]) {
-            return { type: 'custom', name: customStopPoints[index], id: `custom_${index}` }
-          } else if (pointId) {
+          if (pointId) {
             const point = availableStopPoints.find(p => p.id.toString() === pointId)
             return point ? { type: 'existing', ...point } : null
           }
@@ -1933,10 +1910,6 @@ export default function LoadPlanPage() {
                               updated[index] = value
                               console.log('Setting stopPoints from:', stopPoints, 'to:', updated)
                               setStopPoints(updated)
-                              const updatedCustom = [...customStopPoints]
-                              updatedCustom[index] = ''
-                              setCustomStopPoints(updatedCustom)
-                              // Force route recalculation
                               setOptimizedRoute(null)
                             }}
                             stopPoints={filteredStopPoints}
@@ -1953,36 +1926,12 @@ export default function LoadPlanPage() {
                             e.stopPropagation()
                             const updated = stopPoints.filter((_, i) => i !== index)
                             setStopPoints(updated)
-                            const updatedCustom = customStopPoints.filter((_, i) => i !== index)
-                            setCustomStopPoints(updatedCustom)
                             setIsManuallyOrdered(false)
                           }}
                         >
                           <X className="h-4 w-4" />
                         </Button>
                       </div>
-                      <div className="text-center text-xs text-gray-500">OR</div>
-                      <LocationAutocomplete
-                        label=""
-                        value={customStopPoints[index] || ''}
-                        onChange={(value) => {
-                          console.log('Custom stop point changed:', value)
-                          const updatedCustom = [...customStopPoints]
-                          while (updatedCustom.length <= index) {
-                            updatedCustom.push('')
-                          }
-                          updatedCustom[index] = value
-                          setCustomStopPoints(updatedCustom)
-                          if (value) {
-                            const updated = [...stopPoints]
-                            updated[index] = ''
-                            setStopPoints(updated)
-                          }
-                          // Force route recalculation
-                          setOptimizedRoute(null)
-                        }}
-                        placeholder="Search for custom stop location"
-                      />
                     </div>
                   ))}
                 </div>
@@ -2003,7 +1952,7 @@ export default function LoadPlanPage() {
                           origin={loadingLocation}
                           destination={dropOffPoint}
                           routeData={optimizedRoute}
-                          stopPoints={stopPoints.length > 0 || customStopPoints.some(p => p) ? 'async' : []}
+                          stopPoints={stopPoints.length > 0 ? 'async' : []}
                           getStopPointsData={getSelectedStopPointsData}
                           preserveOrder={isManuallyOrdered}
                           recommendedStops={rtmsRecommendedStops}
@@ -2414,15 +2363,12 @@ export default function LoadPlanPage() {
         isOpen={showRouteModal}
         onClose={() => setShowRouteModal(false)}
         stopPoints={stopPoints}
-        customStopPoints={customStopPoints}
         availableStopPoints={availableStopPoints}
         onReorder={(newOrder) => {
           console.log('Reordering stop points:', newOrder)
           setStopPoints(newOrder.stopPoints)
-          setCustomStopPoints(newOrder.customStopPoints)
           setIsManuallyOrdered(true)
           setShowRouteModal(false)
-          // Don't clear optimized route immediately - let the effect handle it
         }}
         onForceRecalculate={() => {
           console.log('Force recalculating route')
