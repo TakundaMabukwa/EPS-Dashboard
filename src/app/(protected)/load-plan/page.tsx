@@ -39,35 +39,6 @@ import { StopPointDropdown } from '@/components/ui/stop-point-dropdown'
 import { markDriversUnavailable } from '@/lib/utils/driver-availability'
 import { resolveProfileKey } from '@/lib/cost-engine'
 
-// Decode Google Maps encoded polyline to [lat, lng][] pairs
-function decodeGooglePolyline(encoded: string): [number, number][] {
-  const points: [number, number][] = []
-  let index = 0
-  let lat = 0
-  let lng = 0
-  while (index < encoded.length) {
-    let b: number
-    let shift = 0
-    let result = 0
-    do {
-      b = encoded.charCodeAt(index++) - 63
-      result |= (b & 0x1f) << shift
-      shift += 5
-    } while (b >= 0x20)
-    lat += (result & 1) ? ~(result >> 1) : (result >> 1)
-    shift = 0
-    result = 0
-    do {
-      b = encoded.charCodeAt(index++) - 63
-      result |= (b & 0x1f) << shift
-      shift += 5
-    } while (b >= 0x20)
-    lng += (result & 1) ? ~(result >> 1) : (result >> 1)
-    points.push([lat / 1e5, lng / 1e5])
-  }
-  return points
-}
-
 
 export default function LoadPlanPage() {
   const supabase = createClient()
@@ -631,12 +602,6 @@ export default function LoadPlanPage() {
       
       setIsOptimizing(true)
       try {
-        const googleKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_TOKEN
-        if (!googleKey) {
-          setIsOptimizing(false)
-          return
-        }
-        
         // Check if we have driver location for complete route
         const firstDriver = driverAssignments[0]
         let driverLocation = null
@@ -676,6 +641,7 @@ export default function LoadPlanPage() {
         }
         
         // Geocode loading and drop-off locations using Google
+        const googleKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_TOKEN
         const geocodeUrl = 'https://maps.googleapis.com/maps/api/geocode/json'
         const [loadingData, dropOffData] = await Promise.all([
           fetch(`${geocodeUrl}?address=${encodeURIComponent(loadingLocation)}&key=${googleKey}&region=za`).then(r => r.json()),
@@ -683,14 +649,14 @@ export default function LoadPlanPage() {
         ])
         
         if (loadingData.status === 'OK' && dropOffData.status === 'OK' && loadingData.results?.[0] && dropOffData.results?.[0]) {
-          const { lat: originLat, lng: originLng } = loadingData.results[0].geometry.location
-          const { lat: destLat, lng: destLng } = dropOffData.results[0].geometry.location
+          const origin = loadingData.results[0].geometry.location
+          const destination = dropOffData.results[0].geometry.location
           
-          // Build waypoints for Google Directions (pipe-separated, | delimiter)
-          const waypointList: string[] = []
+          // Build waypoints
+          const waypointList: { lat: number; lng: number }[] = []
           
           if (driverLocation) {
-            waypointList.push(`${driverLocation.lat},${driverLocation.lng}`)
+            waypointList.push(driverLocation)
           }
           
           if (stopPointsData.length > 0) {
@@ -698,81 +664,64 @@ export default function LoadPlanPage() {
               const coords = point.coordinates
               const avgLng = coords.reduce((sum, coord) => sum + coord[0], 0) / coords.length
               const avgLat = coords.reduce((sum, coord) => sum + coord[1], 0) / coords.length
-              return `${avgLat},${avgLng}`
-            }).filter(waypoint => waypoint && !waypoint.includes('NaN'))
+              return { lat: avgLat, lng: avgLng }
+            }).filter(wp => !isNaN(wp.lat) && !isNaN(wp.lng))
             
             waypointList.push(...stopWaypoints)
           }
           
-          const waypointsParam = waypointList.length > 0 ? `&waypoints=${waypointList.join('|')}` : ''
+          console.log('Calculating route via proxy:', { origin, destination, waypoints: waypointList })
           
-          console.log('Calculating route:', { origin: `${originLat},${originLng}`, dest: `${destLat},${destLng}`, waypoints: waypointList })
-          
-          const directionsUrl = 'https://maps.googleapis.com/maps/api/directions/json'
-          const directionsResponse = await fetch(
-            `${directionsUrl}?origin=${originLat},${originLng}&destination=${destLat},${destLng}${waypointsParam}&key=${googleKey}&mode=driving`
-          )
+          // Use server-side proxy to avoid CORS and key exposure
+          const directionsResponse = await fetch('/api/directions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ origin, destination, waypoints: waypointList }),
+          })
           
           if (!directionsResponse.ok) {
-            console.error('API request failed:', directionsResponse.status, directionsResponse.statusText)
+            const errData = await directionsResponse.json().catch(() => ({}))
+            console.error('Directions proxy failed:', directionsResponse.status, errData)
             setOptimizedRoute(null)
             return
           }
           
-          const directionsData = await directionsResponse.json()
-          console.log('Directions API response:', directionsData)
+          const routeData = await directionsResponse.json()
+          console.log('Directions proxy response:', routeData)
           
-          if (directionsData.status !== 'OK') {
-            console.error('API returned error:', directionsData)
+          if (routeData.error) {
+            console.error('Directions error:', routeData)
             setOptimizedRoute(null)
             return
           }
           
-          const googleRoute = directionsData.routes?.[0]
-          if (googleRoute) {
-            // Sum distance and duration across all legs
-            let totalDistanceM = 0
-            let totalDurationS = 0
-            for (const leg of googleRoute.legs || []) {
-              totalDistanceM += leg.distance?.value || 0
-              totalDurationS += leg.duration?.value || 0
-            }
-            
-            const numStops = stopPointsData.length
-            const totalDurationHours = totalDurationS / 3600
-            const stopDelayHours = numStops * 1
-            const totalHours = totalDurationHours + stopDelayHours
-            const calculatedDays = Math.ceil(totalHours / 10)
-            setStopsCount(numStops)
-            setTripDays((prev) => Math.max(prev, calculatedDays || 1))
-            
-            // Build a geometry object compatible with the rest of the app
-            // Google returns overview_polyline; decode it for geometry
-            const geometry = {
-              type: 'LineString' as const,
-              coordinates: decodeGooglePolyline(googleRoute.overview_polyline?.points || '').map(([lat, lng]) => [lng, lat])
-            }
-            
-            const routeInfo = {
-              route: {
-                distance: totalDistanceM,
-                duration: totalDurationS,
-                geometry: geometry,
-                legs: googleRoute.legs,
-                summary: googleRoute.summary,
-              },
-              distance: totalDistanceM,
-              duration: totalDurationS,
-              hasDriverLocation: !!driverLocation,
-              stopPoints: stopPointsData,
-              geometry: geometry
-            }
-            console.log('Setting optimized route:', routeInfo)
-            setOptimizedRoute(routeInfo)
-          } else {
-            console.error('No routes found:', directionsData)
-            setOptimizedRoute(null)
+          const numStops = stopPointsData.length
+          const totalDurationHours = routeData.duration / 3600
+          const stopDelayHours = numStops * 1
+          const totalHours = totalDurationHours + stopDelayHours
+          const calculatedDays = Math.ceil(totalHours / 10)
+          setStopsCount(numStops)
+          setTripDays((prev) => Math.max(prev, calculatedDays || 1))
+          
+          const routeInfo = {
+            route: {
+              distance: routeData.distance,
+              duration: routeData.duration,
+              geometry: routeData.geometry,
+              summary: routeData.summary,
+              legs: routeData.legs,
+            },
+            distance: routeData.distance,
+            duration: routeData.duration,
+            hasDriverLocation: !!driverLocation,
+            stopPoints: stopPointsData,
+            geometry: routeData.geometry,
           }
+          console.log('Setting optimized route:', routeInfo)
+          setOptimizedRoute(routeInfo)
+        } else {
+          console.error('Could not geocode locations')
+          setOptimizedRoute(null)
         }
       } catch (error) {
         console.error('Route preview failed:', error)
@@ -939,15 +888,17 @@ export default function LoadPlanPage() {
         
         console.log('Origin coords:', originLoc, 'Dest coords:', destLoc)
         
-        const directionsUrl = 'https://maps.googleapis.com/maps/api/directions/json'
-        const directionsResponse = await fetch(
-          `${directionsUrl}?origin=${originLoc.lat},${originLoc.lng}&destination=${destLoc.lat},${destLoc.lng}&key=${googleKey}&mode=driving`
-        )
+        // Use server-side proxy
+        const directionsResponse = await fetch('/api/directions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ origin: originLoc, destination: destLoc }),
+        })
         const data = await directionsResponse.json()
-        console.log('Google Directions response:', data)
+        console.log('Directions proxy response:', data)
         
-        if (data.status === 'OK' && data.routes?.[0]?.legs?.[0]?.distance?.value) {
-          const distanceKm = Math.round(data.routes[0].legs[0].distance.value / 1000)
+        if (data.distance) {
+          const distanceKm = Math.round(data.distance / 1000)
           console.log('Distance calculated:', distanceKm, 'km')
           setEstimatedDistance(distanceKm)
         } else {
