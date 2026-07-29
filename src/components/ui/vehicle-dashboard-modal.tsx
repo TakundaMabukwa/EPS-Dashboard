@@ -382,6 +382,9 @@ function DashboardContent({
   const company = String(liveVehicleData?.company ?? "").trim()
   const costCode = String(liveVehicleData?.cost_code ?? "").trim()
   const currentStatus = String(liveVehicleData?.current_status ?? liveVehicleData?.status ?? "").trim()
+  const ipAddress = String(liveVehicleData?.IPAddress ?? liveVehicleData?.ip_address ?? "").trim()
+  const quality = String(liveVehicleData?.Quality ?? "").trim()
+  const dataId = liveVehicleData?.Id ?? null
   const truck = liveVehicleData?.plate || vehicleLocation?.plate || vehicleInfo?.registration_number || "TRUCK"
   const liveDriverName = String(liveVehicleData?.DriverName || fuelData?.driverName || "").trim()
   const driver =
