@@ -134,6 +134,22 @@ const getClientName = (record: any) => {
   }
 }
 
+const parseVehicleAssignments = (va: any): { driverName: string; vehicleReg: string; trailerReg: string } => {
+  if (!va) return { driverName: '', vehicleReg: '', trailerReg: '' }
+  try {
+    const arr = typeof va === 'string' ? JSON.parse(va) : va
+    if (!Array.isArray(arr) || arr.length === 0) return { driverName: '', vehicleReg: '', trailerReg: '' }
+    const first = arr[0]
+    const driver = first.drivers?.[0]
+    const driverName = driver ? `${driver.first_name || ''} ${driver.surname || ''}`.trim() : ''
+    const vehicleReg = first.vehicle?.name || ''
+    const trailerReg = first.trailer?.name || ''
+    return { driverName, vehicleReg, trailerReg }
+  } catch {
+    return { driverName: '', vehicleReg: '', trailerReg: '' }
+  }
+}
+
 const formatDateTime = (value: unknown) => {
   if (!value) return 'N/A'
   const date = new Date(String(value))
@@ -203,7 +219,7 @@ export default function AuditPage() {
           const { data: trips } = await supabase
             .from('trips')
             .select(
-              'id, trip_id, rate, approximate_fuel_cost, approximated_vehicle_cost, approximated_driver_cost, total_vehicle_cost, estimated_distance, fuel_cost_total, fuel_used_liters, fuel_liters_per_km, origin, destination, cargo, selectedclient, clientdetails, pickuplocations, dropofflocations, fuel_price_per_liter, actual_start_time, actual_end_time'
+              'id, trip_id, rate, approximate_fuel_cost, approximated_vehicle_cost, approximated_driver_cost, total_vehicle_cost, estimated_distance, fuel_cost_total, fuel_used_liters, fuel_liters_per_km, origin, destination, cargo, selectedclient, clientdetails, pickuplocations, dropofflocations, fuel_price_per_liter, actual_start_time, actual_end_time, vehicleassignments'
             )
             .in('trip_id', tripIds)
 
@@ -260,6 +276,7 @@ export default function AuditPage() {
             cargo: auditRecord.cargo || tripData.cargo,
             selectedclient: auditRecord.selectedclient || tripData.selectedclient,
             clientdetails: auditRecord.clientdetails || tripData.clientdetails,
+            ...parseVehicleAssignments(tripData.vehicleassignments),
           }
         })
 
@@ -513,6 +530,8 @@ export default function AuditPage() {
                 <tr>
                   <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">Trip</th>
                   <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">Client</th>
+                  <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">Driver</th>
+                  <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">Vehicle</th>
                   <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">Cargo</th>
                   <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">Actions</th>
                 </tr>
@@ -530,6 +549,11 @@ export default function AuditPage() {
                       </div>
                     </td>
                     <td className="px-3 py-2 text-sm text-slate-700">{getClientName(record)}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700">{record.driverName || '—'}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700">
+                      <div>{record.vehicleReg || '—'}</div>
+                      {record.trailerReg && <div className="text-xs text-slate-500">{record.trailerReg}</div>}
+                    </td>
                     <td className="px-3 py-2 text-sm text-slate-700">{record.cargo || 'N/A'}</td>
                     <td className="px-3 py-2 text-sm text-slate-700">
                       <div className="max-w-xs">

@@ -17,7 +17,6 @@ export default function AuditTripDetailPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<any>(null)
-  const [driver, setDriver] = useState<any>(null)
   const [error, setError] = useState('')
   const [tab, setTab] = useState<'planned' | 'actual'>('planned')
 
@@ -29,12 +28,6 @@ export default function AuditTripDetailPage() {
         const tripJson = await tripRes.json()
         if (!tripJson.ok) throw new Error(tripJson.error || 'Failed to load')
         setData(tripJson.data)
-
-        try {
-          const driverRes = await fetch(`/api/trip/${tripJson.data.id}/driver`)
-          const driverJson = await driverRes.json()
-          if (driverJson.ok && driverJson.data) setDriver(driverJson.data)
-        } catch {}
       } catch (e: any) {
         setError(e.message || 'Failed to load trip')
       } finally {
@@ -43,6 +36,26 @@ export default function AuditTripDetailPage() {
     }
     load()
   }, [params.id])
+
+  // Extract driver/vehicle from vehicleassignments
+  let driverName = ''
+  let driverCode = ''
+  let vehicleReg = ''
+  let trailerReg = ''
+  try {
+    const va = data?.vehicleassignments
+    const arr = typeof va === 'string' ? JSON.parse(va) : va
+    if (Array.isArray(arr) && arr.length > 0) {
+      const first = arr[0]
+      const drv = first.drivers?.[0]
+      if (drv) {
+        driverName = [drv.first_name, drv.surname].filter(Boolean).join(' ') || drv.name || ''
+        driverCode = drv.id || ''
+      }
+      vehicleReg = first.vehicle?.name || ''
+      trailerReg = first.trailer?.name || ''
+    }
+  } catch {}
 
   if (loading) return <div className="flex min-h-screen items-center justify-center text-lg text-gray-500">Loading trip financials...</div>
   if (error) return <div className="flex min-h-screen items-center justify-center text-lg text-red-500">{error}</div>
@@ -84,14 +97,23 @@ export default function AuditTripDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {driver && (
+          {driverName && (
             <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5">
               <div className="w-7 h-7 rounded-full bg-[#001e42] flex items-center justify-center">
                 <User className="w-3.5 h-3.5 text-white" />
               </div>
               <div>
-                <p className="text-xs font-bold text-[#001e42]">{driver.full_name}</p>
-                {driver.driver_code && <p className="text-[9px] text-gray-500">{driver.driver_code}</p>}
+                <p className="text-xs font-bold text-[#001e42]">{driverName}</p>
+                {vehicleReg && <p className="text-[9px] text-gray-500">{vehicleReg}</p>}
+              </div>
+            </div>
+          )}
+          {vehicleReg && (
+            <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5">
+              <Truck className="h-4 w-4 text-gray-400" />
+              <div>
+                <p className="text-xs font-bold text-gray-900">{vehicleReg}</p>
+                {trailerReg && <p className="text-[9px] text-gray-500">Trailer: {trailerReg}</p>}
               </div>
             </div>
           )}
@@ -161,32 +183,53 @@ export default function AuditTripDetailPage() {
         <div className="rounded-xl border border-gray-200 bg-white p-4">
           <div className="mb-3 flex items-center gap-2">
             <Users className="h-4 w-4 text-gray-500" />
-            <span className="text-sm font-medium text-gray-700">Driver</span>
+            <span className="text-sm font-medium text-gray-700">Driver & Vehicle</span>
           </div>
-          {driver ? (
+          {driverName ? (
             <>
-              <div className="mb-3">
-                <span className="text-2xl font-bold text-gray-900">{driver.full_name || 'Unknown'}</span>
+              <div className="mb-2">
+                <span className="text-lg font-bold text-gray-900">{driverName}</span>
               </div>
               <div className="space-y-1.5">
-                {driver.phone_number && (
+                {driverCode && (
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500">Phone</span>
-                    <span className="text-xs font-semibold text-gray-900">{driver.phone_number}</span>
+                    <span className="text-xs text-gray-500">Driver ID</span>
+                    <span className="text-xs font-semibold text-gray-900">{driverCode}</span>
                   </div>
                 )}
-                {driver.driver_code && (
+                {vehicleReg && (
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500">Code</span>
-                    <span className="text-xs font-semibold text-gray-900">{driver.driver_code}</span>
+                    <span className="text-xs text-gray-500">Horse</span>
+                    <span className="text-xs font-semibold text-gray-900">{vehicleReg}</span>
+                  </div>
+                )}
+                {trailerReg && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500">Trailer</span>
+                    <span className="text-xs font-semibold text-gray-900">{trailerReg}</span>
                   </div>
                 )}
               </div>
             </>
+          ) : vehicleReg ? (
+            <div className="space-y-1.5">
+              {vehicleReg && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-500">Horse</span>
+                  <span className="text-xs font-semibold text-gray-900">{vehicleReg}</span>
+                </div>
+              )}
+              {trailerReg && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-500">Trailer</span>
+                  <span className="text-xs font-semibold text-gray-900">{trailerReg}</span>
+                </div>
+              )}
+            </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-4">
               <span className="text-2xl font-bold text-gray-400">—</span>
-              <span className="text-xs text-gray-400 mt-1">No driver assigned</span>
+              <span className="text-xs text-gray-400 mt-1">No assignment</span>
             </div>
           )}
         </div>

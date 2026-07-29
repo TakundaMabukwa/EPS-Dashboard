@@ -177,6 +177,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tri
         rate: trip.selling_rate_per_km || trip.rate, startDate: trip.startdate || trip.start_date,
         endDate: trip.end_date || trip.enddate,
         vehicleType: trip.selected_vehicle_type || '', driver: trip.driver,
+        vehicleassignments: trip.vehicleassignments,
         estimatedDuration: Number(trip.estimated_duration) || 0,
         planned,
         actual,
