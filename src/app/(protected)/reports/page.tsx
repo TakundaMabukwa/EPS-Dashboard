@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -84,14 +84,13 @@ const BLUE = '#4472C4'
 const fmt = (n: number) => n?.toLocaleString('en-ZA', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) || '0'
 const fmtR = (n: number) => `R${fmt(n)}`
 
-async function fetchAll(supabase: any, table: string, filter?: (q: any) => any) {
-  let query = supabase.from(table).select('*')
+async function fetchAll(supabase: any, table: string, filter?: (q: any) => any, columns = '*') {
+  let query = supabase.from(table).select(columns)
   if (filter) query = filter(query)
-  const { count } = await query.then((r: any) => r, () => ({ count: 0 }))
   const PAGE = 1000
   let all: any[] = []
   for (let from = 0; ; from += PAGE) {
-    let q = supabase.from(table).select('*').range(from, from + PAGE - 1)
+    let q = supabase.from(table).select(columns).range(from, from + PAGE - 1)
     if (filter) q = filter(q)
     const { data } = await q
     if (!data || data.length === 0) break
@@ -253,6 +252,8 @@ function DataTab() {
 }
 
 /* ─── EXECUTIVE TAB ─── */
+const EXEC_COLUMNS = 'month,month_yr,dr_name,cr_name,dr_value,cr_value,profit,subbie2,commodity'
+
 function ExecTab() {
   const supabase = createClient()
   const [allRows, setAllRows] = useState<any[]>([])
@@ -260,10 +261,30 @@ function ExecTab() {
   const [commodityFilter, setCommodityFilter] = useState<string[]>([])
   const [monthFilter, setMonthFilter] = useState('all')
   const [drillDown, setDrillDown] = useState<{ title: string; headers: string[]; rows: any[][]; totals?: any[] } | null>(null)
+  const [drillLoading, setDrillLoading] = useState(false)
+  const allRawRowsRef = useRef<any[] | null>(null)
+
+  const ensureRawRows = async () => {
+    if (allRawRowsRef.current) return allRawRowsRef.current
+    const data = await fetchAll(supabase, 'loadschedule')
+    allRawRowsRef.current = data
+    return data
+  }
+
+  const openDrillDown = async (title: string, filterFn: (r: any) => boolean, headers: string[], mapRow: (r: any) => any[], totalsFn?: (rows: any[][]) => any[]) => {
+    setDrillDown({ title, headers, rows: [], totals: undefined })
+    setDrillLoading(true)
+    const rawRows = await ensureRawRows()
+    setDrillLoading(false)
+    const filtered = rawRows.filter(filterFn)
+    const rows = filtered.map(mapRow)
+    const totals = totalsFn ? totalsFn(rows) : undefined
+    setDrillDown({ title, headers, rows, totals })
+  }
 
   useEffect(() => {
     async function load() {
-      const data = await fetchAll(supabase, 'loadschedule')
+      const data = await fetchAll(supabase, 'loadschedule', undefined, EXEC_COLUMNS)
       setAllRows(data)
       setLoading(false)
     }
@@ -282,12 +303,6 @@ function ExecTab() {
     return [...s].sort((a, b) => MONTH_ORDER.indexOf(a) - MONTH_ORDER.indexOf(b))
   }, [allRows])
 
-  const monthYrs = useMemo(() => {
-    const s = new Set<string>()
-    allRows.forEach(r => { if (r.month_yr) s.add(r.month_yr) })
-    return [...s].sort()
-  }, [allRows])
-
   const filterByCommodity = (rows: any[], selected: string[]) => {
     if (selected.length === 0) return rows
     return rows.filter(r => selected.includes(r.commodity))
@@ -295,8 +310,12 @@ function ExecTab() {
 
   const monthRows = useMemo(() => {
     if (monthFilter === 'all') return allRows
-    return allRows.filter(r => r.month === monthFilter || r.month_yr === monthFilter)
+    return allRows.filter(r => r.month === monthFilter)
   }, [allRows, monthFilter])
+
+  const allFiltered = useMemo(() => filterByCommodity(allRows, commodityFilter), [allRows, commodityFilter])
+  const monthFiltered = useMemo(() => filterByCommodity(monthRows, commodityFilter), [monthRows, commodityFilter])
+
 
   const allFiltered = useMemo(() => filterByCommodity(allRows, commodityFilter), [allRows, commodityFilter])
   const monthFiltered = useMemo(() => filterByCommodity(monthRows, commodityFilter), [monthRows, commodityFilter])
@@ -400,10 +419,14 @@ function ExecTab() {
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
-            const headers = ['Month', 'Revenue']
-            const rows = revenueByMonth.map(r => [r.month, fmtR(r.value)])
-            const totals = ['Grand Total', fmtR(revenueByMonth.reduce((s, r) => s + r.value, 0))]
-            setDrillDown({ title: 'Broker Revenue YTD', headers, rows, totals })
+            const cf = commodityFilter
+            openDrillDown(
+              'Broker Revenue YTD',
+              r => (cf.length === 0 || cf.includes(r.commodity)),
+              ['Load Nr', 'Client', 'Month', 'Revenue'],
+              r => [r.load_nr, r.dr_name, r.month, fmtR(r.dr_value)],
+              rows => ['Grand Total', '', '', fmtR(rows.reduce((s, r) => s + (Number(String(r[3]).replace(/[R,]/g, '')) || 0), 0))]
+            )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Broker Revenue YTD 2026</CardTitle></CardHeader>
@@ -425,10 +448,14 @@ function ExecTab() {
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
-            const headers = ['Month', 'Profit']
-            const rows = profitByMonth.map(r => [r.month, fmtR(r.value)])
-            const totals = ['Grand Total', fmtR(profitByMonth.reduce((s, r) => s + r.value, 0))]
-            setDrillDown({ title: 'Broker Profit by Month', headers, rows, totals })
+            const cf = commodityFilter
+            openDrillDown(
+              'Broker Profit by Month',
+              r => (cf.length === 0 || cf.includes(r.commodity)),
+              ['Load Nr', 'Client', 'Month', 'Revenue', 'Cost', 'Profit'],
+              r => [r.load_nr, r.dr_name, r.month, fmtR(r.dr_value), fmtR(r.cr_value), fmtR(r.profit)],
+              rows => ['Grand Total', '', '', '', '', fmtR(rows.reduce((s, r) => s + (Number(String(r[5]).replace(/[R,]/g, '')) || 0), 0))]
+            )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Broker Profit per Month 2026</CardTitle></CardHeader>
@@ -453,10 +480,14 @@ function ExecTab() {
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
-            const headers = ['Month', 'Load Count']
-            const rows = loadCountByMonth.map(r => [r.month, String(r.count)])
-            const totals = ['Grand Total', String(loadCountByMonth.reduce((s, r) => s + r.count, 0))]
-            setDrillDown({ title: 'Brokerage Load Count per Month', headers, rows, totals })
+            const cf = commodityFilter
+            openDrillDown(
+              'Brokerage Load Count per Month',
+              r => (cf.length === 0 || cf.includes(r.commodity)),
+              ['Load Nr', 'Client', 'Month', 'Commodity'],
+              r => [r.load_nr, r.dr_name, r.month, r.commodity],
+              rows => ['Grand Total', '', `${rows.length} loads`, '']
+            )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Brokerage Load Count per Month 2026</CardTitle></CardHeader>
@@ -478,10 +509,15 @@ function ExecTab() {
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
-            const headers = ['Transporter', 'Revenue', 'Loads']
-            const rows = transporterData.map(r => [r.name, fmtR(r.crValue), String(r.count)])
-            const totals = ['Grand Total', fmtR(transporterData.reduce((s, r) => s + r.crValue, 0)), String(transporterData.reduce((s, r) => s + r.count, 0))]
-            setDrillDown({ title: 'Transporter Revenue Distribution (Top 15)', headers, rows, totals })
+            const mf = monthFilter
+            const cf = commodityFilter
+            openDrillDown(
+              'Transporter Revenue Distribution',
+              r => (mf === 'all' || r.month === mf) && (cf.length === 0 || cf.includes(r.commodity)),
+              ['Load Nr', 'Transporter', 'Revenue'],
+              r => [r.load_nr, r.cr_name, fmtR(r.cr_value)],
+              rows => ['Grand Total', '', fmtR(rows.reduce((s, r) => s + (Number(String(r[2]).replace(/[R,]/g, '')) || 0), 0))]
+            )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Transporter Revenue Distribution</CardTitle></CardHeader>
@@ -506,12 +542,15 @@ function ExecTab() {
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
-            const headers = ['Client', 'Revenue', 'Loads', 'Avg p.Load']
-            const rows = topClientData.map(r => [r.name, fmtR(r.drValue), String(r.count), fmtR(r.avg)])
-            const totDr = topClientData.reduce((s, r) => s + r.drValue, 0)
-            const totCt = topClientData.reduce((s, r) => s + r.count, 0)
-            const totals = ['Grand Total', fmtR(totDr), String(totCt), fmtR(totCt > 0 ? Math.round(totDr / totCt) : 0)]
-            setDrillDown({ title: 'Top Clients - Own EPS Trucks', headers, rows, totals })
+            const mf = monthFilter
+            const cf = commodityFilter
+            openDrillDown(
+              'Top Clients - Own EPS Trucks',
+              r => r.subbie2 === 'EPS' && (mf === 'all' || r.month_yr === mf) && (cf.length === 0 || cf.includes(r.commodity)),
+              ['Load Nr', 'Client', 'Month', 'Revenue'],
+              r => [r.load_nr, r.dr_name, r.month || r.month_yr, fmtR(r.dr_value)],
+              rows => ['Grand Total', '', '', fmtR(rows.reduce((s, r) => s + (Number(String(r[3]).replace(/[R,]/g, '')) || 0), 0))]
+            )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Top Clients - Own EPS Trucks (YTD 2026)</CardTitle></CardHeader>
@@ -534,12 +573,14 @@ function ExecTab() {
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
-            const headers = ['Month', 'Revenue', 'Fleet Count', 'Avg p.Load']
-            const rows = openNetworkData.map(r => [r.month, fmtR(r.revenue), String(r.fleetCount), fmtR(r.avg)])
-            const totRev = openNetworkData.reduce((s, r) => s + r.revenue, 0)
-            const totFl = openNetworkData.reduce((s, r) => s + r.fleetCount, 0)
-            const totals = ['Grand Total', fmtR(totRev), String(totFl), fmtR(totFl > 0 ? Math.round(totRev / totFl) : 0)]
-            setDrillDown({ title: 'Open Network Monthly Revenue', headers, rows, totals })
+            const cf = commodityFilter
+            openDrillDown(
+              'Open Network Monthly Revenue',
+              r => (cf.length === 0 || cf.includes(r.commodity)),
+              ['Load Nr', 'Client', 'Month', 'Revenue'],
+              r => [r.load_nr, r.dr_name, r.month, fmtR(r.dr_value)],
+              rows => ['Grand Total', '', '', fmtR(rows.reduce((s, r) => s + (Number(String(r[3]).replace(/[R,]/g, '')) || 0), 0))]
+            )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Open Network Monthly Revenue 2026</CardTitle></CardHeader>
@@ -570,7 +611,17 @@ function ExecTab() {
           </DialogHeader>
           {drillDown && (
             <div className="overflow-auto flex-1">
-              <Table>
+              {drillLoading ? (
+                <div className="flex items-center justify-center py-12 text-slate-500 text-sm">
+                  <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600" />
+                  Loading full data...
+                </div>
+              ) : drillDown.rows.length === 0 ? (
+                <div className="text-center py-8 text-sm text-slate-400">No data found for this filter.</div>
+              ) : (
+                <>
+                  <div className="mb-2 text-xs text-slate-500">{drillDown.rows.length} records</div>
+                  <Table>
                 <TableHeader>
                   <TableRow className="bg-slate-200">
                     {drillDown.headers.map((h, i) => (
@@ -595,6 +646,8 @@ function ExecTab() {
                   )}
                 </TableBody>
               </Table>
+                </>
+              )}
             </div>
           )}
         </DialogContent>
