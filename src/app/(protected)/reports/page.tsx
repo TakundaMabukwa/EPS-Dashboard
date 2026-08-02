@@ -11,6 +11,7 @@ import { createClient } from '@/lib/supabase/client'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList, Line, ComposedChart } from 'recharts'
 import { Search, Check, ChevronDown, X } from 'lucide-react'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 
 /* ─── Multi-Select Commodity Filter ─── */
 function CommodityFilter({ commodities, selected, onChange, label }: { commodities: string[], selected: string[], onChange: (v: string[]) => void, label?: string }) {
@@ -104,12 +105,14 @@ export default function ReportsPage() {
   return (
     <div className="p-4 space-y-4">
       <h1 className="text-2xl font-bold tracking-tight">Reports</h1>
-      <Tabs defaultValue="data">
+      <Tabs defaultValue="exec">
         <TabsList>
+          <TabsTrigger value="exec">EXEC</TabsTrigger>
           <TabsTrigger value="data">DATA</TabsTrigger>
           <TabsTrigger value="subbie">SUBBIE</TabsTrigger>
           <TabsTrigger value="topclient">TOP CLIENT</TabsTrigger>
         </TabsList>
+        <TabsContent value="exec"><ExecTab /></TabsContent>
         <TabsContent value="data"><DataTab /></TabsContent>
         <TabsContent value="subbie"><SubbieTab /></TabsContent>
         <TabsContent value="topclient"><TopClientTab /></TabsContent>
@@ -245,6 +248,357 @@ function DataTab() {
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+/* ─── EXECUTIVE TAB ─── */
+function ExecTab() {
+  const supabase = createClient()
+  const [allRows, setAllRows] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [commodityFilter, setCommodityFilter] = useState<string[]>([])
+  const [monthFilter, setMonthFilter] = useState('all')
+  const [drillDown, setDrillDown] = useState<{ title: string; headers: string[]; rows: any[][]; totals?: any[] } | null>(null)
+
+  useEffect(() => {
+    async function load() {
+      const data = await fetchAll(supabase, 'loadschedule')
+      setAllRows(data)
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  const allCommodities = useMemo(() => {
+    const s = new Set<string>()
+    allRows.forEach(r => { if (r.commodity) s.add(r.commodity) })
+    return [...s].sort()
+  }, [allRows])
+
+  const months = useMemo(() => {
+    const s = new Set<string>()
+    allRows.forEach(r => { if (r.month) s.add(r.month) })
+    return [...s].sort((a, b) => MONTH_ORDER.indexOf(a) - MONTH_ORDER.indexOf(b))
+  }, [allRows])
+
+  const monthYrs = useMemo(() => {
+    const s = new Set<string>()
+    allRows.forEach(r => { if (r.month_yr) s.add(r.month_yr) })
+    return [...s].sort()
+  }, [allRows])
+
+  const filterByCommodity = (rows: any[], selected: string[]) => {
+    if (selected.length === 0) return rows
+    return rows.filter(r => selected.includes(r.commodity))
+  }
+
+  const monthRows = useMemo(() => {
+    if (monthFilter === 'all') return allRows
+    return allRows.filter(r => r.month === monthFilter || r.month_yr === monthFilter)
+  }, [allRows, monthFilter])
+
+  const allFiltered = useMemo(() => filterByCommodity(allRows, commodityFilter), [allRows, commodityFilter])
+  const monthFiltered = useMemo(() => filterByCommodity(monthRows, commodityFilter), [monthRows, commodityFilter])
+
+  // ── Chart 1: Broker Revenue YTD ──
+  const revenueByMonth = useMemo(() => {
+    const map = new Map<string, number>()
+    allFiltered.forEach(r => {
+      const m = r.month || 'Unknown'
+      map.set(m, (map.get(m) || 0) + (r.dr_value || 0))
+    })
+    return MONTH_ORDER.filter(m => map.has(m)).map(m => ({ month: m, value: Math.round(map.get(m) || 0) }))
+  }, [allFiltered])
+
+  // ── Chart 2: Broker Profit by Month ──
+  const profitByMonth = useMemo(() => {
+    const map = new Map<string, number>()
+    allFiltered.forEach(r => {
+      const m = r.month || 'Unknown'
+      map.set(m, (map.get(m) || 0) + (r.profit || 0))
+    })
+    return MONTH_ORDER.filter(m => map.has(m)).map(m => ({ month: m, value: Math.round(map.get(m) || 0) }))
+  }, [allFiltered])
+
+  // ── Chart 3: Load Count by Month ──
+  const loadCountByMonth = useMemo(() => {
+    const map = new Map<string, number>()
+    allFiltered.forEach(r => {
+      const m = r.month || 'Unknown'
+      map.set(m, (map.get(m) || 0) + 1)
+    })
+    return MONTH_ORDER.filter(m => map.has(m)).map(m => ({ month: m, count: map.get(m) || 0 }))
+  }, [allFiltered])
+
+  // ── Chart 4: Transporter Revenue (Top 15) ──
+  const transporterData = useMemo(() => {
+    const map = new Map<string, { crValue: number; count: number }>()
+    monthFiltered.forEach(r => {
+      const key = r.cr_name || 'Unknown'
+      const existing = map.get(key) || { crValue: 0, count: 0 }
+      existing.crValue += r.cr_value || 0
+      existing.count += 1
+      map.set(key, existing)
+    })
+    return [...map.entries()]
+      .map(([name, v]) => ({ name, ...v }))
+      .sort((a, b) => b.crValue - a.crValue)
+      .slice(0, 15)
+  }, [monthFiltered])
+
+  // ── Chart 5: Top Clients EPS ──
+  const epsRows = useMemo(() => allFiltered.filter(r => r.subbie2 === 'EPS'), [allFiltered])
+  const topClientData = useMemo(() => {
+    const map = new Map<string, { drValue: number; count: number }>()
+    epsRows.forEach(r => {
+      const key = r.dr_name || 'Unknown'
+      const existing = map.get(key) || { drValue: 0, count: 0 }
+      existing.drValue += r.dr_value || 0
+      existing.count += 1
+      map.set(key, existing)
+    })
+    return [...map.entries()]
+      .map(([name, v]) => ({ name, ...v, avg: v.count > 0 ? Math.round(v.drValue / v.count) : 0 }))
+      .sort((a, b) => b.drValue - a.drValue)
+      .slice(0, 20)
+  }, [epsRows])
+
+  // ── Chart 6: Open Network Monthly Revenue ──
+  const openNetworkData = useMemo(() => {
+    const map = new Map<string, { revenue: number; fleetCount: number }>()
+    allFiltered.forEach(r => {
+      const m = r.month || 'Unknown'
+      if (!map.has(m)) map.set(m, { revenue: 0, fleetCount: 0 })
+      map.get(m)!.revenue += r.dr_value || 0
+      map.get(m)!.fleetCount += 1
+    })
+    return MONTH_ORDER.filter(m => map.has(m)).map(m => {
+      const v = map.get(m)!
+      return { month: m, revenue: Math.round(v.revenue), fleetCount: v.fleetCount, avg: Math.round(v.revenue / v.fleetCount) }
+    })
+  }, [allFiltered])
+
+  if (loading) return <div className="text-center py-12 text-slate-500">Loading executive data...</div>
+
+  return (
+    <div className="space-y-6 mt-4">
+      {/* Filters */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <Select value={monthFilter} onValueChange={setMonthFilter}>
+          <SelectTrigger className="w-36"><SelectValue placeholder="Month" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Months</SelectItem>
+            {months.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <CommodityFilter commodities={allCommodities} selected={commodityFilter} onChange={setCommodityFilter} />
+      </div>
+
+      {/* ROW 1: Revenue YTD + Profit by Month */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => {
+            const headers = ['Month', 'Revenue']
+            const rows = revenueByMonth.map(r => [r.month, fmtR(r.value)])
+            const totals = ['Grand Total', fmtR(revenueByMonth.reduce((s, r) => s + r.value, 0))]
+            setDrillDown({ title: 'Broker Revenue YTD', headers, rows, totals })
+          }}
+        >
+          <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Broker Revenue YTD 2026</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={revenueByMonth} margin={{ top: 20, right: 10, left: 10, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000000).toFixed(0)}M`} />
+                <Tooltip formatter={(v: number) => fmtR(v)} />
+                <Bar dataKey="value" fill={BLUE} barSize={40}>
+                  <LabelList dataKey="value" position="top" formatter={(v: number) => fmt(v)} style={{ fontSize: 9 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => {
+            const headers = ['Month', 'Profit']
+            const rows = profitByMonth.map(r => [r.month, fmtR(r.value)])
+            const totals = ['Grand Total', fmtR(profitByMonth.reduce((s, r) => s + r.value, 0))]
+            setDrillDown({ title: 'Broker Profit by Month', headers, rows, totals })
+          }}
+        >
+          <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Broker Profit per Month 2026</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={profitByMonth} margin={{ top: 20, right: 10, left: 10, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000).toFixed(0)}K`} />
+                <Tooltip formatter={(v: number) => fmtR(v)} />
+                <Bar dataKey="value" fill={BLUE} barSize={40}>
+                  <LabelList dataKey="value" position="top" formatter={(v: number) => fmtR(v)} style={{ fontSize: 9 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ROW 2: Load Count + Transporter Distribution */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => {
+            const headers = ['Month', 'Load Count']
+            const rows = loadCountByMonth.map(r => [r.month, String(r.count)])
+            const totals = ['Grand Total', String(loadCountByMonth.reduce((s, r) => s + r.count, 0))]
+            setDrillDown({ title: 'Brokerage Load Count per Month', headers, rows, totals })
+          }}
+        >
+          <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Brokerage Load Count per Month 2026</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={loadCountByMonth} margin={{ top: 20, right: 10, left: 10, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} />
+                <Tooltip />
+                <Bar dataKey="count" fill={BLUE} barSize={40}>
+                  <LabelList dataKey="count" position="top" style={{ fontSize: 9 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => {
+            const headers = ['Transporter', 'Revenue', 'Loads']
+            const rows = transporterData.map(r => [r.name, fmtR(r.crValue), String(r.count)])
+            const totals = ['Grand Total', fmtR(transporterData.reduce((s, r) => s + r.crValue, 0)), String(transporterData.reduce((s, r) => s + r.count, 0))]
+            setDrillDown({ title: 'Transporter Revenue Distribution (Top 15)', headers, rows, totals })
+          }}
+        >
+          <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Transporter Revenue Distribution</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={transporterData} layout="vertical" margin={{ left: 150, right: 20, top: 5, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000).toFixed(0)}K`} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={150} />
+                <Tooltip formatter={(v: number) => fmtR(v)} />
+                <Bar dataKey="crValue" fill={BLUE} barSize={12}>
+                  <LabelList dataKey="crValue" position="right" formatter={(v: number) => fmtR(v)} style={{ fontSize: 9 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ROW 3: Top Clients EPS + Open Network Revenue */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => {
+            const headers = ['Client', 'Revenue', 'Loads', 'Avg p.Load']
+            const rows = topClientData.map(r => [r.name, fmtR(r.drValue), String(r.count), fmtR(r.avg)])
+            const totDr = topClientData.reduce((s, r) => s + r.drValue, 0)
+            const totCt = topClientData.reduce((s, r) => s + r.count, 0)
+            const totals = ['Grand Total', fmtR(totDr), String(totCt), fmtR(totCt > 0 ? Math.round(totDr / totCt) : 0)]
+            setDrillDown({ title: 'Top Clients - Own EPS Trucks', headers, rows, totals })
+          }}
+        >
+          <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Top Clients - Own EPS Trucks (YTD 2026)</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={topClientData} layout="vertical" margin={{ top: 5, right: 60, left: 5, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000).toFixed(0)}K`} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 8 }} width={200} />
+                <Tooltip formatter={(v: number, name: string) => name === 'drValue' ? fmtR(v) : v} />
+                <Bar dataKey="drValue" name="Revenue" fill={BLUE} barSize={12}>
+                  <LabelList dataKey="drValue" position="right" formatter={(v: number) => fmt(v)} style={{ fontSize: 9 }} />
+                </Bar>
+                <Bar dataKey="count" name="Loads" fill="#ED7D31" barSize={12} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => {
+            const headers = ['Month', 'Revenue', 'Fleet Count', 'Avg p.Load']
+            const rows = openNetworkData.map(r => [r.month, fmtR(r.revenue), String(r.fleetCount), fmtR(r.avg)])
+            const totRev = openNetworkData.reduce((s, r) => s + r.revenue, 0)
+            const totFl = openNetworkData.reduce((s, r) => s + r.fleetCount, 0)
+            const totals = ['Grand Total', fmtR(totRev), String(totFl), fmtR(totFl > 0 ? Math.round(totRev / totFl) : 0)]
+            setDrillDown({ title: 'Open Network Monthly Revenue', headers, rows, totals })
+          }}
+        >
+          <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Open Network Monthly Revenue 2026</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <ComposedChart data={openNetworkData} margin={{ top: 20, right: 50, left: 10, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                <YAxis yAxisId="left" tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000000).toFixed(0)}M`} />
+                <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} />
+                <Tooltip formatter={(v: number, name: string) => name === 'revenue' ? fmtR(v) : v} />
+                <Bar yAxisId="left" dataKey="revenue" name="Revenue" fill="#70AD47" barSize={35}>
+                  <LabelList dataKey="revenue" position="top" formatter={(v: number) => fmtR(v)} style={{ fontSize: 9 }} />
+                </Bar>
+                <Line yAxisId="right" type="monotone" dataKey="fleetCount" name="Fleet Count" stroke={BLUE} strokeWidth={2} dot={{ fill: BLUE, r: 3 }} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Drill-down Modal */}
+      <Dialog open={!!drillDown} onOpenChange={() => setDrillDown(null)}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>{drillDown?.title}</DialogTitle>
+            <DialogDescription>Underlying data for this chart</DialogDescription>
+          </DialogHeader>
+          {drillDown && (
+            <div className="overflow-auto flex-1">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-slate-200">
+                    {drillDown.headers.map((h, i) => (
+                      <TableHead key={i} className={`text-xs text-slate-700 ${i > 0 ? 'text-right' : ''}`}>{h}</TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {drillDown.rows.map((row, i) => (
+                    <TableRow key={i} className="hover:bg-slate-50">
+                      {row.map((cell, j) => (
+                        <TableCell key={j} className={`text-xs ${j === 0 ? 'font-medium' : 'text-right'}`}>{cell}</TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                  {drillDown.totals && (
+                    <TableRow className="font-bold bg-slate-100">
+                      {drillDown.totals.map((cell, j) => (
+                        <TableCell key={j} className={`text-xs ${j === 0 ? '' : 'text-right'}`}>{cell}</TableCell>
+                      ))}
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
