@@ -35,12 +35,31 @@ const COLUMN_MAP: Record<string, string> = {
 }
 
 const NUMERIC_COLS = new Set(['qty', 'rate', 'dr_value', 'cr_value', 'profit', 'pct_profit', 'route_km', 'opening_km', 'closing_km', 'map_km', 'empty_km', 'cpk_inc', 'year'])
+const DATE_COLS = new Set(['load_date', 'inv_date'])
 
 function parseNumeric(val: any): number | null {
   if (val === null || val === undefined || val === '') return null
   if (typeof val === 'number') return val
   const n = parseFloat(String(val).replace(/[R,%\s]/g, ''))
   return isNaN(n) ? null : n
+}
+
+function parseDate(val: any): string | null {
+  if (val === null || val === undefined || val === '') return null
+  if (val instanceof Date) {
+    return val.toISOString().split('T')[0]
+  }
+  if (typeof val === 'number') {
+    // Excel serial date: convert to ISO date
+    const d = new Date((val - 25569) * 86400000)
+    return d.toISOString().split('T')[0]
+  }
+  const s = String(val).trim()
+  if (s === '') return null
+  // Try parsing as date string
+  const d = new Date(s)
+  if (!isNaN(d.getTime())) return d.toISOString().split('T')[0]
+  return s
 }
 
 function parseString(val: any): string | null {
@@ -62,7 +81,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Only .xlsx, .xls, or .csv files accepted' }, { status: 400 })
 
     const buffer = Buffer.from(await file.arrayBuffer())
-    const wb = XLSX.read(buffer, { type: 'buffer', sheetRows: 0 })
+    const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true })
 
     if (!wb.SheetNames.includes('DATA')) {
       return NextResponse.json({ error: `Sheet "DATA" not found. Available: ${wb.SheetNames.join(', ')}` }, { status: 400 })
@@ -70,6 +89,7 @@ export async function POST(req: NextRequest) {
 
     const sheet = wb.Sheets['DATA']
     const raw = XLSX.utils.sheet_to_json<any>(sheet, { header: 1, defval: null })
+    console.log('Sheet rows:', raw.length)
     if (raw.length < 2) {
       return NextResponse.json({ error: 'DATA sheet has no data rows.' }, { status: 400 })
     }
@@ -104,21 +124,27 @@ export async function POST(req: NextRequest) {
           const dbCol = colMapping[col]
           const cellVal = (row as any[])[col] ?? null
           if (cellVal !== null && cellVal !== undefined && cellVal !== '') hasData = true
-          record[dbCol] = NUMERIC_COLS.has(dbCol) ? parseNumeric(cellVal) : parseString(cellVal)
+          record[dbCol] = DATE_COLS.has(dbCol) ? parseDate(cellVal) : NUMERIC_COLS.has(dbCol) ? parseNumeric(cellVal) : parseString(cellVal)
         }
         if (!hasData) { skipped++; continue }
         batch.push(record)
       }
       if (batch.length > 0) {
+        console.log(`Batch ${Math.floor(i/BATCH_SIZE)+1}: inserting ${batch.length} rows`)
+        console.log('Sample record:', JSON.stringify(batch[0]))
         const { error, count } = await supabase.from('loadschedule').insert(batch, { count: 'exact' })
         if (error) {
-          errors += batch.length
-          errorMessages.push(error.message)
-        } else {
-          inserted += count || batch.length
-        }
+        console.log('Insert error:', JSON.stringify(error))
+        errors += batch.length
+        errorMessages.push(error.message)
+      } else {
+        console.log('Inserted:', count)
+        inserted += count || batch.length
+      }
       }
     }
+
+    console.log('Final:', { inserted, errors, skipped, mappedColumnNames })
 
     return NextResponse.json({
       success: true, totalRows: inserted + errors + skipped,
