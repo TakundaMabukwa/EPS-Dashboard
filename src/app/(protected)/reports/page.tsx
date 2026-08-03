@@ -9,7 +9,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { createClient } from '@/lib/supabase/client'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList, Line, ComposedChart } from 'recharts'
-import { Search, Check, ChevronDown, X } from 'lucide-react'
+import { Search, Check, ChevronDown, X, PanelLeftClose } from 'lucide-react'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 
@@ -84,18 +84,33 @@ const BLUE = '#4472C4'
 const fmt = (n: number) => n?.toLocaleString('en-ZA', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) || '0'
 const fmtR = (n: number) => `R${fmt(n)}`
 
-async function fetchAll(supabase: any, table: string, filter?: (q: any) => any, columns = '*') {
-  let query = supabase.from(table).select(columns)
-  if (filter) query = filter(query)
+async function fetchAll(supabase: any, table: string, filter?: (q: any) => any, columns = '*', onProgress?: (loaded: number) => void) {
   const PAGE = 1000
-  let all: any[] = []
-  for (let from = 0; ; from += PAGE) {
+  let q0 = supabase.from(table).select(columns, { count: 'exact', head: true })
+  if (filter) q0 = filter(q0)
+  const { count } = await q0
+  const total = count || 0
+  const pages = Math.ceil(total / PAGE)
+  if (pages <= 1) {
+    let q = supabase.from(table).select(columns).range(0, PAGE - 1)
+    if (filter) q = filter(q)
+    const { data } = await q
+    onProgress?.(data?.length || 0)
+    return data || []
+  }
+  const fetchPage = async (from: number) => {
     let q = supabase.from(table).select(columns).range(from, from + PAGE - 1)
     if (filter) q = filter(q)
     const { data } = await q
-    if (!data || data.length === 0) break
-    all = all.concat(data)
-    if (data.length < PAGE) break
+    return data || []
+  }
+  const batchSize = 5
+  let all: any[] = []
+  for (let i = 0; i < pages; i += batchSize) {
+    const batch = Array.from({ length: Math.min(batchSize, pages - i) }, (_, j) => fetchPage((i + j) * PAGE))
+    const results = await Promise.all(batch)
+    for (const d of results) all = all.concat(d)
+    onProgress?.(all.length)
   }
   return all
 }
@@ -258,6 +273,8 @@ function ExecTab() {
   const supabase = createClient()
   const [allRows, setAllRows] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadProgress, setLoadProgress] = useState(0)
+  const [loadTotal, setLoadTotal] = useState(0)
   const [commodityFilter, setCommodityFilter] = useState<string[]>([])
   const [monthFilter, setMonthFilter] = useState('all')
   const [yearFilter, setYearFilter] = useState('all')
@@ -271,8 +288,24 @@ function ExecTab() {
   }
 
   useEffect(() => {
+    const cacheKey = 'exec_data_v1'
+    const cached = sessionStorage.getItem(cacheKey)
+    if (cached) {
+      try {
+        const { data, ts } = JSON.parse(cached)
+        if (Date.now() - ts < 5 * 60 * 1000) {
+          setAllRows(data)
+          setLoading(false)
+          return
+        }
+      } catch {}
+    }
     async function load() {
-      const data = await fetchAll(supabase, 'loadschedule', undefined, EXEC_COLUMNS)
+      const countQ = supabase.from('loadschedule').select('*', { count: 'exact', head: true })
+      const { count } = await countQ
+      setLoadTotal(count || 0)
+      const data = await fetchAll(supabase, 'loadschedule', undefined, EXEC_COLUMNS, (loaded) => setLoadProgress(loaded))
+      sessionStorage.setItem(cacheKey, JSON.stringify({ data, ts: Date.now() }))
       setAllRows(data)
       setLoading(false)
     }
@@ -659,10 +692,22 @@ function ExecTab() {
     })
   }, [allFiltered])
 
-  if (loading) return <div className="text-center py-12 text-slate-500">Loading executive data...</div>
+  if (loading) return (
+    <div className="flex flex-col items-center justify-center py-16 gap-4">
+      <div className="text-slate-500 text-sm">Loading executive data...</div>
+      <div className="w-64 bg-slate-200 rounded-full h-2 overflow-hidden">
+        <div className="bg-[#1A245E] h-2 rounded-full transition-all duration-300" style={{ width: loadTotal > 0 ? `${Math.min((loadProgress / loadTotal) * 100, 100)}%` : '30%' }} />
+      </div>
+      <div className="text-xs text-slate-400">{loadProgress.toLocaleString()} / {loadTotal.toLocaleString()} records</div>
+    </div>
+  )
 
   return (
     <div className="space-y-6 mt-4">
+      <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 flex items-center gap-2 text-xs text-amber-700">
+        <PanelLeftClose className="w-3.5 h-3.5 shrink-0" />
+        <span>For the best experience, close the sidebar to give charts more room to display properly.</span>
+      </div>
       {/* Filters */}
       <div className="flex items-center gap-3 flex-wrap">
         <Select value={yearFilter} onValueChange={setYearFilter}>
