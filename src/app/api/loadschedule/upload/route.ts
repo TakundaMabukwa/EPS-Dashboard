@@ -110,9 +110,10 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(await file.arrayBuffer())
     const wb = new ExcelJS.Workbook()
     await wb.xlsx.load(buffer)
-    const ws = wb.worksheets[0]
+
+    const ws = wb.getWorksheet('DATA')
     if (!ws || ws.rowCount < 2) {
-      return NextResponse.json({ error: 'File is empty or has no data rows' }, { status: 400 })
+      return NextResponse.json({ error: 'Sheet "DATA" not found or has no data rows' }, { status: 400 })
     }
 
     const headerRow = ws.getRow(1)
@@ -134,8 +135,29 @@ export async function POST(req: NextRequest) {
     }
 
     const BATCH_SIZE = 500
-    const rows: Record<string, any>[] = []
+    let inserted = 0
+    let errors = 0
     let skipped = 0
+    const errorMessages: string[] = []
+    const mappedColumnNames = mappedCols.map(c => colMapping[c])
+
+    let batch: Record<string, any>[] = []
+    let batchNum = 0
+
+    const flushBatch = async () => {
+      if (batch.length === 0) return
+      batchNum++
+      const { error, count } = await supabase
+        .from('loadschedule')
+        .insert(batch, { count: 'exact' })
+      if (error) {
+        errors += batch.length
+        errorMessages.push(`Batch ${batchNum}: ${error.message}`)
+      } else {
+        inserted += count || batch.length
+      }
+      batch = []
+    }
 
     for (let r = 2; r <= ws.rowCount; r++) {
       const row = ws.getRow(r)
@@ -157,34 +179,22 @@ export async function POST(req: NextRequest) {
       }
 
       if (!hasData) { skipped++; continue }
-      rows.push(record)
-    }
+      batch.push(record)
 
-    let inserted = 0
-    let errors = 0
-    const errorMessages: string[] = []
-
-    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-      const batch = rows.slice(i, i + BATCH_SIZE)
-      const { error, count } = await supabase
-        .from('loadschedule')
-        .insert(batch, { count: 'exact' })
-
-      if (error) {
-        errors += batch.length
-        errorMessages.push(`Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${error.message}`)
-      } else {
-        inserted += count || batch.length
+      if (batch.length >= BATCH_SIZE) {
+        await flushBatch()
       }
     }
 
+    await flushBatch()
+
     return NextResponse.json({
       success: true,
-      totalRows: rows.length,
+      totalRows: inserted + errors + skipped,
       inserted,
       errors,
       skipped,
-      mappedColumns: mappedCols.map(c => colMapping[c]),
+      mappedColumns: mappedColumnNames,
       errorMessages: errorMessages.length > 0 ? errorMessages : undefined,
     })
   } catch (err: any) {
