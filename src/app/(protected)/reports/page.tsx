@@ -263,7 +263,7 @@ function ExecTab() {
   // ── Chart 1: Broker Revenue YTD ──
   const revenueByMonth = useMemo(() => {
     const map = new Map<string, number>()
-    allFiltered.forEach(r => {
+    allFiltered.filter(r => r.subbie2 === 'BROKER').forEach(r => {
       const m = r.month || 'Unknown'
       map.set(m, (map.get(m) || 0) + (r.dr_value || 0))
     })
@@ -273,7 +273,7 @@ function ExecTab() {
   // ── Chart 2: Broker Profit by Month ──
   const profitByMonth = useMemo(() => {
     const map = new Map<string, number>()
-    allFiltered.forEach(r => {
+    allFiltered.filter(r => r.subbie2 === 'BROKER').forEach(r => {
       const m = r.month || 'Unknown'
       map.set(m, (map.get(m) || 0) + (r.profit || 0))
     })
@@ -283,7 +283,7 @@ function ExecTab() {
   // ── Chart 3: Load Count by Month ──
   const loadCountByMonth = useMemo(() => {
     const map = new Map<string, number>()
-    allFiltered.forEach(r => {
+    allFiltered.filter(r => r.subbie2 === 'BROKER').forEach(r => {
       const m = r.month || 'Unknown'
       map.set(m, (map.get(m) || 0) + 1)
     })
@@ -326,7 +326,7 @@ function ExecTab() {
   // ── Chart 6: Open Network Monthly Revenue ──
   const openNetworkData = useMemo(() => {
     const map = new Map<string, { revenue: number; fleetCount: number }>()
-    allFiltered.forEach(r => {
+    allFiltered.filter(r => r.subbie2 === 'BROKER').forEach(r => {
       const m = r.month || 'Unknown'
       if (!map.has(m)) map.set(m, { revenue: 0, fleetCount: 0 })
       map.get(m)!.revenue += r.dr_value || 0
@@ -648,7 +648,7 @@ function ExecTab() {
             const cf = commodityFilter
             openDrillDown(
               'Broker Revenue YTD',
-              r => (cf.length === 0 || cf.includes(r.commodity)),
+              r => r.subbie2 === 'BROKER' && (cf.length === 0 || cf.includes(r.commodity)),
               ['Load Nr', 'Client', 'Month', 'Revenue'],
               r => [r.load_nr, r.dr_name, r.month, fmtR(r.dr_value)],
               rows => ['Grand Total', '', '', fmtR(rows.reduce((s, r) => s + (Number(String(r[3]).replace(/[R,]/g, '')) || 0), 0))]
@@ -677,7 +677,7 @@ function ExecTab() {
             const cf = commodityFilter
             openDrillDown(
               'Broker Profit by Month',
-              r => (cf.length === 0 || cf.includes(r.commodity)),
+              r => r.subbie2 === 'BROKER' && (cf.length === 0 || cf.includes(r.commodity)),
               ['Load Nr', 'Client', 'Month', 'Revenue', 'Cost', 'Profit'],
               r => [r.load_nr, r.dr_name, r.month, fmtR(r.dr_value), fmtR(r.cr_value), fmtR(r.profit)],
               rows => ['Grand Total', '', '', '', '', fmtR(rows.reduce((s, r) => s + (Number(String(r[5]).replace(/[R,]/g, '')) || 0), 0))]
@@ -709,7 +709,7 @@ function ExecTab() {
             const cf = commodityFilter
             openDrillDown(
               'Brokerage Load Count per Month',
-              r => (cf.length === 0 || cf.includes(r.commodity)),
+              r => r.subbie2 === 'BROKER' && (cf.length === 0 || cf.includes(r.commodity)),
               ['Load Nr', 'Client', 'Month', 'Commodity'],
               r => [r.load_nr, r.dr_name, r.month, r.commodity],
               rows => ['Grand Total', '', `${rows.length} loads`, '']
@@ -802,7 +802,7 @@ function ExecTab() {
             const cf = commodityFilter
             openDrillDown(
               'Open Network Monthly Revenue',
-              r => (cf.length === 0 || cf.includes(r.commodity)),
+              r => r.subbie2 === 'BROKER' && (cf.length === 0 || cf.includes(r.commodity)),
               ['Load Nr', 'Client', 'Month', 'Revenue'],
               r => [r.load_nr, r.dr_name, r.month, fmtR(r.dr_value)],
               rows => ['Grand Total', '', '', fmtR(rows.reduce((s, r) => s + (Number(String(r[3]).replace(/[R,]/g, '')) || 0), 0))]
