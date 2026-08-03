@@ -106,12 +106,13 @@ export async function POST(req: NextRequest) {
       for await (const row of worksheetReader) {
         rowNumber++
         if (rowNumber === 1) {
-          // Parse headers
-          row.eachCell({ includeEmpty: false }, (cell: any, colNumber: number) => {
-            const rawHeader = String(cell.value || '').trim().toLowerCase()
+          // Parse headers using row.values array (1-indexed)
+          const values = row.values as any[]
+          for (let col = 1; col < values.length; col++) {
+            const rawHeader = String(values[col] || '').trim().toLowerCase()
             const mapped = COLUMN_MAP[rawHeader]
-            if (mapped) colMapping[colNumber] = mapped
-          })
+            if (mapped) colMapping[col] = mapped
+          }
           mappedCols = Object.keys(colMapping).map(Number)
           if (mappedCols.length === 0) {
             return NextResponse.json({ error: 'No matching columns found in DATA sheet.' }, { status: 400 })
@@ -122,9 +123,10 @@ export async function POST(req: NextRequest) {
 
         let hasData = false
         const record: Record<string, any> = {}
+        const values = row.values as any[]
         for (const col of mappedCols) {
           const dbCol = colMapping[col]
-          const cellVal = row.getCell(col).value
+          const cellVal = values[col] ?? null
           if (cellVal !== null && cellVal !== undefined && cellVal !== '') hasData = true
           record[dbCol] = NUMERIC_COLS.has(dbCol) ? parseNumeric(cellVal) : parseString(cellVal)
         }
