@@ -206,8 +206,10 @@ function ExecTab() {
   const [yearFilter, setYearFilter] = useState('all')
   const [drillDown, setDrillDown] = useState<{ title: string; headers: string[]; rows: any[][]; totals?: any[] } | null>(null)
 
-  const openPivot = (title: string, headers: string[], pivotRows: any[][], totals?: any[]) => {
-    setDrillDown({ title, headers, rows: pivotRows, totals })
+  const openDrillDown = (title: string, headers: string[], filterFn: (r: any) => boolean, mapRow: (r: any) => any[]) => {
+    const filtered = allRows.filter(filterFn)
+    const rows = filtered.map(mapRow)
+    setDrillDown({ title, headers, rows })
   }
 
   useEffect(() => {
@@ -642,9 +644,12 @@ function ExecTab() {
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
-            const pivotRows = revenueByMonth.map(d => [d.month, fmtR(d.value)])
-            const totals: any[] = ['Grand Total', fmtR(revenueByMonth.reduce((s, d) => s + d.value, 0))]
-            openPivot('Broker Revenue YTD 2026', ['Month', 'Revenue'], pivotRows, totals)
+            openDrillDown(
+              'Broker Revenue YTD 2026',
+              ['Load Nr', 'Client', 'Transporter', 'Month', 'Revenue'],
+              r => r.subbie2 === 'BROKER',
+              r => [r.load_nr, r.dr_name, r.cr_name, r.month, fmtR(r.dr_value)]
+            )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Broker Revenue YTD 2026</CardTitle></CardHeader>
@@ -666,9 +671,12 @@ function ExecTab() {
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
-            const pivotRows = profitByMonth.map(d => [d.month, fmtR(d.value)])
-            const totals: any[] = ['Grand Total', fmtR(profitByMonth.reduce((s, d) => s + d.value, 0))]
-            openPivot('Broker Profit by Month 2026', ['Month', 'Profit'], pivotRows, totals)
+            openDrillDown(
+              'Broker Profit by Month 2026',
+              ['Load Nr', 'Client', 'Transporter', 'Month', 'Revenue', 'Cost', 'Profit'],
+              r => r.subbie2 === 'BROKER',
+              r => [r.load_nr, r.dr_name, r.cr_name, r.month, fmtR(r.dr_value), fmtR(r.cr_value), fmtR(r.profit)]
+            )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Broker Profit per Month 2026</CardTitle></CardHeader>
@@ -693,13 +701,12 @@ function ExecTab() {
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
-            const cf = commodityFilter
-            const brokerRows = allFiltered.filter(r => r.subbie2 === 'BROKER' && (cf.length === 0 || cf.includes(r.commodity)))
-            const byMonth: Record<string, number> = {}
-            brokerRows.forEach(r => { byMonth[r.month] = (byMonth[r.month] || 0) + 1 })
-            const pivotRows = Object.entries(byMonth).sort((a, b) => MONTH_ORDER.indexOf(a[0]) - MONTH_ORDER.indexOf(b[0])).map(([m, c]) => [m, c])
-            const totals: any[] = ['Grand Total', brokerRows.length]
-            openPivot('Brokerage Load Count (EPS Fleet)', ['Month', 'Loads'], pivotRows, totals)
+            openDrillDown(
+              'Brokerage Load Count (EPS Fleet)',
+              ['Load Nr', 'Client', 'Transporter', 'Commodity', 'Month'],
+              r => r.subbie2 === 'BROKER',
+              r => [r.load_nr, r.dr_name, r.cr_name, r.commodity, r.month]
+            )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Brokerage Load Count per Month 2026</CardTitle></CardHeader>
@@ -721,9 +728,12 @@ function ExecTab() {
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
-            const pivotRows = transporterData.map(d => [d.name, fmtR(d.crValue), d.count])
-            const totals: any[] = ['Grand Total', fmtR(transporterData.reduce((s, d) => s + d.crValue, 0)), transporterData.reduce((s, d) => s + d.count, 0)]
-            openPivot('Transporter Revenue Distribution', ['Transporter', 'Revenue', 'Loads'], pivotRows, totals)
+            openDrillDown(
+              'Transporter Revenue Distribution',
+              ['Load Nr', 'Transporter', 'Client', 'Month', 'Revenue'],
+              r => true,
+              r => [r.load_nr, r.cr_name, r.dr_name, r.month, fmtR(r.cr_value)]
+            )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Transporter Revenue Distribution</CardTitle></CardHeader>
@@ -748,9 +758,12 @@ function ExecTab() {
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
-            const pivotRows = topClientData.map(d => [d.name, fmtR(d.drValue), d.count])
-            const totals: any[] = ['Grand Total', fmtR(topClientData.reduce((s, d) => s + d.drValue, 0)), topClientData.reduce((s, d) => s + d.count, 0)]
-            openPivot('Top Clients - Own EPS Trucks (YTD 2026)', ['Client', 'Revenue', 'Loads'], pivotRows, totals)
+            openDrillDown(
+              'Top Clients - Own EPS Trucks (YTD 2026)',
+              ['Load Nr', 'Client', 'Transporter', 'Month', 'Revenue'],
+              r => r.subbie2 === 'EPS',
+              r => [r.load_nr, r.dr_name, r.cr_name, r.month, fmtR(r.dr_value)]
+            )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Top Clients - Own EPS Trucks (YTD 2026)</CardTitle></CardHeader>
@@ -773,9 +786,12 @@ function ExecTab() {
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
-            const pivotRows = openNetworkData.map(d => [d.month, fmtR(d.revenue), d.fleetCount])
-            const totals: any[] = ['Grand Total', fmtR(openNetworkData.reduce((s, d) => s + d.revenue, 0)), '']
-            openPivot('Open Network Monthly Revenue 2026', ['Month', 'Revenue', 'Fleet Count'], pivotRows, totals)
+            openDrillDown(
+              'Open Network Monthly Revenue 2026',
+              ['Load Nr', 'Client', 'Transporter', 'Month', 'Revenue'],
+              r => r.subbie2 === 'BROKER',
+              r => [r.load_nr, r.dr_name, r.cr_name, r.month, fmtR(r.dr_value)]
+            )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Open Network Monthly Revenue 2026</CardTitle></CardHeader>
@@ -802,9 +818,12 @@ function ExecTab() {
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
-            const pivotRows = totalLoadsByMonth.map(d => [d.month, d.count])
-            const totals: any[] = ['Grand Total', totalLoadsByMonth.reduce((s, d) => s + d.count, 0)]
-            openPivot(`Total Loads per Month ${yearFilter === 'all' ? '' : yearFilter}`, ['Month', 'Loads'], pivotRows, totals)
+            openDrillDown(
+              `Total Loads per Month ${yearFilter === 'all' ? '' : yearFilter}`,
+              ['Load Nr', 'Client', 'Transporter', 'Commodity', 'Month', 'Revenue'],
+              r => (yearFilter === 'all' || String(r.year) === yearFilter),
+              r => [r.load_nr, r.dr_name, r.cr_name, r.commodity, r.month, fmtR(r.dr_value)]
+            )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Total Loads per Month {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
@@ -826,9 +845,12 @@ function ExecTab() {
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
-            const pivotRows = openNetLoadCount.map(d => [d.month, d.count])
-            const totals: any[] = ['Grand Total', openNetLoadCount.reduce((s, d) => s + d.count, 0)]
-            openPivot(`Open Network Load Count ${yearFilter === 'all' ? '' : yearFilter}`, ['Month', 'Loads'], pivotRows, totals)
+            openDrillDown(
+              `Open Network Load Count ${yearFilter === 'all' ? '' : yearFilter}`,
+              ['Load Nr', 'Client', 'Transporter', 'Commodity', 'Month'],
+              r => r.subbie2 === 'BROKER' && (yearFilter === 'all' || String(r.year) === yearFilter),
+              r => [r.load_nr, r.dr_name, r.cr_name, r.commodity, r.month]
+            )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Open Network Load Count {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
@@ -853,9 +875,12 @@ function ExecTab() {
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
-            const pivotRows = closedNetLoadCount.map(d => [d.month, d.count])
-            const totals: any[] = ['Grand Total', closedNetLoadCount.reduce((s, d) => s + d.count, 0)]
-            openPivot(`Closed Network (EPS) Load Count ${yearFilter === 'all' ? '' : yearFilter}`, ['Month', 'Loads'], pivotRows, totals)
+            openDrillDown(
+              `Closed Network (EPS) Load Count ${yearFilter === 'all' ? '' : yearFilter}`,
+              ['Load Nr', 'Client', 'Vehicle Reg', 'Commodity', 'Month'],
+              r => r.subbie2 === 'EPS' && (yearFilter === 'all' || String(r.year) === yearFilter),
+              r => [r.load_nr, r.dr_name, r.own_reg, r.commodity, r.month]
+            )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Closed Network (EPS) Load Count {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
@@ -925,9 +950,15 @@ function ExecTab() {
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
-            const pivotRows = massmartDCData.map(d => [d.name, d.count])
-            const totals: any[] = ['Grand Total', massmartDCData.reduce((s, d) => s + d.count, 0)]
-            openPivot(`Massmart DC Load Count ${yearFilter === 'all' ? '' : yearFilter}`, ['DC', 'Loads'], pivotRows, totals)
+            openDrillDown(
+              `Massmart DC Load Count ${yearFilter === 'all' ? '' : yearFilter}`,
+              ['Load Nr', 'Client', 'DC', 'Month', 'Vehicle Reg'],
+              r => {
+                const dn = (r.dr_name || '').toUpperCase()
+                return (dn.includes('MASSMART') || dn.includes('MASSTORES')) && (yearFilter === 'all' || String(r.year) === yearFilter)
+              },
+              r => [r.load_nr, r.dr_name, r.load_descrip || r.from_loc, r.month, r.own_reg]
+            )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Massmart DC Load Count {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
@@ -949,9 +980,12 @@ function ExecTab() {
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
-            const pivotRows = citrusClientData.map(d => [d.name, fmtR(d.revenue), d.count])
-            const totals: any[] = ['Grand Total', fmtR(citrusClientData.reduce((s, d) => s + d.revenue, 0)), citrusClientData.reduce((s, d) => s + d.count, 0)]
-            openPivot(`Citrus Revenue by Client ${yearFilter === 'all' ? '' : yearFilter}`, ['Client', 'Revenue', 'Loads'], pivotRows, totals)
+            openDrillDown(
+              `Citrus Revenue by Client ${yearFilter === 'all' ? '' : yearFilter}`,
+              ['Load Nr', 'Client', 'Month', 'Commodity', 'Revenue'],
+              r => (r.commodity || '').toUpperCase() === 'CITRUS' && (yearFilter === 'all' || String(r.year) === yearFilter),
+              r => [r.load_nr, r.dr_name, r.month, r.commodity, fmtR(r.dr_value)]
+            )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Citrus Revenue by Client {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
@@ -976,9 +1010,12 @@ function ExecTab() {
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
-            const pivotRows = polokwaneData.map(d => [d.month, d.count, fmtR(d.revenue)])
-            const totals: any[] = ['Grand Total', polokwaneData.reduce((s, d) => s + d.count, 0), fmtR(polokwaneData.reduce((s, d) => s + d.revenue, 0))]
-            openPivot(`Polokwane Lid Monthly ${yearFilter === 'all' ? '' : yearFilter}`, ['Month', 'Loads', 'Revenue'], pivotRows, totals)
+            openDrillDown(
+              `Polokwane Lid Monthly ${yearFilter === 'all' ? '' : yearFilter}`,
+              ['Load Nr', 'Client', 'Vehicle Reg', 'Month', 'Revenue'],
+              r => (r.dr_name || '').toUpperCase().includes('POLOKWANE') && (yearFilter === 'all' || String(r.year) === yearFilter),
+              r => [r.load_nr, r.dr_name, r.own_reg, r.month, fmtR(r.dr_value)]
+            )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Polokwane Lid Monthly {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
@@ -1002,9 +1039,12 @@ function ExecTab() {
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
-            const pivotRows = topBrokerData.map(d => [d.name, fmtR(d.revenue), d.count])
-            const totals: any[] = ['Grand Total', fmtR(topBrokerData.reduce((s, d) => s + d.revenue, 0)), topBrokerData.reduce((s, d) => s + d.count, 0)]
-            openPivot(`Top Brokers by Revenue ${yearFilter === 'all' ? '' : yearFilter}`, ['Broker', 'Revenue', 'Loads'], pivotRows, totals)
+            openDrillDown(
+              `Top Brokers by Revenue ${yearFilter === 'all' ? '' : yearFilter}`,
+              ['Load Nr', 'Broker', 'Transporter', 'Month', 'Revenue'],
+              r => r.subbie2 === 'BROKER' && (yearFilter === 'all' || String(r.year) === yearFilter),
+              r => [r.load_nr, r.dr_name, r.cr_name, r.month, fmtR(r.dr_value)]
+            )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Top Brokers by Revenue {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
@@ -1029,9 +1069,12 @@ function ExecTab() {
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
-            const pivotRows = topRoutesData.map(d => [d.route, d.count])
-            const totals: any[] = ['Grand Total', topRoutesData.reduce((s, d) => s + d.count, 0)]
-            openPivot(`Top Routes ${yearFilter === 'all' ? '' : yearFilter}`, ['Route', 'Loads'], pivotRows, totals)
+            openDrillDown(
+              `Top Routes ${yearFilter === 'all' ? '' : yearFilter}`,
+              ['Load Nr', 'From', 'To', 'Client', 'Transporter', 'Month'],
+              r => (yearFilter === 'all' || String(r.year) === yearFilter),
+              r => [r.load_nr, r.load_descrip || r.from_loc, r.offload_descrip || r.to_loc, r.dr_name, r.cr_name, r.month]
+            )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Top Routes by Load Count {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
@@ -1053,9 +1096,12 @@ function ExecTab() {
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
-            const pivotRows = regionRevenueData.map(d => [d.name, fmtR(d.revenue), d.count])
-            const totals: any[] = ['Grand Total', fmtR(regionRevenueData.reduce((s, d) => s + d.revenue, 0)), regionRevenueData.reduce((s, d) => s + d.count, 0)]
-            openPivot(`Revenue by Origin Region ${yearFilter === 'all' ? '' : yearFilter}`, ['Region', 'Revenue', 'Loads'], pivotRows, totals)
+            openDrillDown(
+              `Revenue by Origin Region ${yearFilter === 'all' ? '' : yearFilter}`,
+              ['Load Nr', 'Region', 'Client', 'Transporter', 'Month', 'Revenue'],
+              r => (yearFilter === 'all' || String(r.year) === yearFilter) && r.load_region && r.load_region.trim(),
+              r => [r.load_nr, r.load_region, r.dr_name, r.cr_name, r.month, fmtR(r.dr_value)]
+            )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Revenue by Origin Region {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
@@ -1080,9 +1126,20 @@ function ExecTab() {
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
-            const pivotRows = newClientData.map(d => [d.name, fmtR(d.revenue), d.count])
-            const totals: any[] = ['Grand Total', fmtR(newClientData.reduce((s, d) => s + d.revenue, 0)), newClientData.reduce((s, d) => s + d.count, 0)]
-            openPivot(`New Clients Onboarded ${yearFilter === 'all' ? '' : yearFilter}`, ['Client', 'Revenue', 'Loads'], pivotRows, totals)
+            openDrillDown(
+              `New Clients Onboarded ${yearFilter === 'all' ? '' : yearFilter}`,
+              ['Load Nr', 'Client', 'Month', 'Commodity', 'Revenue'],
+              r => {
+                const name = r.dr_name || 'Unknown'
+                const firstYear = allRows.filter(x => x.dr_name === name).reduce((min, x) => {
+                  const yr = String(x.year || '9999')
+                  return yr < min ? yr : min
+                }, '9999')
+                const currentYear = yearFilter === 'all' ? String(new Date().getFullYear()) : yearFilter
+                return firstYear === currentYear && (yearFilter === 'all' || String(r.year) === yearFilter)
+              },
+              r => [r.load_nr, r.dr_name, r.month, r.commodity, fmtR(r.dr_value)]
+            )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">New Clients Onboarded {yearFilter === 'all' ? 'This Year' : yearFilter}</CardTitle></CardHeader>
@@ -1104,9 +1161,12 @@ function ExecTab() {
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
-            const pivotRows = offloadRegionData.map(d => [d.name, fmtR(d.revenue), d.count])
-            const totals: any[] = ['Grand Total', fmtR(offloadRegionData.reduce((s, d) => s + d.revenue, 0)), offloadRegionData.reduce((s, d) => s + d.count, 0)]
-            openPivot(`Revenue by Destination Region ${yearFilter === 'all' ? '' : yearFilter}`, ['Region', 'Revenue', 'Loads'], pivotRows, totals)
+            openDrillDown(
+              `Revenue by Destination Region ${yearFilter === 'all' ? '' : yearFilter}`,
+              ['Load Nr', 'Destination Region', 'Client', 'Transporter', 'Month', 'Revenue'],
+              r => (yearFilter === 'all' || String(r.year) === yearFilter) && r.offload_region && r.offload_region.trim(),
+              r => [r.load_nr, r.offload_region, r.dr_name, r.cr_name, r.month, fmtR(r.dr_value)]
+            )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Revenue by Destination Region {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
@@ -1131,9 +1191,15 @@ function ExecTab() {
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
-            const pivotRows = chinasData.map(d => [d.name, fmtR(d.revenue), d.count])
-            const totals: any[] = ['Grand Total', fmtR(chinasData.reduce((s, d) => s + d.revenue, 0)), chinasData.reduce((s, d) => s + d.count, 0)]
-            openPivot(`Chinas Clients ${yearFilter === 'all' ? '' : yearFilter}`, ['Client', 'Revenue', 'Loads'], pivotRows, totals)
+            openDrillDown(
+              `Chinas Clients ${yearFilter === 'all' ? '' : yearFilter}`,
+              ['Load Nr', 'Client', 'Transporter', 'Month', 'Revenue'],
+              r => {
+                const dn = (r.dr_name || '').toUpperCase()
+                return CHINAS_CLIENTS.some(c => dn.includes(c)) && (yearFilter === 'all' || String(r.year) === yearFilter)
+              },
+              r => [r.load_nr, r.dr_name, r.cr_name, r.month, fmtR(r.dr_value)]
+            )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Chinas Clients {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
@@ -1163,9 +1229,12 @@ function ExecTab() {
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
-            const pivotRows = specialProjectsData.map(d => [d.month, fmtR(d.revenue), d.count])
-            const totals: any[] = ['Grand Total', fmtR(specialProjectsData.reduce((s, d) => s + d.revenue, 0)), specialProjectsData.reduce((s, d) => s + d.count, 0)]
-            openPivot(`Special Projects ${yearFilter === 'all' ? '' : yearFilter}`, ['Month', 'Revenue', 'Loads'], pivotRows, totals)
+            openDrillDown(
+              `Special Projects ${yearFilter === 'all' ? '' : yearFilter}`,
+              ['Load Nr', 'Client', 'Commodity', 'Month', 'Revenue'],
+              r => (r.commodity || '').toUpperCase().includes('SPECIAL PROJECT') && (yearFilter === 'all' || String(r.year) === yearFilter),
+              r => [r.load_nr, r.dr_name, r.commodity, r.month, fmtR(r.dr_value)]
+            )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Special Projects Revenue {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
@@ -1196,9 +1265,15 @@ function ExecTab() {
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
-            const pivotRows = loadingDestData.map(d => [d.name, d.count, fmtR(d.revenue)])
-            const totals: any[] = ['Grand Total', loadingDestData.reduce((s, d) => s + d.count, 0), fmtR(loadingDestData.reduce((s, d) => s + d.revenue, 0))]
-            openPivot(`Loading into Bloemfontein ${yearFilter === 'all' ? '' : yearFilter}`, ['Client', 'Loads', 'Revenue'], pivotRows, totals)
+            openDrillDown(
+              `Loading into Bloemfontein ${yearFilter === 'all' ? '' : yearFilter}`,
+              ['Load Nr', 'Client', 'Transporter', 'Origin', 'Month', 'Revenue'],
+              r => {
+                const offload = (r.offload_descrip || '').toUpperCase()
+                return offload.includes('BLOEM') && (yearFilter === 'all' || String(r.year) === yearFilter)
+              },
+              r => [r.load_nr, r.dr_name, r.cr_name, r.load_descrip || r.from_loc, r.month, fmtR(r.dr_value)]
+            )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Loading into Bloemfontein {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
@@ -1224,9 +1299,17 @@ function ExecTab() {
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
-            const pivotRows = routeStatsData.map(d => [d.month, d.toJhb, d.fromJhb, d.total])
-            const totals: any[] = ['Grand Total', routeStatsData.reduce((s, d) => s + d.toJhb, 0), routeStatsData.reduce((s, d) => s + d.fromJhb, 0), routeStatsData.reduce((s, d) => s + d.total, 0)]
-            openPivot(`Durban ↔ JHB Route ${yearFilter === 'all' ? '' : yearFilter}`, ['Month', 'Durban → JHB', 'JHB → Durban', 'Total'], pivotRows, totals)
+            openDrillDown(
+              `Durban ↔ JHB Route ${yearFilter === 'all' ? '' : yearFilter}`,
+              ['Load Nr', 'From', 'To', 'Client', 'Transporter', 'Month'],
+              r => {
+                const fromDesc = (r.load_descrip || '').toUpperCase()
+                const toDesc = (r.offload_descrip || '').toUpperCase()
+                const isRoute = fromDesc.includes('DURBAN') || toDesc.includes('DURBAN') || fromDesc.includes('JHB') || toDesc.includes('JHB')
+                return isRoute && (yearFilter === 'all' || String(r.year) === yearFilter)
+              },
+              r => [r.load_nr, r.load_descrip || r.from_loc, r.offload_descrip || r.to_loc, r.dr_name, r.cr_name, r.month]
+            )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Durban ↔ JHB Route Stats {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
