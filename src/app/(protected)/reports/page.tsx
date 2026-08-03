@@ -252,7 +252,7 @@ function DataTab() {
 }
 
 /* ─── EXECUTIVE TAB ─── */
-const EXEC_COLUMNS = 'month,month_yr,year,dr_name,cr_name,dr_value,cr_value,profit,subbie2,commodity,load_descrip,own_reg,from_loc,to_loc,debtor,load_region,offload_region,qty'
+const EXEC_COLUMNS = 'month,month_yr,year,dr_name,cr_name,dr_value,cr_value,profit,subbie2,commodity,load_descrip,offload_descrip,own_reg,from_loc,to_loc,debtor,load_region,offload_region,qty'
 
 function ExecTab() {
   const supabase = createClient()
@@ -512,8 +512,8 @@ function ExecTab() {
   const topRoutesData = useMemo(() => {
     const map = new Map<string, number>()
     allFiltered.forEach(r => {
-      const from = r.from_loc || 'Unknown'
-      const to = r.to_loc || 'Unknown'
+      const from = r.load_descrip || r.from_loc || 'Unknown'
+      const to = r.offload_descrip || r.to_loc || 'Unknown'
       const key = `${from} → ${to}`
       map.set(key, (map.get(key) || 0) + 1)
     })
@@ -526,8 +526,8 @@ function ExecTab() {
   // ── Chart 16: Revenue by Region ──
   const regionRevenueData = useMemo(() => {
     const map = new Map<string, { revenue: number; count: number }>()
-    allFiltered.forEach(r => {
-      const region = r.load_region || 'Unknown'
+    allFiltered.filter(r => r.load_region && r.load_region.trim()).forEach(r => {
+      const region = r.load_region
       const existing = map.get(region) || { revenue: 0, count: 0 }
       existing.revenue += r.dr_value || 0
       existing.count += 1
@@ -569,8 +569,8 @@ function ExecTab() {
   // ── Chart 18: Revenue by Offload Region ──
   const offloadRegionData = useMemo(() => {
     const map = new Map<string, { revenue: number; count: number }>()
-    allFiltered.forEach(r => {
-      const region = r.offload_region || 'Unknown'
+    allFiltered.filter(r => r.offload_region && r.offload_region.trim()).forEach(r => {
+      const region = r.offload_region
       const existing = map.get(region) || { revenue: 0, count: 0 }
       existing.revenue += r.dr_value || 0
       existing.count += 1
@@ -583,20 +583,25 @@ function ExecTab() {
 
   // ── Chart 19: Chinas Clients ──
   const CHINAS_CLIENTS = ['GOODWILL SA CERAMIC', 'STRIDE LOGISTIC', 'SUNBROMATE']
+  const CHINAS_SHORT: Record<string, string> = {
+    'GOODWILL SA CERAMIC (PTY) LTD': 'GOODWILL CERAMIC',
+    'STRIDE LOGISTIC (PTY) LTD': 'STRIDE LOGISTIC',
+    'SUNBROMATE (PTY) LTD': 'SUNBROMATE',
+  }
   const chinasData = useMemo(() => {
-    const map = new Map<string, { revenue: number; count: number }>()
+    const map = new Map<string, { revenue: number; count: number; rawName: string }>()
     allFiltered.filter(r => {
       const dn = (r.dr_name || '').toUpperCase()
       return CHINAS_CLIENTS.some(c => dn.includes(c))
     }).forEach(r => {
       const key = r.dr_name || 'Unknown'
-      const existing = map.get(key) || { revenue: 0, count: 0 }
+      const existing = map.get(key) || { revenue: 0, count: 0, rawName: key }
       existing.revenue += r.dr_value || 0
       existing.count += 1
       map.set(key, existing)
     })
     return [...map.entries()]
-      .map(([name, v]) => ({ name, ...v }))
+      .map(([name, v]) => ({ name: CHINAS_SHORT[name] || name, ...v }))
       .sort((a, b) => b.revenue - a.revenue)
   }, [allFiltered])
 
@@ -620,9 +625,8 @@ function ExecTab() {
   const loadingDestData = useMemo(() => {
     const map = new Map<string, { revenue: number; count: number }>()
     allFiltered.filter(r => {
-      const to = (r.to_loc || '').toUpperCase()
-      const offload = (r.load_descrip || '').toUpperCase()
-      return to.includes('BLOEM') || offload.includes('BLOEM')
+      const offload = (r.offload_descrip || '').toUpperCase()
+      return offload.includes('BLOEM')
     }).forEach(r => {
       const key = r.dr_name || 'Unknown'
       const existing = map.get(key) || { revenue: 0, count: 0 }
@@ -639,22 +643,15 @@ function ExecTab() {
   // ── Chart 22: Durban↔JHB Route Stats ──
   const routeStatsData = useMemo(() => {
     const map = new Map<string, { toJhb: number; fromJhb: number }>()
-    allFiltered.filter(r => {
-      const from = (r.from_loc || '').toUpperCase()
-      const to = (r.to_loc || '').toUpperCase()
-      return from.includes('DURBAN') || to.includes('DURBAN') || from.includes('JHB') || to.includes('JHB')
-    }).forEach(r => {
+    allFiltered.forEach(r => {
+      const fromDesc = (r.load_descrip || '').toUpperCase()
+      const toDesc = (r.offload_descrip || '').toUpperCase()
+      if (!fromDesc && !toDesc) return
       const m = r.month || 'Unknown'
-      const from = (r.from_loc || '').toUpperCase()
-      const to = (r.to_loc || '').toUpperCase()
       if (!map.has(m)) map.set(m, { toJhb: 0, fromJhb: 0 })
       const entry = map.get(m)!
-      if (from.includes('DURBAN') && to.includes('JHB')) entry.toJhb += 1
-      if (from.includes('JHB') && to.includes('DURBAN')) entry.fromJhb += 1
-      if (!from.includes('DURBAN') && !to.includes('DURBAN') && !from.includes('JHB') && !to.includes('JHB')) {
-        entry.toJhb += 0
-        entry.fromJhb += 0
-      }
+      if (fromDesc.includes('DURBAN') && toDesc.includes('JHB')) entry.toJhb += 1
+      if (fromDesc.includes('JHB') && toDesc.includes('DURBAN')) entry.fromJhb += 1
     })
     return MONTH_ORDER.filter(m => map.has(m)).map(m => {
       const v = map.get(m)!
@@ -1131,16 +1128,15 @@ function ExecTab() {
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Top Brokers by Revenue {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={Math.max(200, topBrokerData.length * 28 + 40)}>
-              <BarChart data={topBrokerData} layout="vertical" margin={{ left: 200, right: 60, top: 5, bottom: 5 }}>
+            <ResponsiveContainer width="100%" height={Math.max(280, topBrokerData.length * 30 + 40)}>
+              <BarChart data={topBrokerData} layout="vertical" margin={{ left: 20, right: 60, top: 5, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000).toFixed(0)}K`} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 8 }} width={200} />
+                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000000).toFixed(1)}M`} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={200} interval={0} />
                 <Tooltip formatter={(v: number, name: string) => name === 'revenue' ? fmtR(v) : v} />
-                <Bar dataKey="revenue" name="Revenue" fill={BLUE} barSize={12}>
-                  <LabelList dataKey="revenue" position="right" formatter={(v: number) => fmt(v)} style={{ fontSize: 9 }} />
+                <Bar dataKey="revenue" name="Revenue" fill={BLUE} barSize={18}>
+                  <LabelList dataKey="revenue" position="right" formatter={(v: number) => fmtR(v)} style={{ fontSize: 9 }} />
                 </Bar>
-                <Bar dataKey="count" name="Loads" fill="#ED7D31" barSize={12} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
@@ -1157,18 +1153,18 @@ function ExecTab() {
               `Top Routes ${yf === 'all' ? '' : yf}`,
               r => (yf === 'all' || String(r.year) === yf),
               ['Load Nr', 'From', 'To', 'Client', 'Month'],
-              r => [r.load_nr, r.from_loc, r.to_loc, r.dr_name, r.month],
+              r => [r.load_nr, r.load_descrip || r.from_loc, r.offload_descrip || r.to_loc, r.dr_name, r.month],
               rows => ['Grand Total', '', '', `${rows.length} loads`, '']
             )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Top Routes by Load Count {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={Math.max(200, topRoutesData.length * 26 + 40)}>
-              <BarChart data={topRoutesData} layout="vertical" margin={{ left: 160, right: 30, top: 5, bottom: 5 }}>
+            <ResponsiveContainer width="100%" height={Math.max(280, topRoutesData.length * 26 + 40)}>
+              <BarChart data={topRoutesData} layout="vertical" margin={{ left: 20, right: 40, top: 5, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 10 }} />
-                <YAxis type="category" dataKey="route" tick={{ fontSize: 9 }} width={160} />
+                <YAxis type="category" dataKey="route" tick={{ fontSize: 9 }} width={180} interval={0} />
                 <Tooltip />
                 <Bar dataKey="count" fill="#5B9BD5" barSize={14}>
                   <LabelList dataKey="count" position="right" style={{ fontSize: 9 }} />
@@ -1193,11 +1189,11 @@ function ExecTab() {
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Revenue by Origin Region {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={Math.max(200, regionRevenueData.length * 30 + 40)}>
-              <BarChart data={regionRevenueData} layout="vertical" margin={{ left: 100, right: 60, top: 5, bottom: 5 }}>
+            <ResponsiveContainer width="100%" height={Math.max(280, regionRevenueData.length * 30 + 40)}>
+              <BarChart data={regionRevenueData} layout="vertical" margin={{ left: 60, right: 60, top: 5, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000000).toFixed(0)}M`} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={100} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={60} interval={0} />
                 <Tooltip formatter={(v: number) => fmtR(v)} />
                 <Bar dataKey="revenue" fill="#70AD47" barSize={16}>
                   <LabelList dataKey="revenue" position="right" formatter={(v: number) => fmtR(v)} style={{ fontSize: 9 }} />
@@ -1232,16 +1228,15 @@ function ExecTab() {
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">New Clients Onboarded {yearFilter === 'all' ? 'This Year' : yearFilter}</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={Math.max(200, newClientData.length * 28 + 40)}>
-              <BarChart data={newClientData} layout="vertical" margin={{ left: 200, right: 60, top: 5, bottom: 5 }}>
+            <ResponsiveContainer width="100%" height={Math.max(280, newClientData.length * 30 + 40)}>
+              <BarChart data={newClientData} layout="vertical" margin={{ left: 20, right: 60, top: 5, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000).toFixed(0)}K`} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 8 }} width={200} />
+                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000000).toFixed(1)}M`} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 8 }} width={200} interval={0} />
                 <Tooltip formatter={(v: number, name: string) => name === 'revenue' ? fmtR(v) : v} />
-                <Bar dataKey="revenue" name="Revenue" fill="#70AD47" barSize={12}>
-                  <LabelList dataKey="revenue" position="right" formatter={(v: number) => fmt(v)} style={{ fontSize: 9 }} />
+                <Bar dataKey="revenue" name="Revenue" fill="#70AD47" barSize={18}>
+                  <LabelList dataKey="revenue" position="right" formatter={(v: number) => fmtR(v)} style={{ fontSize: 9 }} />
                 </Bar>
-                <Bar dataKey="count" name="Loads" fill="#ED7D31" barSize={12} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
@@ -1262,11 +1257,11 @@ function ExecTab() {
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Revenue by Destination Region {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={Math.max(200, offloadRegionData.length * 30 + 40)}>
-              <BarChart data={offloadRegionData} layout="vertical" margin={{ left: 100, right: 60, top: 5, bottom: 5 }}>
+            <ResponsiveContainer width="100%" height={Math.max(280, offloadRegionData.length * 30 + 40)}>
+              <BarChart data={offloadRegionData} layout="vertical" margin={{ left: 60, right: 60, top: 5, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000000).toFixed(0)}M`} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={100} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={60} interval={0} />
                 <Tooltip formatter={(v: number) => fmtR(v)} />
                 <Bar dataKey="revenue" fill="#ED7D31" barSize={16}>
                   <LabelList dataKey="revenue" position="right" formatter={(v: number) => fmtR(v)} style={{ fontSize: 9 }} />
@@ -1297,18 +1292,25 @@ function ExecTab() {
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Chinas Clients {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={Math.max(200, chinasData.length * 35 + 40)}>
-              <BarChart data={chinasData} layout="vertical" margin={{ left: 250, right: 60, top: 5, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000).toFixed(0)}K`} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={250} />
-                <Tooltip formatter={(v: number, name: string) => name === 'revenue' ? fmtR(v) : v} />
-                <Bar dataKey="revenue" name="Revenue" fill={BLUE} barSize={14}>
-                  <LabelList dataKey="revenue" position="right" formatter={(v: number) => fmtR(v)} style={{ fontSize: 9 }} />
-                </Bar>
-                <Bar dataKey="count" name="Loads" fill="#ED7D31" barSize={14} />
-              </BarChart>
-            </ResponsiveContainer>
+            {chinasData.length === 0 ? (
+              <div className="flex items-center justify-center h-[280px] text-sm text-slate-400">No chinas client data</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={chinasData} margin={{ top: 20, right: 60, left: 10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" tick={{ fontSize: 9 }} interval={0} angle={0} />
+                  <YAxis yAxisId="left" tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000).toFixed(0)}K`} />
+                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} />
+                  <Tooltip formatter={(v: number, name: string) => name === 'revenue' ? fmtR(v) : v} />
+                  <Bar yAxisId="left" dataKey="revenue" name="Revenue" fill={BLUE} barSize={30}>
+                    <LabelList dataKey="revenue" position="top" formatter={(v: number) => fmtR(v)} style={{ fontSize: 9 }} />
+                  </Bar>
+                  <Bar yAxisId="right" dataKey="count" name="Loads" fill="#ED7D31" barSize={30}>
+                    <LabelList dataKey="count" position="top" style={{ fontSize: 9 }} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
 
@@ -1357,29 +1359,32 @@ function ExecTab() {
             openDrillDown(
               `Loading into Bloemfontein ${yf === 'all' ? '' : yf}`,
               r => {
-                const to = (r.to_loc || '').toUpperCase()
-                const offload = (r.load_descrip || '').toUpperCase()
-                return (to.includes('BLOEM') || offload.includes('BLOEM')) && (yf === 'all' || String(r.year) === yf)
+                const offload = (r.offload_descrip || '').toUpperCase()
+                return offload.includes('BLOEM') && (yf === 'all' || String(r.year) === yf)
               },
-              ['Load Nr', 'Client', 'Month', 'Revenue'],
-              r => [r.load_nr, r.dr_name, r.month, fmtR(r.dr_value)],
-              rows => ['Grand Total', '', `${rows.length} loads`, fmtR(rows.reduce((s, r) => s + (Number(String(r[3]).replace(/[R,]/g, '')) || 0), 0))]
+              ['Load Nr', 'Client', 'Dest', 'Month', 'Revenue'],
+              r => [r.load_nr, r.dr_name, r.offload_descrip, r.month, fmtR(r.dr_value)],
+              rows => ['Grand Total', '', '', `${rows.length} loads`, fmtR(rows.reduce((s, r) => s + (Number(String(r[4]).replace(/[R,]/g, '')) || 0), 0))]
             )
           }}
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Loading into Bloemfontein {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={Math.max(200, loadingDestData.length * 30 + 40)}>
-              <BarChart data={loadingDestData} layout="vertical" margin={{ left: 250, right: 30, top: 5, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 10 }} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 8 }} width={250} />
-                <Tooltip />
-                <Bar dataKey="count" fill="#5B9BD5" barSize={14}>
-                  <LabelList dataKey="count" position="right" style={{ fontSize: 9 }} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+            {loadingDestData.length === 0 ? (
+              <div className="flex items-center justify-center h-[280px] text-sm text-slate-400">No Bloemfontein loading data</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={Math.max(280, loadingDestData.length * 30 + 40)}>
+                <BarChart data={loadingDestData} layout="vertical" margin={{ left: 20, right: 40, top: 5, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 10 }} />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 8 }} width={200} interval={0} />
+                  <Tooltip />
+                  <Bar dataKey="count" name="Loads" fill="#5B9BD5" barSize={16}>
+                    <LabelList dataKey="count" position="right" style={{ fontSize: 9 }} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
 
@@ -1390,13 +1395,13 @@ function ExecTab() {
             openDrillDown(
               `Durban ↔ JHB Route ${yf === 'all' ? '' : yf}`,
               r => {
-                const from = (r.from_loc || '').toUpperCase()
-                const to = (r.to_loc || '').toUpperCase()
-                const isRoute = from.includes('DURBAN') || to.includes('DURBAN') || from.includes('JHB') || to.includes('JHB')
+                const fromDesc = (r.load_descrip || '').toUpperCase()
+                const toDesc = (r.offload_descrip || '').toUpperCase()
+                const isRoute = fromDesc.includes('DURBAN') || toDesc.includes('DURBAN') || fromDesc.includes('JHB') || toDesc.includes('JHB')
                 return isRoute && (yf === 'all' || String(r.year) === yf)
               },
               ['Load Nr', 'From', 'To', 'Client', 'Month'],
-              r => [r.load_nr, r.from_loc, r.to_loc, r.dr_name, r.month],
+              r => [r.load_nr, r.load_descrip || r.from_loc, r.offload_descrip || r.to_loc, r.dr_name, r.month],
               rows => ['Grand Total', '', '', `${rows.length} loads`, '']
             )
           }}
@@ -1423,44 +1428,52 @@ function ExecTab() {
 
       {/* Drill-down Modal */}
       <Dialog open={!!drillDown} onOpenChange={() => setDrillDown(null)}>
-        <DialogContent className="w-[90vw] max-h-[90vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle>{drillDown?.title}</DialogTitle>
-            <DialogDescription>Underlying data for this chart</DialogDescription>
-          </DialogHeader>
+        <DialogContent
+          className="sm:!max-w-[90vw] !max-w-[90vw] w-[90vw] h-[90vh] overflow-hidden flex flex-col p-0"
+          style={{ maxWidth: '90vw', width: '90vw', height: '90vh' }}
+        >
+          <div className="px-6 pt-6 pb-3 border-b bg-gradient-to-r from-slate-50 to-white flex-shrink-0">
+            <div className="flex items-center justify-between">
+              <div>
+                <DialogTitle className="text-xl font-bold">{drillDown?.title}</DialogTitle>
+                <DialogDescription className="mt-1">
+                  {drillDown ? `${drillDown.rows.length} records` : ''} — Click any column header to sort
+                </DialogDescription>
+              </div>
+            </div>
+          </div>
           {drillDown && (
-            <div className="overflow-auto flex-1">
+            <div className="flex-1 overflow-hidden flex flex-col min-h-0">
               {drillDown.rows.length === 0 ? (
-                <div className="text-center py-8 text-sm text-slate-400">No data found for this filter.</div>
+                <div className="flex items-center justify-center flex-1 text-sm text-slate-400">No data found for this filter.</div>
               ) : (
-                <>
-                  <div className="mb-2 text-xs text-slate-500">{drillDown.rows.length} records</div>
-                  <Table>
-                <TableHeader>
-                  <TableRow className="bg-slate-200">
-                    {drillDown.headers.map((h, i) => (
-                      <TableHead key={i} className={`text-xs text-slate-700 ${i > 0 ? 'text-right' : ''}`}>{h}</TableHead>
-                    ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {drillDown.rows.map((row, i) => (
-                    <TableRow key={i} className="hover:bg-slate-50">
-                      {row.map((cell, j) => (
-                        <TableCell key={j} className={`text-xs ${j === 0 ? 'font-medium' : 'text-right'}`}>{cell}</TableCell>
+                <div className="flex-1 overflow-auto min-h-0">
+                  <Table className="text-sm">
+                    <TableHeader>
+                      <TableRow className="bg-slate-100 hover:bg-slate-100 sticky top-0 z-10">
+                        {drillDown.headers.map((h, i) => (
+                          <TableHead key={i} className={`text-xs font-bold text-slate-700 py-3 ${i > 0 ? 'text-right' : ''}`}>{h}</TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {drillDown.rows.map((row, i) => (
+                        <TableRow key={i} className={i % 2 === 0 ? 'bg-white hover:bg-blue-50' : 'bg-slate-50/50 hover:bg-blue-50'}>
+                          {row.map((cell, j) => (
+                            <TableCell key={j} className={`text-xs py-2.5 ${j === 0 ? 'font-medium' : 'text-right'}`}>{cell}</TableCell>
+                          ))}
+                        </TableRow>
                       ))}
-                    </TableRow>
-                  ))}
-                  {drillDown.totals && (
-                    <TableRow className="font-bold bg-slate-100">
-                      {drillDown.totals.map((cell, j) => (
-                        <TableCell key={j} className={`text-xs ${j === 0 ? '' : 'text-right'}`}>{cell}</TableCell>
-                      ))}
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-                </>
+                      {drillDown.totals && (
+                        <TableRow className="font-bold bg-slate-200 hover:bg-slate-200 sticky bottom-0 z-10 border-t-2 border-slate-300">
+                          {drillDown.totals.map((cell, j) => (
+                            <TableCell key={j} className={`text-xs py-3 ${j === 0 ? '' : 'text-right'}`}>{cell}</TableCell>
+                          ))}
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
               )}
             </div>
           )}
