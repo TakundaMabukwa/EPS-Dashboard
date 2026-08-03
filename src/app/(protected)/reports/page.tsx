@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,7 +9,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { createClient } from '@/lib/supabase/client'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList, Line, ComposedChart } from 'recharts'
-import { Search, Check, ChevronDown, X, PanelLeftClose } from 'lucide-react'
+import { Search, Check, ChevronDown, X, PanelLeftClose, Upload, FileSpreadsheet, CheckCircle, XCircle, Loader2 } from 'lucide-react'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { ExcelFilterTable } from '@/components/ui/excel-filter-table'
@@ -241,6 +241,35 @@ async function fetchAll(supabase: any, table: string, filter?: (q: any) => any, 
 }
 
 export default function ReportsPage() {
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadResult, setUploadResult] = useState<any>(null)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [dragOver, setDragOver] = useState(false)
+
+  const handleUpload = useCallback(async () => {
+    if (!uploadFile) return
+    setUploading(true)
+    setUploadError(null)
+    setUploadResult(null)
+    try {
+      const formData = new FormData()
+      formData.append('file', uploadFile)
+      const res = await fetch('/api/loadschedule/upload', { method: 'POST', body: formData })
+      const data = await res.json()
+      if (!res.ok) {
+        setUploadError(data.headers ? `No matching columns. Detected: ${data.headers.join(', ')}` : data.error || 'Upload failed')
+      } else {
+        setUploadResult(data)
+        setUploadFile(null)
+      }
+    } catch (err: any) {
+      setUploadError(err.message || 'Upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }, [uploadFile])
+
   return (
     <div className="p-4 space-y-4">
       <h1 className="text-2xl font-bold tracking-tight">Reports</h1>
@@ -251,6 +280,57 @@ export default function ReportsPage() {
           <TabsTrigger value="subbie">SUBBIE</TabsTrigger>
           <TabsTrigger value="topclient">TOP CLIENT</TabsTrigger>
         </TabsList>
+
+        {/* Inline Excel Upload */}
+        <div className="mt-3 mb-1">
+          <div
+            className={`border-2 border-dashed rounded-lg px-4 py-3 flex items-center gap-3 transition-colors cursor-pointer ${
+              dragOver ? 'border-blue-500 bg-blue-50' : 'border-slate-300 hover:border-slate-400'
+            }`}
+            onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) setUploadFile(f) }}
+            onClick={() => document.getElementById('reports-file-input')?.click()}
+          >
+            <input
+              id="reports-file-input"
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              className="hidden"
+              onChange={e => setUploadFile(e.target.files?.[0] || null)}
+            />
+            <FileSpreadsheet className="h-5 w-5 text-slate-400 shrink-0" />
+            {uploadFile ? (
+              <span className="text-sm font-medium text-slate-700 truncate">{uploadFile.name}</span>
+            ) : (
+              <span className="text-sm text-slate-500">Drop Excel file here or click to upload loadschedule data</span>
+            )}
+            <Button
+              size="sm"
+              className="ml-auto bg-[#1A245E] hover:bg-[#1A245E]/90 h-7 text-xs"
+              disabled={!uploadFile || uploading}
+              onClick={e => { e.stopPropagation(); handleUpload() }}
+            >
+              {uploading ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Uploading...</> : <><Upload className="h-3 w-3 mr-1" /> Upload</>}
+            </Button>
+          </div>
+
+          {uploadError && (
+            <div className="mt-2 flex items-center gap-2 text-xs text-red-600 bg-red-50 rounded px-3 py-2">
+              <XCircle className="h-4 w-4 shrink-0" />
+              <span>{uploadError}</span>
+              <X className="h-3 w-3 ml-auto cursor-pointer" onClick={() => setUploadError(null)} />
+            </div>
+          )}
+          {uploadResult && (
+            <div className="mt-2 flex items-center gap-2 text-xs text-green-700 bg-green-50 rounded px-3 py-2">
+              <CheckCircle className="h-4 w-4 shrink-0" />
+              <span>Inserted {uploadResult.inserted} rows ({uploadResult.totalRows} total, {uploadResult.errors} errors)</span>
+              <X className="h-3 w-3 ml-auto cursor-pointer" onClick={() => setUploadResult(null)} />
+            </div>
+          )}
+        </div>
+
         <TabsContent value="exec"><ExecTab /></TabsContent>
         <TabsContent value="data"><DataTab /></TabsContent>
         <TabsContent value="subbie"><SubbieTab /></TabsContent>
