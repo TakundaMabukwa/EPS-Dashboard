@@ -89,35 +89,39 @@ const fmtR = (n: number) => `R${fmt(n)}`
 
 async function exportDrillDownToExcel(title: string, headers: string[], rows: any[][], totals?: any[]) {
   const wb = new ExcelJS.Workbook()
-  const ws = wb.addWorksheet(title.substring(0, 31))
+  const safeName = title.substring(0, 31)
 
+  // ── Sheet 1: Raw data ──
+  const ws = wb.addWorksheet(safeName)
   const headerRow = ws.addRow(headers)
   headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } }
   headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1A245E' } }
   headerRow.alignment = { horizontal: 'center' }
   headerRow.eachCell((cell) => {
-    cell.border = {
-      bottom: { style: 'thin', color: { argb: 'FF000000' } },
+    cell.border = { bottom: { style: 'thin', color: { argb: 'FF000000' } } }
+  })
+
+  // Track which columns are numeric (for formulas + charts)
+  const numericCols: number[] = []
+  const categoryCol: number = headers.findIndex((h, i) =>
+    rows.length > 0 && typeof rows[0][i] === 'string' && !String(rows[0][i]).startsWith('R')
+  )
+  headers.forEach((h, i) => {
+    if (rows.some(r => typeof r[i] === 'number' || (typeof r[i] === 'string' && r[i].startsWith('R')))) {
+      numericCols.push(i)
     }
   })
 
   rows.forEach((row, i) => {
     const dataRow = ws.addRow(row)
-    dataRow.eachCell((cell, colNumber) => {
+    dataRow.eachCell((cell) => {
       const val = cell.value
       if (typeof val === 'string' && val.startsWith('R')) {
         const num = Number(val.replace(/[R,\s]/g, ''))
-        if (!isNaN(num)) {
-          cell.value = num
-          cell.numFmt = 'R #,##0'
-        }
+        if (!isNaN(num)) { cell.value = num; cell.numFmt = 'R #,##0' }
       }
-      if (i % 2 === 1) {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8F9FA' } }
-      }
-      cell.border = {
-        bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-      }
+      if (i % 2 === 1) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8F9FA' } }
+      cell.border = { bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } } }
     })
   })
 
@@ -129,54 +133,107 @@ async function exportDrillDownToExcel(title: string, headers: string[], rows: an
       const val = cell.value
       if (typeof val === 'string' && val.startsWith('R')) {
         const num = Number(val.replace(/[R,\s]/g, ''))
-        if (!isNaN(num)) {
-          cell.value = num
-          cell.numFmt = 'R #,##0'
-        }
+        if (!isNaN(num)) { cell.value = num; cell.numFmt = 'R #,##0' }
       }
     })
   }
 
-  const lastDataRow = rows.length + 1
-  headers.forEach((h, i) => {
-    const col = i + 1
-    const colLetter = String.fromCharCode(64 + col)
-    ws.getColumn(col).width = Math.max(h.length + 2, 14)
-  })
+  // Column widths
+  headers.forEach((h, i) => { ws.getColumn(i + 1).width = Math.max(h.length + 2, 14) })
 
-  if (rows.length > 0) {
-    const firstDataNumRow = 2
-    const lastDataNumRow = rows.length + 1
-    const totalNumRow = totals ? rows.length + 2 : undefined
-
-    headers.forEach((h, i) => {
-      const colLetter = String.fromCharCode(64 + i + 1)
-      const isNumeric = rows.some(r => {
-        const v = r[i]
-        if (typeof v === 'number') return true
-        if (typeof v === 'string' && v.startsWith('R')) {
-          return !isNaN(Number(v.replace(/[R,\s]/g, '')))
-        }
-        return false
-      })
-
-      if (isNumeric) {
-        const dataCells = rows.map((_, ri) => `${colLetter}${ri + 2}`).filter((_, ri) => {
-          const v = rows[ri][i]
-          return typeof v === 'number' || (typeof v === 'string' && v.startsWith('R'))
-        })
-        if (dataCells.length > 0) {
-          const sumFormula = `SUM(${colLetter}${firstDataNumRow}:${colLetter}${lastDataNumRow})`
-          if (totalNumRow) {
-            ws.getCell(`${colLetter}${totalNumRow}`).value = { formula: sumFormula } as any
-            ws.getCell(`${colLetter}${totalNumRow}`).numFmt = 'R #,##0'
-          }
-        }
-      }
+  // SUM formulas in totals row for numeric columns
+  if (rows.length > 0 && totals) {
+    const totalNumRow = rows.length + 2
+    numericCols.forEach(ci => {
+      const colLetter = String.fromCharCode(65 + ci)
+      const f = `SUM(${colLetter}2:${colLetter}${rows.length + 1})`
+      ws.getCell(`${colLetter}${totalNumRow}`).value = { formula: f } as any
+      ws.getCell(`${colLetter}${totalNumRow}`).numFmt = 'R #,##0'
     })
   }
 
   ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: rows.length + 1, column: headers.length } }
+
+  // ── Sheet 2: Charts (aggregated from data) ──
+  if (rows.length > 0 && categoryCol >= 0 && numericCols.length > 0) {
+    const catIdx = categoryCol
+    const valIdx = numericCols[0] // primary value column
+
+    // Aggregate: sum by category
+    const aggMap = new Map<string, number>()
+    rows.forEach(r => {
+      const cat = String(r[catIdx] || 'Unknown')
+      const raw = r[valIdx]
+      const val = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw.replace(/[R,\s]/g, '')) : 0
+      if (!isNaN(val)) aggMap.set(cat, (aggMap.get(cat) || 0) + val)
+    })
+
+    const sorted = [...aggMap.entries()].sort((a, b) => b[1] - a[1])
+    const chartData = sorted.slice(0, 20) // top 20 for readability
+    if (chartData.length === 0) return
+
+    const chartWs = wb.addWorksheet('Charts')
+    chartWs.columns = [
+      { header: headers[catIdx], key: 'cat', width: 30 },
+      { header: headers[valIdx], key: 'val', width: 18 },
+    ]
+    chartData.forEach(([cat, val]) => chartWs.addRow({ cat, val: Math.round(val) }))
+
+    const totalAgg = chartData.reduce((s, [, v]) => s + v, 0)
+    chartWs.addRow({ cat: 'Grand Total', val: totalAgg })
+    const lastRow = chartData.length + 2
+    chartWs.getCell(`B${lastRow}`).font = { bold: true }
+    chartWs.getCell(`B${lastRow}`).numFmt = 'R #,##0'
+    chartWs.getColumn(2).numFmt = 'R #,##0'
+
+    // Bar chart
+    const barChart: any = {
+      type: 'bar',
+      title: { text: `${headers[valIdx]} by ${headers[catIdx]}` },
+      legend: { position: 'none' },
+      plotArea: { border: { none: true } },
+      series: [{
+        labels: { position: 'out' },
+        val: { numRef: `Charts!$B$2:$B${lastRow - 1}` },
+        cat: { numRef: `Charts!$A$2:$A${lastRow - 1}` },
+      }],
+    }
+    chartWs.addChart(barChart, 'D2')
+
+    // If there's a second numeric column, add a second chart
+    if (numericCols.length > 1) {
+      const valIdx2 = numericCols[1]
+      const aggMap2 = new Map<string, number>()
+      rows.forEach(r => {
+        const cat = String(r[catIdx] || 'Unknown')
+        const raw = r[valIdx2]
+        const val = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw.replace(/[R,\s]/g, '')) : 0
+        if (!isNaN(val)) aggMap2.set(cat, (aggMap2.get(cat) || 0) + val)
+      })
+      const sorted2 = [...aggMap2.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20)
+      chartWs.getColumn(3).key = 'val2'
+      chartWs.getColumn(4).key = 'cat2'
+      chartWs.getColumn(3).width = 18
+      chartWs.getColumn(4).width = 30
+
+      chartWs.getColumn(3).header = headers[valIdx2]
+      chartWs.getColumn(4).header = headers[catIdx]
+      sorted2.forEach(([cat, val]) => chartWs.addRow({ cat2: cat, val2: Math.round(val) }))
+
+      const barChart2: any = {
+        type: 'bar',
+        title: { text: `${headers[valIdx2]} by ${headers[catIdx]}` },
+        legend: { position: 'none' },
+        plotArea: { border: { none: true } },
+        series: [{
+          labels: { position: 'out' },
+          val: { numRef: `Charts!$C$2:$C${sorted2.length + 1}` },
+          cat: { numRef: `Charts!$D$2:$D${sorted2.length + 1}` },
+        }],
+      }
+      chartWs.addChart(barChart2, 'D22')
+    }
+  }
 
   const buffer = await wb.xlsx.writeBuffer()
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
