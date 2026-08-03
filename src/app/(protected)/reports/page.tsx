@@ -288,24 +288,11 @@ function ExecTab() {
   }
 
   useEffect(() => {
-    const cacheKey = 'exec_data_v1'
-    const cached = sessionStorage.getItem(cacheKey)
-    if (cached) {
-      try {
-        const { data, ts } = JSON.parse(cached)
-        if (Date.now() - ts < 5 * 60 * 1000) {
-          setAllRows(data)
-          setLoading(false)
-          return
-        }
-      } catch {}
-    }
     async function load() {
       const countQ = supabase.from('loadschedule').select('*', { count: 'exact', head: true })
       const { count } = await countQ
       setLoadTotal(count || 0)
       const data = await fetchAll(supabase, 'loadschedule', undefined, EXEC_COLUMNS, (loaded) => setLoadProgress(loaded))
-      sessionStorage.setItem(cacheKey, JSON.stringify({ data, ts: Date.now() }))
       setAllRows(data)
       setLoading(false)
     }
