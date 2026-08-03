@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -252,7 +252,7 @@ function DataTab() {
 }
 
 /* ─── EXECUTIVE TAB ─── */
-const EXEC_COLUMNS = 'month,month_yr,year,dr_name,cr_name,dr_value,cr_value,profit,subbie2,commodity,load_descrip,own_reg,from_loc,to_loc,debtor'
+const EXEC_COLUMNS = 'month,month_yr,year,dr_name,cr_name,dr_value,cr_value,profit,subbie2,commodity,load_descrip,own_reg,from_loc,to_loc,debtor,load_region,offload_region,qty'
 
 function ExecTab() {
   const supabase = createClient()
@@ -262,22 +262,9 @@ function ExecTab() {
   const [monthFilter, setMonthFilter] = useState('all')
   const [yearFilter, setYearFilter] = useState('all')
   const [drillDown, setDrillDown] = useState<{ title: string; headers: string[]; rows: any[][]; totals?: any[] } | null>(null)
-  const [drillLoading, setDrillLoading] = useState(false)
-  const allRawRowsRef = useRef<any[] | null>(null)
 
-  const ensureRawRows = async () => {
-    if (allRawRowsRef.current) return allRawRowsRef.current
-    const data = await fetchAll(supabase, 'loadschedule')
-    allRawRowsRef.current = data
-    return data
-  }
-
-  const openDrillDown = async (title: string, filterFn: (r: any) => boolean, headers: string[], mapRow: (r: any) => any[], totalsFn?: (rows: any[][]) => any[]) => {
-    setDrillDown({ title, headers, rows: [], totals: undefined })
-    setDrillLoading(true)
-    const rawRows = await ensureRawRows()
-    setDrillLoading(false)
-    const filtered = rawRows.filter(filterFn)
+  const openDrillDown = (title: string, filterFn: (r: any) => boolean, headers: string[], mapRow: (r: any) => any[], totalsFn?: (rows: any[][]) => any[]) => {
+    const filtered = allRows.filter(filterFn)
     const rows = filtered.map(mapRow)
     const totals = totalsFn ? totalsFn(rows) : undefined
     setDrillDown({ title, headers, rows, totals })
@@ -519,6 +506,79 @@ function ExecTab() {
       .map(([name, v]) => ({ name, ...v }))
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 15)
+  }, [allFiltered])
+
+  // ── Chart 15: Top Routes by Load Count ──
+  const topRoutesData = useMemo(() => {
+    const map = new Map<string, number>()
+    allFiltered.forEach(r => {
+      const from = r.from_loc || 'Unknown'
+      const to = r.to_loc || 'Unknown'
+      const key = `${from} → ${to}`
+      map.set(key, (map.get(key) || 0) + 1)
+    })
+    return [...map.entries()]
+      .map(([route, count]) => ({ route, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 20)
+  }, [allFiltered])
+
+  // ── Chart 16: Revenue by Region ──
+  const regionRevenueData = useMemo(() => {
+    const map = new Map<string, { revenue: number; count: number }>()
+    allFiltered.forEach(r => {
+      const region = r.load_region || 'Unknown'
+      const existing = map.get(region) || { revenue: 0, count: 0 }
+      existing.revenue += r.dr_value || 0
+      existing.count += 1
+      map.set(region, existing)
+    })
+    return [...map.entries()]
+      .map(([name, v]) => ({ name, ...v }))
+      .sort((a, b) => b.revenue - a.revenue)
+  }, [allFiltered])
+
+  // ── Chart 17: New Clients Onboarded ──
+  const newClientData = useMemo(() => {
+    const clientFirstYear = new Map<string, string>()
+    allRows.forEach(r => {
+      const name = r.dr_name || 'Unknown'
+      const yr = String(r.year || '')
+      if (!clientFirstYear.has(name) || yr < clientFirstYear.get(name)!) {
+        clientFirstYear.set(name, yr)
+      }
+    })
+    const currentYear = yearFilter === 'all' ? String(new Date().getFullYear()) : yearFilter
+    const map = new Map<string, { revenue: number; count: number }>()
+    allFiltered.filter(r => {
+      const name = r.dr_name || 'Unknown'
+      return clientFirstYear.get(name) === currentYear
+    }).forEach(r => {
+      const key = r.dr_name || 'Unknown'
+      const existing = map.get(key) || { revenue: 0, count: 0 }
+      existing.revenue += r.dr_value || 0
+      existing.count += 1
+      map.set(key, existing)
+    })
+    return [...map.entries()]
+      .map(([name, v]) => ({ name, ...v, avg: v.count > 0 ? Math.round(v.revenue / v.count) : 0 }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 15)
+  }, [allRows, allFiltered, yearFilter])
+
+  // ── Chart 18: Revenue by Offload Region ──
+  const offloadRegionData = useMemo(() => {
+    const map = new Map<string, { revenue: number; count: number }>()
+    allFiltered.forEach(r => {
+      const region = r.offload_region || 'Unknown'
+      const existing = map.get(region) || { revenue: 0, count: 0 }
+      existing.revenue += r.dr_value || 0
+      existing.count += 1
+      map.set(region, existing)
+    })
+    return [...map.entries()]
+      .map(([name, v]) => ({ name, ...v }))
+      .sort((a, b) => b.revenue - a.revenue)
   }, [allFiltered])
 
   if (loading) return <div className="text-center py-12 text-slate-500">Loading executive data...</div>
@@ -1006,6 +1066,136 @@ function ExecTab() {
         </Card>
       </div>
 
+      {/* ═══ ROW 8: Top Routes + Revenue by Region ═══ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => {
+            const yf = yearFilter
+            openDrillDown(
+              `Top Routes ${yf === 'all' ? '' : yf}`,
+              r => (yf === 'all' || String(r.year) === yf),
+              ['Load Nr', 'From', 'To', 'Client', 'Month'],
+              r => [r.load_nr, r.from_loc, r.to_loc, r.dr_name, r.month],
+              rows => ['Grand Total', '', '', `${rows.length} loads`, '']
+            )
+          }}
+        >
+          <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Top Routes by Load Count {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={Math.max(200, topRoutesData.length * 26 + 40)}>
+              <BarChart data={topRoutesData} layout="vertical" margin={{ left: 160, right: 30, top: 5, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 10 }} />
+                <YAxis type="category" dataKey="route" tick={{ fontSize: 9 }} width={160} />
+                <Tooltip />
+                <Bar dataKey="count" fill="#5B9BD5" barSize={14}>
+                  <LabelList dataKey="count" position="right" style={{ fontSize: 9 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => {
+            const yf = yearFilter
+            openDrillDown(
+              `Revenue by Origin Region ${yf === 'all' ? '' : yf}`,
+              r => (yf === 'all' || String(r.year) === yf),
+              ['Load Nr', 'Region', 'Client', 'Month', 'Revenue'],
+              r => [r.load_nr, r.load_region, r.dr_name, r.month, fmtR(r.dr_value)],
+              rows => ['Grand Total', '', '', '', fmtR(rows.reduce((s, r) => s + (Number(String(r[4]).replace(/[R,]/g, '')) || 0), 0))]
+            )
+          }}
+        >
+          <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Revenue by Origin Region {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={Math.max(200, regionRevenueData.length * 30 + 40)}>
+              <BarChart data={regionRevenueData} layout="vertical" margin={{ left: 100, right: 60, top: 5, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000000).toFixed(0)}M`} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={100} />
+                <Tooltip formatter={(v: number) => fmtR(v)} />
+                <Bar dataKey="revenue" fill="#70AD47" barSize={16}>
+                  <LabelList dataKey="revenue" position="right" formatter={(v: number) => fmtR(v)} style={{ fontSize: 9 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ═══ ROW 9: New Clients + Offload Region ═══ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => {
+            const yf = yearFilter
+            openDrillDown(
+              `New Clients Onboarded ${yf === 'all' ? '' : yf}`,
+              r => {
+                const dn = (r.dr_name || '').toUpperCase()
+                const firstYear = allRows.filter(x => x.dr_name === r.dr_name).reduce((min, x) => {
+                  const yr = String(x.year || '9999')
+                  return yr < min ? yr : min
+                }, '9999')
+                return firstYear === (yf === 'all' ? String(new Date().getFullYear()) : yf)
+              },
+              ['Load Nr', 'Client', 'Month', 'Revenue'],
+              r => [r.load_nr, r.dr_name, r.month, fmtR(r.dr_value)],
+              rows => ['Grand Total', '', `${rows.length} loads`, fmtR(rows.reduce((s, r) => s + (Number(String(r[3]).replace(/[R,]/g, '')) || 0), 0))]
+            )
+          }}
+        >
+          <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">New Clients Onboarded {yearFilter === 'all' ? 'This Year' : yearFilter}</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={Math.max(200, newClientData.length * 28 + 40)}>
+              <BarChart data={newClientData} layout="vertical" margin={{ left: 200, right: 60, top: 5, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000).toFixed(0)}K`} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 8 }} width={200} />
+                <Tooltip formatter={(v: number, name: string) => name === 'revenue' ? fmtR(v) : v} />
+                <Bar dataKey="revenue" name="Revenue" fill="#70AD47" barSize={12}>
+                  <LabelList dataKey="revenue" position="right" formatter={(v: number) => fmt(v)} style={{ fontSize: 9 }} />
+                </Bar>
+                <Bar dataKey="count" name="Loads" fill="#ED7D31" barSize={12} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => {
+            const yf = yearFilter
+            openDrillDown(
+              `Revenue by Destination Region ${yf === 'all' ? '' : yf}`,
+              r => (yf === 'all' || String(r.year) === yf),
+              ['Load Nr', 'Destination Region', 'Client', 'Month', 'Revenue'],
+              r => [r.load_nr, r.offload_region, r.dr_name, r.month, fmtR(r.dr_value)],
+              rows => ['Grand Total', '', '', '', fmtR(rows.reduce((s, r) => s + (Number(String(r[4]).replace(/[R,]/g, '')) || 0), 0))]
+            )
+          }}
+        >
+          <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Revenue by Destination Region {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={Math.max(200, offloadRegionData.length * 30 + 40)}>
+              <BarChart data={offloadRegionData} layout="vertical" margin={{ left: 100, right: 60, top: 5, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000000).toFixed(0)}M`} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={100} />
+                <Tooltip formatter={(v: number) => fmtR(v)} />
+                <Bar dataKey="revenue" fill="#ED7D31" barSize={16}>
+                  <LabelList dataKey="revenue" position="right" formatter={(v: number) => fmtR(v)} style={{ fontSize: 9 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Drill-down Modal */}
       <Dialog open={!!drillDown} onOpenChange={() => setDrillDown(null)}>
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
@@ -1015,12 +1205,7 @@ function ExecTab() {
           </DialogHeader>
           {drillDown && (
             <div className="overflow-auto flex-1">
-              {drillLoading ? (
-                <div className="flex items-center justify-center py-12 text-slate-500 text-sm">
-                  <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600" />
-                  Loading full data...
-                </div>
-              ) : drillDown.rows.length === 0 ? (
+              {drillDown.rows.length === 0 ? (
                 <div className="text-center py-8 text-sm text-slate-400">No data found for this filter.</div>
               ) : (
                 <>
