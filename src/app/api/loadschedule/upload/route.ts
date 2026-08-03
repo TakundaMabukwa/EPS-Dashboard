@@ -84,6 +84,8 @@ export async function POST(req: NextRequest) {
     let inserted = 0, errors = 0, skipped = 0, batchNum = 0
     const errorMessages: string[] = []
     let mappedColumnNames: string[] = []
+    let rawHeaders: string[] = []
+    let foundDataSheet = false
     const BATCH_SIZE = 500
 
     const flushBatch = async () => {
@@ -100,7 +102,9 @@ export async function POST(req: NextRequest) {
     }
 
     for await (const worksheetReader of workbookReader) {
+      console.log('Found sheet:', worksheetReader.name)
       if (worksheetReader.name !== 'DATA') continue
+      foundDataSheet = true
 
       let rowNumber = 0
       for await (const row of worksheetReader) {
@@ -108,16 +112,28 @@ export async function POST(req: NextRequest) {
         if (rowNumber === 1) {
           // Parse headers using row.values array (1-indexed)
           const values = row.values as any[]
+          console.log('Row 1 values length:', values.length)
           for (let col = 1; col < values.length; col++) {
             const cell = values[col]
             const raw = cell && typeof cell === 'object' ? (cell.value ?? cell.result ?? '') : (cell ?? '')
             const rawHeader = String(raw).trim().toLowerCase()
+            rawHeaders.push(`[${col}] "${String(raw)}" -> normalized "${rawHeader}"`)
+            console.log(`Col ${col}: raw="${String(raw)}" normalized="${rawHeader}"`)
             const mapped = COLUMN_MAP[rawHeader]
-            if (mapped) colMapping[col] = mapped
+            if (mapped) {
+              colMapping[col] = mapped
+              console.log(`  -> MAPPED to ${mapped}`)
+            }
           }
           mappedCols = Object.keys(colMapping).map(Number)
+          mappedColumnNames = mappedCols.map(c => colMapping[c])
+          console.log('Mapped columns:', mappedColumnNames)
+          console.log('Total mapped:', mappedCols.length)
+          continue
+        }
+          mappedCols = Object.keys(colMapping).map(Number)
           if (mappedCols.length === 0) {
-            return NextResponse.json({ error: 'No matching columns found in DATA sheet.' }, { status: 400 })
+            return NextResponse.json({ error: 'No matching columns found in DATA sheet.', rawHeaders, sheetNames: [] }, { status: 400 })
           }
           mappedColumnNames = mappedCols.map(c => colMapping[c])
           continue
