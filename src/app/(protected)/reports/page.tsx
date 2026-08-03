@@ -581,6 +581,87 @@ function ExecTab() {
       .sort((a, b) => b.revenue - a.revenue)
   }, [allFiltered])
 
+  // ── Chart 19: Chinas Clients ──
+  const CHINAS_CLIENTS = ['GOODWILL SA CERAMIC', 'STRIDE LOGISTIC', 'SUNBROMATE']
+  const chinasData = useMemo(() => {
+    const map = new Map<string, { revenue: number; count: number }>()
+    allFiltered.filter(r => {
+      const dn = (r.dr_name || '').toUpperCase()
+      return CHINAS_CLIENTS.some(c => dn.includes(c))
+    }).forEach(r => {
+      const key = r.dr_name || 'Unknown'
+      const existing = map.get(key) || { revenue: 0, count: 0 }
+      existing.revenue += r.dr_value || 0
+      existing.count += 1
+      map.set(key, existing)
+    })
+    return [...map.entries()]
+      .map(([name, v]) => ({ name, ...v }))
+      .sort((a, b) => b.revenue - a.revenue)
+  }, [allFiltered])
+
+  // ── Chart 20: Special Projects ──
+  const specialProjectsData = useMemo(() => {
+    const map = new Map<string, { revenue: number; count: number }>()
+    allFiltered.filter(r => (r.commodity || '').toUpperCase().includes('SPECIAL PROJECT')).forEach(r => {
+      const m = r.month || 'Unknown'
+      const existing = map.get(m) || { revenue: 0, count: 0 }
+      existing.revenue += r.dr_value || 0
+      existing.count += 1
+      map.set(m, existing)
+    })
+    return MONTH_ORDER.filter(m => map.has(m)).map(m => {
+      const v = map.get(m)!
+      return { month: m, revenue: Math.round(v.revenue), count: v.count }
+    })
+  }, [allFiltered])
+
+  // ── Chart 21: Loading by Destination (Bloemfontein) ──
+  const loadingDestData = useMemo(() => {
+    const map = new Map<string, { revenue: number; count: number }>()
+    allFiltered.filter(r => {
+      const to = (r.to_loc || '').toUpperCase()
+      const offload = (r.load_descrip || '').toUpperCase()
+      return to.includes('BLOEM') || offload.includes('BLOEM')
+    }).forEach(r => {
+      const key = r.dr_name || 'Unknown'
+      const existing = map.get(key) || { revenue: 0, count: 0 }
+      existing.revenue += r.dr_value || 0
+      existing.count += 1
+      map.set(key, existing)
+    })
+    return [...map.entries()]
+      .map(([name, v]) => ({ name, ...v }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 15)
+  }, [allFiltered])
+
+  // ── Chart 22: Durban↔JHB Route Stats ──
+  const routeStatsData = useMemo(() => {
+    const map = new Map<string, { toJhb: number; fromJhb: number }>()
+    allFiltered.filter(r => {
+      const from = (r.from_loc || '').toUpperCase()
+      const to = (r.to_loc || '').toUpperCase()
+      return from.includes('DURBAN') || to.includes('DURBAN') || from.includes('JHB') || to.includes('JHB')
+    }).forEach(r => {
+      const m = r.month || 'Unknown'
+      const from = (r.from_loc || '').toUpperCase()
+      const to = (r.to_loc || '').toUpperCase()
+      if (!map.has(m)) map.set(m, { toJhb: 0, fromJhb: 0 })
+      const entry = map.get(m)!
+      if (from.includes('DURBAN') && to.includes('JHB')) entry.toJhb += 1
+      if (from.includes('JHB') && to.includes('DURBAN')) entry.fromJhb += 1
+      if (!from.includes('DURBAN') && !to.includes('DURBAN') && !from.includes('JHB') && !to.includes('JHB')) {
+        entry.toJhb += 0
+        entry.fromJhb += 0
+      }
+    })
+    return MONTH_ORDER.filter(m => map.has(m)).map(m => {
+      const v = map.get(m)!
+      return { month: m, toJhb: v.toJhb, fromJhb: v.fromJhb, total: v.toJhb + v.fromJhb }
+    })
+  }, [allFiltered])
+
   if (loading) return <div className="text-center py-12 text-slate-500">Loading executive data...</div>
 
   return (
@@ -1189,6 +1270,150 @@ function ExecTab() {
                 <Tooltip formatter={(v: number) => fmtR(v)} />
                 <Bar dataKey="revenue" fill="#ED7D31" barSize={16}>
                   <LabelList dataKey="revenue" position="right" formatter={(v: number) => fmtR(v)} style={{ fontSize: 9 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ═══ ROW 10: Chinas Clients + Special Projects ═══ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => {
+            const yf = yearFilter
+            openDrillDown(
+              `Chinas Clients ${yf === 'all' ? '' : yf}`,
+              r => {
+                const dn = (r.dr_name || '').toUpperCase()
+                return CHINAS_CLIENTS.some(c => dn.includes(c)) && (yf === 'all' || String(r.year) === yf)
+              },
+              ['Load Nr', 'Client', 'Month', 'Revenue'],
+              r => [r.load_nr, r.dr_name, r.month, fmtR(r.dr_value)],
+              rows => ['Grand Total', '', `${rows.length} loads`, fmtR(rows.reduce((s, r) => s + (Number(String(r[3]).replace(/[R,]/g, '')) || 0), 0))]
+            )
+          }}
+        >
+          <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Chinas Clients {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={Math.max(200, chinasData.length * 35 + 40)}>
+              <BarChart data={chinasData} layout="vertical" margin={{ left: 250, right: 60, top: 5, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000).toFixed(0)}K`} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={250} />
+                <Tooltip formatter={(v: number, name: string) => name === 'revenue' ? fmtR(v) : v} />
+                <Bar dataKey="revenue" name="Revenue" fill={BLUE} barSize={14}>
+                  <LabelList dataKey="revenue" position="right" formatter={(v: number) => fmtR(v)} style={{ fontSize: 9 }} />
+                </Bar>
+                <Bar dataKey="count" name="Loads" fill="#ED7D31" barSize={14} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => {
+            const yf = yearFilter
+            openDrillDown(
+              `Special Projects ${yf === 'all' ? '' : yf}`,
+              r => (r.commodity || '').toUpperCase().includes('SPECIAL PROJECT') && (yf === 'all' || String(r.year) === yf),
+              ['Load Nr', 'Client', 'Month', 'Revenue'],
+              r => [r.load_nr, r.dr_name, r.month, fmtR(r.dr_value)],
+              rows => ['Grand Total', '', `${rows.length} loads`, fmtR(rows.reduce((s, r) => s + (Number(String(r[3]).replace(/[R,]/g, '')) || 0), 0))]
+            )
+          }}
+        >
+          <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Special Projects Revenue {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
+          <CardContent>
+            {specialProjectsData.length === 0 ? (
+              <div className="flex items-center justify-center h-[280px] text-sm text-slate-400">No special projects data</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={280}>
+                <ComposedChart data={specialProjectsData} margin={{ top: 20, right: 50, left: 10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                  <YAxis yAxisId="left" tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000).toFixed(0)}K`} />
+                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} />
+                  <Tooltip formatter={(v: number, name: string) => name === 'revenue' ? fmtR(v) : v} />
+                  <Bar yAxisId="left" dataKey="revenue" name="Revenue" fill="#70AD47" barSize={35}>
+                    <LabelList dataKey="revenue" position="top" formatter={(v: number) => fmtR(v)} style={{ fontSize: 9 }} />
+                  </Bar>
+                  <Line yAxisId="right" type="monotone" dataKey="count" name="Loads" stroke={BLUE} strokeWidth={2} dot={{ fill: BLUE, r: 3 }} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ═══ ROW 11: Loading by Dest + Durban↔JHB Route ═══ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => {
+            const yf = yearFilter
+            openDrillDown(
+              `Loading into Bloemfontein ${yf === 'all' ? '' : yf}`,
+              r => {
+                const to = (r.to_loc || '').toUpperCase()
+                const offload = (r.load_descrip || '').toUpperCase()
+                return (to.includes('BLOEM') || offload.includes('BLOEM')) && (yf === 'all' || String(r.year) === yf)
+              },
+              ['Load Nr', 'Client', 'Month', 'Revenue'],
+              r => [r.load_nr, r.dr_name, r.month, fmtR(r.dr_value)],
+              rows => ['Grand Total', '', `${rows.length} loads`, fmtR(rows.reduce((s, r) => s + (Number(String(r[3]).replace(/[R,]/g, '')) || 0), 0))]
+            )
+          }}
+        >
+          <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Loading into Bloemfontein {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={Math.max(200, loadingDestData.length * 30 + 40)}>
+              <BarChart data={loadingDestData} layout="vertical" margin={{ left: 250, right: 30, top: 5, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 10 }} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 8 }} width={250} />
+                <Tooltip />
+                <Bar dataKey="count" fill="#5B9BD5" barSize={14}>
+                  <LabelList dataKey="count" position="right" style={{ fontSize: 9 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => {
+            const yf = yearFilter
+            openDrillDown(
+              `Durban ↔ JHB Route ${yf === 'all' ? '' : yf}`,
+              r => {
+                const from = (r.from_loc || '').toUpperCase()
+                const to = (r.to_loc || '').toUpperCase()
+                const isRoute = from.includes('DURBAN') || to.includes('DURBAN') || from.includes('JHB') || to.includes('JHB')
+                return isRoute && (yf === 'all' || String(r.year) === yf)
+              },
+              ['Load Nr', 'From', 'To', 'Client', 'Month'],
+              r => [r.load_nr, r.from_loc, r.to_loc, r.dr_name, r.month],
+              rows => ['Grand Total', '', '', `${rows.length} loads`, '']
+            )
+          }}
+        >
+          <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Durban ↔ JHB Route Stats {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={routeStatsData} margin={{ top: 20, right: 10, left: 10, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} />
+                <Tooltip />
+                <Bar dataKey="toJhb" name="Durban → JHB" fill="#5B9BD5" barSize={25}>
+                  <LabelList dataKey="toJhb" position="top" style={{ fontSize: 9 }} />
+                </Bar>
+                <Bar dataKey="fromJhb" name="JHB → Durban" fill="#ED7D31" barSize={25}>
+                  <LabelList dataKey="fromJhb" position="top" style={{ fontSize: 9 }} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
