@@ -317,12 +317,14 @@ function DashboardContent({
   driverInfo,
   vehicleInfo,
   vehicleLocation,
+  fuelData,
   open,
 }: {
   trip?: any
   driverInfo?: any
   vehicleInfo?: any
   vehicleLocation?: any
+  fuelData?: any
   open: boolean
 }) {
   const [liveVehicleData, setLiveVehicleData] = useState<any>(null)
@@ -344,68 +346,47 @@ function DashboardContent({
 
   useEffect(() => {
     let active = true
-    const fetchLiveData = async () => {
+    const fetchGPS = async () => {
       if (!open || !plateCandidates.length) return
       try {
-        const [energyRiteResponse, epsResponse] = await Promise.all([
-          fetch("/api/energy-rite/vehicles", { cache: "no-store" }),
-          fetch("/api/eps-vehicles", { cache: "no-store" }),
-        ])
-
-        let energyRiteMatch = null
-        if (energyRiteResponse.ok) {
-          const payload = await energyRiteResponse.json()
-          const list = Array.isArray(payload) ? payload : payload?.data || payload?.result?.data || []
-          energyRiteMatch = findBestPlateMatch(list, plateCandidates)
+        const gpsResponse = await fetch("/api/vehicle/live/all", { cache: "no-store" })
+        if (gpsResponse.ok) {
+          const payload = await gpsResponse.json()
+          const list = Array.isArray(payload) ? payload : payload?.data || []
+          const gpsRaw = findBestPlateMatch(list, plateCandidates)
+          if (active && gpsRaw) {
+            setLiveVehicleData((prev: any) => (isSameLiveVehicleData(prev, gpsRaw) ? prev : gpsRaw))
+          }
         }
-
-        let epsMatch = null
-        if (epsResponse.ok) {
-          const payload = await epsResponse.json()
-          const list = Array.isArray(payload) ? payload : payload?.data || payload?.result?.data || []
-          epsMatch = findBestPlateMatch(list, plateCandidates)
-        }
-
-        const nextData = energyRiteMatch || epsMatch || null
-        if (active) {
-          setLiveVehicleData((prev: any) => (isSameLiveVehicleData(prev, nextData) ? prev : nextData))
-        }
-      } catch {
-        if (active) setLiveVehicleData(null)
-      }
+      } catch {}
     }
 
-    if (open) fetchLiveData()
-    const interval = open ? setInterval(fetchLiveData, 30000) : null
+    if (open) fetchGPS()
+    const interval = open ? setInterval(fetchGPS, 30000) : null
     return () => {
       active = false
       if (interval) clearInterval(interval)
     }
   }, [plateCandidates, open])
 
-  const speed = toNumber(liveVehicleData?.Speed ?? liveVehicleData?.speed ?? vehicleLocation?.speed ?? trip?.current_speed) ?? 0
-  const rpmRaw = toNumber(liveVehicleData?.rpm ?? liveVehicleData?.engine_rpm ?? trip?.rpm)
+  const speed = toNumber(liveVehicleData?.speed ?? vehicleLocation?.speed ?? trip?.current_speed) ?? 0
+  const rpmRaw = toNumber(fuelData?.engineSpeed ?? trip?.rpm)
   const rpm = rpmRaw !== null ? Math.max(0, Math.min(9, rpmRaw / (rpmRaw > 20 ? 1000 : 1))) : null
   const rpmGaugeValue = rpm ?? 0
-  const mileage = toNumber(liveVehicleData?.Mileage ?? liveVehicleData?.mileage ?? vehicleLocation?.mileage)
-  const fuelLevel = toNumber(liveVehicleData?.fuel_probe_1_level ?? vehicleLocation?.fuel_probe_1_level) ?? 0
-  const fuelPct = toNumber(liveVehicleData?.fuel_probe_1_level_percentage ?? vehicleLocation?.fuel_probe_1_level_percentage) ?? 0
-  const fuelVol = toNumber(liveVehicleData?.fuel_probe_1_volume_in_tank ?? vehicleLocation?.fuel_probe_1_volume_in_tank) ?? 0
-  const fuelTemp = toNumber(liveVehicleData?.fuel_probe_1_temperature ?? vehicleLocation?.fuel_probe_1_temperature)
-  const fuel2Pct = toNumber(liveVehicleData?.fuel_probe_2_level_percentage ?? vehicleLocation?.fuel_probe_2_level_percentage) ?? 0
-  const fuel2Vol = toNumber(liveVehicleData?.fuel_probe_2_volume_in_tank ?? vehicleLocation?.fuel_probe_2_volume_in_tank) ?? null
-  const fuel2Temp = toNumber(liveVehicleData?.fuel_probe_2_temperature ?? vehicleLocation?.fuel_probe_2_temperature)
-  const messageType = liveVehicleData?.message_type ?? vehicleLocation?.message_type ?? null
-  const dataId = liveVehicleData?.Id ?? vehicleLocation?.id ?? null
-  const quality = String(liveVehicleData?.Quality ?? vehicleLocation?.quality ?? "").trim()
-  const locTime = String(liveVehicleData?.LocTime ?? vehicleLocation?.loc_time ?? "").trim()
-  const updatedAt = String(liveVehicleData?.updated_at ?? "").trim()
-  const ipAddress = String(liveVehicleData?.IPAddress ?? liveVehicleData?.ip_address ?? "").trim()
+  const mileage = toNumber(fuelData?.odometer ?? liveVehicleData?.mileage ?? vehicleLocation?.mileage)
+  const fuelPct = toNumber(fuelData?.fuelLevel ?? 0)
+  const fuelVol = fuelPct > 0 ? Math.round((fuelPct / 100) * 1000) : 0
+  const fuelTemp = toNumber(fuelData?.oilTemp ?? null)
+  const locTime = String(liveVehicleData?.loc_time ?? vehicleLocation?.loc_time ?? fuelData?.timestamp ?? "").trim()
+  const updatedAt = String(fuelData?.timestamp ?? "").trim()
   const company = String(liveVehicleData?.company ?? "").trim()
   const costCode = String(liveVehicleData?.cost_code ?? "").trim()
   const currentStatus = String(liveVehicleData?.current_status ?? liveVehicleData?.status ?? "").trim()
-  const truck = liveVehicleData?.Plate || vehicleLocation?.plate || vehicleInfo?.registration_number || "TRUCK"
-  const liveDriverName = String(liveVehicleData?.DriverName || "").trim()
+  const ipAddress = String(liveVehicleData?.IPAddress ?? liveVehicleData?.ip_address ?? "").trim()
+  const quality = String(liveVehicleData?.Quality ?? "").trim()
+  const dataId = liveVehicleData?.Id ?? null
+  const truck = liveVehicleData?.plate || vehicleLocation?.plate || vehicleInfo?.registration_number || "TRUCK"
+  const liveDriverName = String(liveVehicleData?.DriverName || fuelData?.driverName || "").trim()
   const driver =
     liveDriverName && !["engine on", "engine off"].includes(liveDriverName.toLowerCase())
       ? liveDriverName
@@ -413,12 +394,12 @@ function DashboardContent({
         ? `${driverInfo.first_name || ""} ${driverInfo.surname || ""}`.trim()
         : "Driver"
   const tripRef = trip?.ordernumber || trip?.trip_id || "N/A"
-  const geozone = liveVehicleData?.Geozone || vehicleLocation?.address || "Live route"
-  const engineState = liveDriverName || String(liveVehicleData?.NameEvent || "").trim() || (speed > 0 ? "Moving" : "Stopped")
+  const geozone = liveVehicleData?.geozone || vehicleLocation?.geozone || vehicleLocation?.address || "Live route"
+  const engineState = liveDriverName || (speed > 0 ? "Moving" : "Stopped")
 
   const mapLocation = useMemo(() => {
-    const lat = toNumber(liveVehicleData?.Latitude ?? vehicleLocation?.latitude ?? trip?.current_latitude)
-    const lng = toNumber(liveVehicleData?.Longitude ?? vehicleLocation?.longitude ?? trip?.current_longitude)
+    const lat = toNumber(liveVehicleData?.latitude ?? vehicleLocation?.latitude ?? trip?.current_latitude)
+    const lng = toNumber(liveVehicleData?.longitude ?? vehicleLocation?.longitude ?? trip?.current_longitude)
     if (lat === null || lng === null) return null
     return { lat, lng }
   }, [liveVehicleData, vehicleLocation, trip])
@@ -453,32 +434,17 @@ function DashboardContent({
             <div className="rounded-xl border border-slate-800 bg-[#060c1a]/90 p-3">
               <div className="mb-2 flex items-center justify-between text-xs uppercase tracking-[0.15em] text-slate-400">
                 <span>Fuel System</span>
-                <span>{fuel2Vol !== null ? 'Probe 1 / Probe 2' : 'Probe 1'}</span>
+                <span>Fuel Level</span>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="flex items-center gap-3">
+                <MiniGauge value={fuelPct} max={100} color="#34d399" />
                 <div>
-                  <div className="flex items-center gap-2">
-                    <MiniGauge value={fuelPct} max={100} color="#34d399" />
-                    <div>
-                      <div className="text-2xl font-bold text-emerald-300">{Math.round(fuelPct)}%</div>
-                      <div className="text-xs text-slate-400">Tank 1</div>
-                    </div>
-                  </div>
-                  <div className="mt-1 text-[11px] text-slate-500">{fuelVol.toFixed(1)}L</div>
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <MiniGauge value={fuel2Vol !== null ? fuel2Pct : 0} max={100} color={fuel2Vol !== null ? "#c084fc" : "#334155"} />
-                    <div>
-                      <div className="text-2xl font-bold" style={{ color: fuel2Vol !== null ? '#c4b5fd' : '#475569' }}>{fuel2Vol !== null ? `${Math.round(fuel2Pct)}%` : "--"}</div>
-                      <div className="text-xs text-slate-400">Tank 2</div>
-                    </div>
-                  </div>
-                  <div className="mt-1 text-[11px] text-slate-500">{fuel2Vol !== null ? `${fuel2Vol.toFixed(1)}L` : "N/A"}</div>
+                  <div className="text-3xl font-bold text-emerald-300">{Math.round(fuelPct)}%</div>
+                  <div className="text-xs text-slate-400">{fuelVol.toFixed(1)}L</div>
                 </div>
               </div>
               <div className="mt-2">
-                <PressureBar value={fuelVol} max={fuelVol + (fuel2Vol || 0) || 700} />
+                <PressureBar value={fuelVol} max={700} />
               </div>
             </div>
           </div>
@@ -491,16 +457,11 @@ function DashboardContent({
             <div className="absolute right-3 top-3 rounded border border-slate-700/90 bg-[#061024]/85 px-2 py-1 text-[10px] text-slate-300">
               {mapLocation ? `${mapLocation.lat.toFixed(5)}, ${mapLocation.lng.toFixed(5)}` : "No GPS"}
             </div>
-            <div className="absolute bottom-3 left-3 right-3 grid grid-cols-4 gap-2 rounded-lg border border-slate-800/90 bg-[#040914]/85 p-2 text-center">
+            <div className="absolute bottom-3 left-3 right-3 grid grid-cols-3 gap-2 rounded-lg border border-slate-800/90 bg-[#040914]/85 p-2 text-center">
               <div>
                 <div className="text-[10px] uppercase tracking-[0.12em] text-slate-400">Tank 1</div>
                 <div className="text-lg font-semibold text-emerald-300">{Math.round(fuelPct)}%</div>
                 <div className="text-[10px] text-slate-500">{fuelVol.toFixed(1)}L</div>
-              </div>
-              <div>
-                <div className="text-[10px] uppercase tracking-[0.12em] text-slate-400">Tank 2</div>
-                <div className="text-lg font-semibold" style={{ color: fuel2Vol !== null ? '#c4b5fd' : '#475569' }}>{fuel2Vol !== null ? `${Math.round(fuel2Pct)}%` : "--"}</div>
-                <div className="text-[10px] text-slate-500">{fuel2Vol !== null ? `${fuel2Vol.toFixed(1)}L` : "N/A"}</div>
               </div>
               <div>
                 <div className="text-[10px] uppercase tracking-[0.12em] text-slate-400">Mileage</div>
@@ -542,12 +503,6 @@ function DashboardContent({
                 <div className="text-right font-semibold">{updatedAt || "--"}</div>
                 <div className="text-slate-400">Fuel Temp 1</div>
                 <div className="text-right font-semibold text-emerald-300">{fuelTemp !== null ? `${Math.round(fuelTemp)}°C` : "--"}</div>
-                {fuel2Temp !== null && (
-                  <>
-                    <div className="text-slate-400">Fuel Temp 2</div>
-                    <div className="text-right font-semibold text-violet-300">{`${Math.round(fuel2Temp)}°C`}</div>
-                  </>
-                )}
               </div>
             </div>
           </div>
@@ -564,6 +519,7 @@ export function VehicleDashboardModal({
   driverInfo,
   vehicleInfo,
   vehicleLocation,
+  fuelData,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -571,6 +527,7 @@ export function VehicleDashboardModal({
   driverInfo?: any
   vehicleInfo?: any
   vehicleLocation?: any
+  fuelData?: any
 }) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -582,7 +539,7 @@ export function VehicleDashboardModal({
           <Dialog.Close className="absolute right-3 top-3 z-50 rounded-md border border-slate-700 bg-[#0b1222]/90 p-1 text-slate-300 hover:text-white">
             <X className="h-4 w-4" />
           </Dialog.Close>
-          <DashboardContent trip={trip} driverInfo={driverInfo} vehicleInfo={vehicleInfo} vehicleLocation={vehicleLocation} open={open} />
+          <DashboardContent trip={trip} driverInfo={driverInfo} vehicleInfo={vehicleInfo} vehicleLocation={vehicleLocation} fuelData={fuelData} open={open} />
         </Dialog.Content>
         )}
       </Dialog.Portal>

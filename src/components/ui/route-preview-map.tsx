@@ -30,9 +30,20 @@ interface RoutePreviewMapProps {
   preserveOrder?: boolean;
   loadingGeozoneCoords?: number[][];
   dropoffGeozoneCoords?: number[][];
+  recommendedStops?: Array<{
+    lat: number;
+    lng: number;
+    reason: string;
+    type: 'rest' | 'break' | 'fuel';
+    label: string;
+  }>;
+  weather?: {
+    departure: any;
+    arrival: any;
+  } | null;
 }
 
-export function RoutePreviewMap({ origin, destination, routeData, stopPoints = [], getStopPointsData, driverLocation, clientLocation, selectedClient, tripId, preserveOrder = false, loadingGeozoneCoords, dropoffGeozoneCoords }: RoutePreviewMapProps) {
+export function RoutePreviewMap({ origin, destination, routeData, stopPoints = [], getStopPointsData, driverLocation, clientLocation, selectedClient, tripId, preserveOrder = false, loadingGeozoneCoords, dropoffGeozoneCoords, recommendedStops = [], weather = null }: RoutePreviewMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<any>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -324,6 +335,48 @@ export function RoutePreviewMap({ origin, destination, routeData, stopPoints = [
           })
         }
 
+        // Add RTMS recommended stop markers (red, pulsing)
+        if (recommendedStops.length > 0) {
+          recommendedStops.forEach((stop, index) => {
+            const marker = new gm.Marker({
+              position: { lat: stop.lat, lng: stop.lng },
+              map: map.current,
+              icon: {
+                path: gm.SymbolPath.CIRCLE,
+                scale: 9,
+                fillColor: '#ef4444',
+                fillOpacity: 1,
+                strokeColor: '#ffffff',
+                strokeWeight: 3,
+              },
+              title: `${stop.label}: ${stop.reason}`,
+            })
+            markersRef.current.push(marker)
+
+            // Info window on hover
+            const infoWindow = new gm.InfoWindow({
+              content: `<div style="padding:4px 8px;font-size:12px;font-weight:600;color:#ef4444">${stop.label}</div>
+                        <div style="padding:0 8px 4px;font-size:11px;color:#666">${stop.reason}</div>
+                        <div style="padding:0 8px 4px;font-size:11px;color:#999">${stop.kmFromOrigin} km from origin</div>`,
+            })
+            marker.addListener('mouseover', () => infoWindow.open({ anchor: marker, map: map.current }))
+            marker.addListener('mouseout', () => infoWindow.close())
+
+            // Pulsing circle overlay
+            const pulseCircle = new gm.Circle({
+              map: map.current,
+              center: { lat: stop.lat, lng: stop.lng },
+              radius: 15000,
+              fillColor: '#ef4444',
+              fillOpacity: 0.15,
+              strokeColor: '#ef4444',
+              strokeWeight: 1,
+              strokeOpacity: 0.3,
+            })
+            overlaysRef.current.push(pulseCircle)
+          })
+        }
+
         // Load overlays (cached)
         if (!cacheRef.current.has('overlays-loaded')) {
           await loadMapOverlays()
@@ -595,11 +648,40 @@ export function RoutePreviewMap({ origin, destination, routeData, stopPoints = [
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div 
-          ref={mapContainer} 
-          className="w-full h-96 rounded-lg border"
-          style={{ minHeight: '384px' }}
-        />
+        <div className="relative">
+          <div 
+            ref={mapContainer} 
+            className="w-full h-96 rounded-lg border"
+            style={{ minHeight: '384px' }}
+          />
+          {weather && (weather.departure || weather.arrival) && (
+            <div className="absolute top-2 left-2 z-10 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg border border-white/20 p-3 text-xs space-y-2 max-w-[280px]">
+              {weather.departure && (
+                <div className="flex items-start gap-2">
+                  <span className="text-blue-500 mt-0.5">📍</span>
+                  <div>
+                    <div className="font-semibold text-slate-800">Departure</div>
+                    <div className="text-lg font-bold text-slate-900">{Math.round(weather.departure.main?.temp || 0)}°C</div>
+                    <div className="text-slate-600">{weather.departure.weather?.[0]?.description}</div>
+                    <div className="text-slate-500">Wind: {Math.round(weather.departure.wind?.speed || 0)} km/h</div>
+                  </div>
+                </div>
+              )}
+              {weather.departure && weather.arrival && <div className="border-t border-slate-200"></div>}
+              {weather.arrival && (
+                <div className="flex items-start gap-2">
+                  <span className="text-green-500 mt-0.5">📍</span>
+                  <div>
+                    <div className="font-semibold text-slate-800">Arrival</div>
+                    <div className="text-lg font-bold text-slate-900">{Math.round(weather.arrival.main?.temp || 0)}°C</div>
+                    <div className="text-slate-600">{weather.arrival.weather?.[0]?.description}</div>
+                    <div className="text-slate-500">Wind: {Math.round(weather.arrival.wind?.speed || 0)} km/h</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
         <div className="mt-4 space-y-3">
           <div className="flex items-center gap-4 text-sm text-gray-600">
             <div className="flex items-center gap-1">
@@ -614,6 +696,12 @@ export function RoutePreviewMap({ origin, destination, routeData, stopPoints = [
               <div className="flex items-center gap-1">
                 <div className="w-3 h-3 bg-orange-500 rounded-full"></div>
                 <span>Stop Points: {stopPoints.length} zones</span>
+              </div>
+            )}
+            {recommendedStops.length > 0 && (
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+                <span>RTMS Rest Stops: {recommendedStops.length}</span>
               </div>
             )}
             {selectedClient && (

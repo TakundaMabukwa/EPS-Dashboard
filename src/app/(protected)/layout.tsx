@@ -98,6 +98,7 @@ const roleNavigation = {
     { name: "Vehicles", href: "/vehicles", Icon: <Truck /> },
     { name: "Cost Centers", href: "/ccenter", Icon: <DollarSign /> },
     { name: "Financials", href: "/audit", Icon: <Settings2Icon /> },
+    { name: "Reports", href: "/reports", Icon: <ChartBar /> },
     {
       name: "Inspections",
       href: "/fleetManager/inspections",
@@ -223,6 +224,7 @@ export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
         vehicles: { name: "Vehicles", href: "/vehicles", Icon: <Truck /> },
         costCenters: { name: "Cost Centers", href: "/ccenter", Icon: <DollarSign /> },
         financials: { name: "Financials", href: "/audit", Icon: <Settings2Icon /> },
+        reports: { name: "Reports", href: "/reports", Icon: <ChartBar /> },
         inspections: { name: "Inspections", href: "/fleetManager/inspections", Icon: <QrCode /> },
         userManagement: { name: "User Management", href: "/userManagement", Icon: <PlusSquare /> },
         systemSettings: { name: "System Settings", href: "/settings", Icon: <Settings /> }

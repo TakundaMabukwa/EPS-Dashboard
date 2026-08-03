@@ -1050,7 +1050,7 @@ export default function Vehicles() {
       )}
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {/* Horses */}
         <button
           onClick={() => setCardFilter(cardFilter === 'horses' ? null : 'horses')}
@@ -1061,33 +1061,24 @@ export default function Vehicles() {
           <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
           <div className="absolute -bottom-2 -right-2 h-16 w-16 rounded-full bg-white/5" />
           <div className="relative">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-3">
               <Truck className="h-4 w-4" />
             </div>
-            <p className="text-xs font-medium text-blue-100">Horses</p>
-            <p className="text-2xl font-bold mt-0.5">
-              <RollingNumber value={vehicles.filter((v) => !(v.vehicle_type || '').toUpperCase().startsWith('TR')).length} duration={1000} />
-            </p>
-          </div>
-        </button>
-
-        {/* Trailers */}
-        <button
-          onClick={() => setCardFilter(cardFilter === 'trailers' ? null : 'trailers')}
-          className={`relative overflow-hidden rounded-xl bg-gradient-to-br from-purple-500 to-violet-600 p-4 text-white shadow-lg transition-all hover:scale-[1.02] hover:shadow-xl text-left ${
-            cardFilter === 'trailers' ? 'ring-2 ring-black ring-offset-2' : ''
-          }`}
-        >
-          <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
-          <div className="absolute -bottom-2 -right-2 h-16 w-16 rounded-full bg-white/5" />
-          <div className="relative">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-2">
-              <Truck className="h-4 w-4" />
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium text-blue-100">Horses</p>
+                <p className="text-2xl font-bold">
+                  <RollingNumber value={vehicles.filter((v) => !(v.vehicle_type || '').toUpperCase().startsWith('TR')).length} duration={1000} />
+                </p>
+              </div>
+              <div className="border-t border-white/20" />
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium text-blue-100">Trailers</p>
+                <p className="text-2xl font-bold">
+                  <RollingNumber value={vehicles.filter((v) => (v.vehicle_type || '').toUpperCase().startsWith('TR')).length} duration={1000} />
+                </p>
+              </div>
             </div>
-            <p className="text-xs font-medium text-purple-100">Trailers</p>
-            <p className="text-2xl font-bold mt-0.5">
-              <RollingNumber value={vehicles.filter((v) => (v.vehicle_type || '').toUpperCase().startsWith('TR')).length} duration={1000} />
-            </p>
           </div>
         </button>
 
@@ -1101,23 +1092,44 @@ export default function Vehicles() {
           <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
           <div className="absolute -bottom-2 -right-2 h-16 w-16 rounded-full bg-white/5" />
           <div className="relative">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-3">
               <Shield className="h-4 w-4" />
             </div>
-            <p className="text-xs font-medium text-amber-100">Licence Expiring</p>
-            <p className="text-2xl font-bold mt-0.5">
-              <RollingNumber
-                value={vehicles.filter((v) => {
-                  if (!v.cof_date) return false;
-                  const exp = new Date(v.cof_date);
-                  const in30 = new Date();
-                  in30.setDate(in30.getDate() + 30);
-                  return exp <= in30;
-                }).length}
-                duration={1000}
-              />
-            </p>
-            <p className="text-[10px] text-amber-200 mt-0.5">within 30 days</p>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium text-amber-100">Horses</p>
+                <p className="text-2xl font-bold">
+                  <RollingNumber
+                    value={vehicles.filter((v) => {
+                      if (!v.cof_date) return false;
+                      const exp = new Date(v.cof_date);
+                      const in30 = new Date();
+                      in30.setDate(in30.getDate() + 30);
+                      return !(v.vehicle_type || '').toUpperCase().startsWith('TR') && exp <= in30;
+                    }).length}
+                    duration={1000}
+                  />
+                </p>
+                <p className="text-[11px] text-amber-200">Licences Due</p>
+              </div>
+              <div className="border-t border-white/20" />
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium text-amber-100">Trailers</p>
+                <p className="text-2xl font-bold">
+                  <RollingNumber
+                    value={vehicles.filter((v) => {
+                      if (!v.cof_date) return false;
+                      const exp = new Date(v.cof_date);
+                      const in30 = new Date();
+                      in30.setDate(in30.getDate() + 30);
+                      return (v.vehicle_type || '').toUpperCase().startsWith('TR') && exp <= in30;
+                    }).length}
+                    duration={1000}
+                  />
+                </p>
+                <p className="text-[11px] text-amber-200">Licences Due</p>
+              </div>
+            </div>
           </div>
         </button>
 
@@ -1131,24 +1143,48 @@ export default function Vehicles() {
           <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
           <div className="absolute -bottom-2 -right-2 h-16 w-16 rounded-full bg-white/5" />
           <div className="relative">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-3">
               <AlertTriangle className="h-4 w-4" />
             </div>
-            <p className="text-xs font-medium text-red-100">Licence Expiring (30–60d)</p>
-            <p className="text-2xl font-bold mt-0.5">
-              <RollingNumber
-                value={vehicles.filter((v) => {
-                  if (!v.cof_date) return false;
-                  const exp = new Date(v.cof_date);
-                  const in30 = new Date();
-                  in30.setDate(in30.getDate() + 30);
-                  const in60 = new Date();
-                  in60.setDate(in60.getDate() + 60);
-                  return exp > in30 && exp <= in60;
-                }).length}
-                duration={1000}
-              />
-            </p>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium text-red-100">Horses</p>
+                <p className="text-2xl font-bold">
+                  <RollingNumber
+                    value={vehicles.filter((v) => {
+                      if (!v.cof_date) return false;
+                      const exp = new Date(v.cof_date);
+                      const in30 = new Date();
+                      in30.setDate(in30.getDate() + 30);
+                      const in60 = new Date();
+                      in60.setDate(in60.getDate() + 60);
+                      return !(v.vehicle_type || '').toUpperCase().startsWith('TR') && exp > in30 && exp <= in60;
+                    }).length}
+                    duration={1000}
+                  />
+                </p>
+                <p className="text-[11px] text-red-200">Licences Due</p>
+              </div>
+              <div className="border-t border-white/20" />
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium text-red-100">Trailers</p>
+                <p className="text-2xl font-bold">
+                  <RollingNumber
+                    value={vehicles.filter((v) => {
+                      if (!v.cof_date) return false;
+                      const exp = new Date(v.cof_date);
+                      const in30 = new Date();
+                      in30.setDate(in30.getDate() + 30);
+                      const in60 = new Date();
+                      in60.setDate(in60.getDate() + 60);
+                      return (v.vehicle_type || '').toUpperCase().startsWith('TR') && exp > in30 && exp <= in60;
+                    }).length}
+                    duration={1000}
+                  />
+                </p>
+                <p className="text-[11px] text-red-200">Licences Due</p>
+              </div>
+            </div>
           </div>
         </button>
 
@@ -1162,16 +1198,32 @@ export default function Vehicles() {
           <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
           <div className="absolute -bottom-2 -right-2 h-16 w-16 rounded-full bg-white/5" />
           <div className="relative">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 mb-3">
               <Wrench className="h-4 w-4" />
             </div>
-            <p className="text-xs font-medium text-purple-100">Service Due</p>
-            <p className="text-2xl font-bold mt-0.5">
-              <RollingNumber
-                value={vehicles.filter((v) => v.service_due_flag === true || v.service_due_flag === 'true' || v.service_due_flag === 1).length}
-                duration={1000}
-              />
-            </p>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium text-purple-100">Horses</p>
+                <p className="text-2xl font-bold">
+                  <RollingNumber
+                    value={vehicles.filter((v) => !(v.vehicle_type || '').toUpperCase().startsWith('TR') && (v.service_due_flag === true || v.service_due_flag === 'true' || v.service_due_flag === 1)).length}
+                    duration={1000}
+                  />
+                </p>
+                <p className="text-[11px] text-purple-200">Servicing Due</p>
+              </div>
+              <div className="border-t border-white/20" />
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium text-purple-100">Trailers</p>
+                <p className="text-2xl font-bold">
+                  <RollingNumber
+                    value={vehicles.filter((v) => (v.vehicle_type || '').toUpperCase().startsWith('TR') && (v.service_due_flag === true || v.service_due_flag === 'true' || v.service_due_flag === 1)).length}
+                    duration={1000}
+                  />
+                </p>
+                <p className="text-[11px] text-purple-200">Servicing Due</p>
+              </div>
+            </div>
           </div>
         </button>
       </div>

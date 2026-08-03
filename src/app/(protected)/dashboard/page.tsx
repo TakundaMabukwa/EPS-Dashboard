@@ -77,6 +77,7 @@ import { DateTimePicker } from "@/components/ui/datetime-picker";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Area, AreaChart } from 'recharts';
 import { EditTripModal } from "@/components/ui/edit-trip-modal";
 import LiveMapView from "@/components/map/live-map-view";
+import { VehicleDashboardModal } from "@/components/ui/vehicle-dashboard-modal";
 
 // Global vehicle data cache to prevent redundant API calls
 const vehicleDataCache = {
@@ -193,6 +194,7 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
   const [fuelData, setFuelData] = useState<any>(null)
   const [isFlashing, setIsFlashing] = useState(false)
   const [assignment, setAssignment] = useState<any>(null)
+  const [vehicleDashOpen, setVehicleDashOpen] = useState(false)
 
   // Check for unauthorized stops and trigger flash animation
   useEffect(() => {
@@ -867,6 +869,29 @@ function DriverCard({ trip, userRole, handleViewMap, setCurrentTripForNote, setN
           </Button>
         );
       })()}
+
+      {/* Full-width Vehicle Dashboard Button */}
+      <Button
+        size="sm"
+        variant="default"
+        className="h-10 text-sm font-semibold w-full mt-2 border-0 bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-800 hover:to-indigo-800 text-white shadow-lg hover:shadow-xl transition-all duration-200"
+        onClick={() => {
+          setVehicleDashOpen(true);
+        }}
+      >
+        <Car className="w-4 h-4 mr-2" />
+        Vehicle
+      </Button>
+
+      <VehicleDashboardModal
+        open={vehicleDashOpen}
+        onOpenChange={setVehicleDashOpen}
+        trip={trip}
+        driverInfo={driverInfo}
+        vehicleInfo={vehicleInfo}
+        vehicleLocation={vehicleLocation}
+        fuelData={fuelData}
+      />
 
     </div>
   )
