@@ -12,6 +12,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { Search, Check, ChevronDown, X, PanelLeftClose } from 'lucide-react'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import { ExcelFilterTable } from '@/components/ui/excel-filter-table'
 
 /* ─── Multi-Select Commodity Filter ─── */
 function CommodityFilter({ commodities, selected, onChange, label }: { commodities: string[], selected: string[], onChange: (v: string[]) => void, label?: string }) {
@@ -136,131 +137,56 @@ export default function ReportsPage() {
 }
 
 /* ─── DATA TAB ─── */
+const DATA_COLUMNS = ['Load Nr', 'Date', 'Month', 'Client', 'Load/Del', 'Commodity', 'From', 'To', 'Driver', 'Reg', 'Qty', 'Dr Value', 'Cr Value', 'Profit', 'Route Km', 'Map Km', 'Region', 'Subbie']
+const DATA_DB_COLUMNS = 'load_nr,load_date,month,dr_name,load_del,commodity,from_loc,to_loc,driver_name,own_reg,qty,dr_value,cr_value,profit,route_km,map_km,load_region,cr_name'
+
 function DataTab() {
   const supabase = createClient()
   const [rows, setRows] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
-  const [monthFilter, setMonthFilter] = useState('all')
-  const [page, setPage] = useState(0)
-  const PAGE = 100
 
   useEffect(() => {
     async function load() {
-      const data = await fetchAll(supabase, 'loadschedule')
+      const data = await fetchAll(supabase, 'loadschedule', undefined, DATA_DB_COLUMNS)
       setRows(data)
       setLoading(false)
     }
     load()
   }, [])
 
-  const months = useMemo(() => {
-    const s = new Set<string>()
-    const order = ['January','February','March','April','May','June','July','August','September','October','November','December']
-    rows.forEach(r => { if (r.month) s.add(r.month) })
-    return [...s].sort((a, b) => order.indexOf(a) - order.indexOf(b))
+  const tableRows = useMemo(() => {
+    return rows.map(r => [
+      r.load_nr,
+      r.load_date,
+      r.month,
+      r.dr_name,
+      r.load_del,
+      r.commodity,
+      r.from_loc,
+      r.to_loc,
+      r.driver_name,
+      r.own_reg,
+      r.qty,
+      fmtR(r.dr_value),
+      fmtR(r.cr_value),
+      fmtR(r.profit),
+      r.route_km,
+      r.map_km,
+      r.load_region,
+      r.cr_name,
+    ])
   }, [rows])
 
-  const filtered = useMemo(() => {
-    let d = rows
-    if (monthFilter !== 'all') d = d.filter(r => r.month === monthFilter)
-    if (search) {
-      const q = search.toLowerCase()
-      d = d.filter(r =>
-        String(r.dr_name || '').toLowerCase().includes(q) ||
-        String(r.load_nr || '').toLowerCase().includes(q) ||
-        String(r.driver_name || '').toLowerCase().includes(q) ||
-        String(r.own_reg || '').toLowerCase().includes(q) ||
-        String(r.load_descrip || '').toLowerCase().includes(q) ||
-        String(r.offload_descrip || '').toLowerCase().includes(q) ||
-        String(r.commodity || '').toLowerCase().includes(q)
-      )
-    }
-    return d
-  }, [rows, monthFilter, search])
-
-  const paged = filtered.slice(page * PAGE, (page + 1) * PAGE)
-  const totalPages = Math.ceil(filtered.length / PAGE)
-
   return (
-    <div className="space-y-4 mt-4">
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-          <Input placeholder="Search load nr, client, driver, reg..." value={search} onChange={e => { setSearch(e.target.value); setPage(0) }} className="pl-9" />
-        </div>
-        <Select value={monthFilter} onValueChange={v => { setMonthFilter(v); setPage(0) }}>
-          <SelectTrigger className="w-40"><SelectValue placeholder="All Months" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Months</SelectItem>
-            {months.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <span className="text-sm text-slate-500">{filtered.length.toLocaleString()} records</span>
-      </div>
-
+    <div className="mt-4">
       {loading ? (
         <div className="text-center py-12 text-slate-500">Loading all records...</div>
       ) : (
-        <>
-          <div className="overflow-auto max-h-[70vh] border rounded-lg">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-gradient-to-r from-slate-800 to-slate-900">
-                  <TableHead className="text-white text-xs">Load Nr</TableHead>
-                  <TableHead className="text-white text-xs">Date</TableHead>
-                  <TableHead className="text-white text-xs">Month</TableHead>
-                  <TableHead className="text-white text-xs">Client</TableHead>
-                  <TableHead className="text-white text-xs">Load/Del</TableHead>
-                  <TableHead className="text-white text-xs">Commodity</TableHead>
-                  <TableHead className="text-white text-xs">From</TableHead>
-                  <TableHead className="text-white text-xs">To</TableHead>
-                  <TableHead className="text-white text-xs">Driver</TableHead>
-                  <TableHead className="text-white text-xs">Reg</TableHead>
-                  <TableHead className="text-white text-xs text-right">Qty</TableHead>
-                  <TableHead className="text-white text-xs text-right">Dr Value</TableHead>
-                  <TableHead className="text-white text-xs text-right">Cr Value</TableHead>
-                  <TableHead className="text-white text-xs text-right">Profit</TableHead>
-                  <TableHead className="text-white text-xs text-right">Route Km</TableHead>
-                  <TableHead className="text-white text-xs text-right">Map Km</TableHead>
-                  <TableHead className="text-white text-xs">Region</TableHead>
-                  <TableHead className="text-white text-xs">Subbie</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {paged.map((r, i) => (
-                  <TableRow key={r.id || i} className="hover:bg-slate-50">
-                    <TableCell className="text-xs">{r.load_nr}</TableCell>
-                    <TableCell className="text-xs">{r.load_date}</TableCell>
-                    <TableCell className="text-xs">{r.month}</TableCell>
-                    <TableCell className="text-xs max-w-[150px] truncate" title={r.dr_name}>{r.dr_name}</TableCell>
-                    <TableCell className="text-xs max-w-[120px] truncate" title={r.load_del}>{r.load_del}</TableCell>
-                    <TableCell className="text-xs max-w-[120px] truncate" title={r.commodity}>{r.commodity}</TableCell>
-                    <TableCell className="text-xs">{r.from_loc}</TableCell>
-                    <TableCell className="text-xs">{r.to_loc}</TableCell>
-                    <TableCell className="text-xs max-w-[120px] truncate" title={r.driver_name}>{r.driver_name}</TableCell>
-                    <TableCell className="text-xs">{r.own_reg}</TableCell>
-                    <TableCell className="text-xs text-right">{r.qty}</TableCell>
-                    <TableCell className="text-xs text-right">{fmtR(r.dr_value)}</TableCell>
-                    <TableCell className="text-xs text-right">{fmtR(r.cr_value)}</TableCell>
-                    <TableCell className="text-xs text-right">{fmtR(r.profit)}</TableCell>
-                    <TableCell className="text-xs text-right">{r.route_km}</TableCell>
-                    <TableCell className="text-xs text-right">{r.map_km}</TableCell>
-                    <TableCell className="text-xs">{r.load_region}</TableCell>
-                    <TableCell className="text-xs max-w-[120px] truncate" title={r.cr_name}>{r.cr_name}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-slate-500">Page {page + 1} of {totalPages}</span>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(p => p - 1)}>Prev</Button>
-              <Button variant="outline" size="sm" disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)}>Next</Button>
-            </div>
-          </div>
-        </>
+        <ExcelFilterTable
+          headers={DATA_COLUMNS}
+          rows={tableRows}
+          maxHeight="calc(100vh - 200px)"
+        />
       )}
     </div>
   )
@@ -1479,33 +1405,12 @@ function ExecTab() {
               {drillDown.rows.length === 0 ? (
                 <div className="flex items-center justify-center flex-1 text-sm text-slate-400">No data found for this filter.</div>
               ) : (
-                <div className="flex-1 overflow-auto min-h-0">
-                  <Table className="text-sm">
-                    <TableHeader>
-                      <TableRow className="bg-slate-100 hover:bg-slate-100 sticky top-0 z-10">
-                        {drillDown.headers.map((h, i) => (
-                          <TableHead key={i} className={`text-xs font-bold text-slate-700 py-3 ${i > 0 ? 'text-right' : ''}`}>{h}</TableHead>
-                        ))}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {drillDown.rows.map((row, i) => (
-                        <TableRow key={i} className={i % 2 === 0 ? 'bg-white hover:bg-blue-50' : 'bg-slate-50/50 hover:bg-blue-50'}>
-                          {row.map((cell, j) => (
-                            <TableCell key={j} className={`text-xs py-2.5 ${j === 0 ? 'font-medium' : 'text-right'}`}>{cell}</TableCell>
-                          ))}
-                        </TableRow>
-                      ))}
-                      {drillDown.totals && (
-                        <TableRow className="font-bold bg-slate-200 hover:bg-slate-200 sticky bottom-0 z-10 border-t-2 border-slate-300">
-                          {drillDown.totals.map((cell, j) => (
-                            <TableCell key={j} className={`text-xs py-3 ${j === 0 ? '' : 'text-right'}`}>{cell}</TableCell>
-                          ))}
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
+                <ExcelFilterTable
+                  headers={drillDown.headers}
+                  rows={drillDown.rows}
+                  totals={drillDown.totals}
+                  maxHeight="calc(90vh - 120px)"
+                />
               )}
             </div>
           )}
