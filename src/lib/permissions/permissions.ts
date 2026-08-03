@@ -61,18 +61,21 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, Permission[]> = {
     { page: 'inspections', actions: ['view', 'create', 'edit'] },
     { page: 'fuel', actions: ['view', 'create', 'edit'] },
     { page: 'financials', actions: ['view'] },
+    { page: 'uploads', actions: ['view', 'create', 'edit', 'delete'] },
     { page: 'systemSettings', actions: ['view'] }
   ],
   fc: [
     { page: 'dashboard', actions: ['view'] },
-    { page: 'loadPlan', actions: ['view'] }
+    { page: 'loadPlan', actions: ['view'] },
+    { page: 'uploads', actions: ['view', 'create', 'edit', 'delete'] }
   ],
   customer: [
     { page: 'drivers', actions: ['view'] },
     { page: 'vehicles', actions: ['view'] },
     { page: 'inspections', actions: ['view'] },
     { page: 'fuel', actions: ['view'] },
-    { page: 'financials', actions: ['view'] }
+    { page: 'financials', actions: ['view'] },
+    { page: 'uploads', actions: ['view', 'create', 'edit', 'delete'] }
   ]
 };
 
