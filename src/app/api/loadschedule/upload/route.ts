@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { Readable } from 'stream'
 import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
@@ -49,12 +48,6 @@ function parseString(val: any): string | null {
   return s === '' ? null : s
 }
 
-function extractCellValue(cell: any): any {
-  if (cell === null || cell === undefined) return null
-  if (typeof cell === 'object') return cell.value ?? cell.result ?? null
-  return cell
-}
-
 export const config = { api: { bodyParser: false } }
 
 export async function POST(req: NextRequest) {
@@ -68,91 +61,62 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Only .xlsx or .xls files accepted' }, { status: 400 })
 
     const buffer = Buffer.from(await file.arrayBuffer())
-    const stream = Readable.from(buffer)
-
     const ExcelJS = (await import('exceljs')).default
-    const workbookReader = new (ExcelJS as any).stream.xlsx.WorkbookReader(stream, {
-      entries: true, sharedStrings: true, styles: true,
+    const wb = new ExcelJS.Workbook()
+    await wb.xlsx.load(buffer)
+
+    const ws = wb.getWorksheet('DATA')
+    if (!ws || ws.rowCount < 2) {
+      return NextResponse.json({ error: 'Sheet "DATA" not found or empty.' }, { status: 400 })
+    }
+
+    const colMapping: Record<number, string> = {}
+    const rawHeaders: string[] = []
+    const headerRow = ws.getRow(1)
+    headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+      const raw = String(cell.value || '').trim().toLowerCase()
+      rawHeaders.push(`[${colNumber}] "${raw}"`)
+      const mapped = COLUMN_MAP[raw]
+      if (mapped) colMapping[colNumber] = mapped
     })
 
-    let colMapping: Record<number, string> = {}
-    let mappedCols: number[] = []
-    let mappedColumnNames: string[] = []
-    let batch: Record<string, any>[] = []
-    let inserted = 0, errors = 0, skipped = 0, batchNum = 0
-    const errorMessages: string[] = []
-    const rawHeaders: string[] = []
-    const BATCH_SIZE = 500
+    const mappedCols = Object.keys(colMapping).map(Number)
+    if (mappedCols.length === 0) {
+      return NextResponse.json({ error: 'No matching columns found.', rawHeaders }, { status: 400 })
+    }
 
-    const flushBatch = async () => {
-      if (batch.length === 0) return
-      batchNum++
+    const mappedColumnNames = mappedCols.map(c => colMapping[c])
+    const BATCH_SIZE = 500
+    let inserted = 0, errors = 0, skipped = 0
+    const errorMessages: string[] = []
+
+    // Collect all rows from DATA sheet only (~15k rows is fine)
+    const allRows: Record<string, any>[] = []
+    ws.eachRow((row, rowNumber) => {
+      if (rowNumber <= 1) return
+      let hasData = false
+      const record: Record<string, any> = {}
+      for (const col of mappedCols) {
+        const dbCol = colMapping[col]
+        const cellVal = row.getCell(col).value
+        if (cellVal !== null && cellVal !== undefined && cellVal !== '') hasData = true
+        record[dbCol] = NUMERIC_COLS.has(dbCol) ? parseNumeric(cellVal) : parseString(cellVal)
+      }
+      if (!hasData) { skipped++; return }
+      allRows.push(record)
+    })
+
+    // Batch insert
+    for (let i = 0; i < allRows.length; i += BATCH_SIZE) {
+      const batch = allRows.slice(i, i + BATCH_SIZE)
       const { error, count } = await supabase.from('loadschedule').insert(batch, { count: 'exact' })
       if (error) {
         errors += batch.length
-        errorMessages.push(`Batch ${batchNum}: ${error.message}`)
+        errorMessages.push(error.message)
       } else {
         inserted += count || batch.length
       }
-      batch = []
     }
-
-    let dataSheetFound = false
-
-    for await (const worksheetReader of workbookReader) {
-      console.log('Sheet:', worksheetReader.name)
-      if (worksheetReader.name !== 'DATA') continue
-      dataSheetFound = true
-
-      let rowNumber = 0
-      for await (const row of worksheetReader) {
-        rowNumber++
-
-        if (rowNumber === 1) {
-          const values = row.values as any[]
-          for (let col = 1; col < values.length; col++) {
-            const raw = extractCellValue(values[col])
-            const rawHeader = String(raw).trim().toLowerCase()
-            rawHeaders.push(`[${col}] "${String(raw)}" -> "${rawHeader}"`)
-            console.log(`Col ${col}: "${rawHeader}"`)
-            const mapped = COLUMN_MAP[rawHeader]
-            if (mapped) {
-              colMapping[col] = mapped
-              console.log(`  -> ${mapped}`)
-            }
-          }
-          mappedCols = Object.keys(colMapping).map(Number)
-          mappedColumnNames = mappedCols.map(c => colMapping[c])
-          console.log(`Matched ${mappedCols.length} columns:`, mappedColumnNames)
-          continue
-        }
-
-        if (mappedCols.length === 0) continue
-
-        let hasData = false
-        const record: Record<string, any> = {}
-        const values = row.values as any[]
-        for (const col of mappedCols) {
-          const dbCol = colMapping[col]
-          const cellVal = extractCellValue(values[col])
-          if (cellVal !== null && cellVal !== undefined && cellVal !== '') hasData = true
-          record[dbCol] = NUMERIC_COLS.has(dbCol) ? parseNumeric(cellVal) : parseString(cellVal)
-        }
-        if (!hasData) { skipped++; continue }
-        batch.push(record)
-        if (batch.length >= BATCH_SIZE) await flushBatch()
-      }
-    }
-
-    if (!dataSheetFound) {
-      return NextResponse.json({ error: 'Sheet "DATA" not found in workbook.' }, { status: 400 })
-    }
-
-    if (mappedCols.length === 0) {
-      return NextResponse.json({ error: 'No matching columns found in DATA sheet.', rawHeaders }, { status: 400 })
-    }
-
-    await flushBatch()
 
     return NextResponse.json({
       success: true, totalRows: inserted + errors + skipped,
