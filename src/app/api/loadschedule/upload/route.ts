@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import * as XLSX from 'xlsx'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -57,28 +58,31 @@ export async function POST(req: NextRequest) {
     if (!file) return NextResponse.json({ error: 'No file uploaded' }, { status: 400 })
 
     const ext = file.name.split('.').pop()?.toLowerCase()
-    if (ext !== 'xlsx' && ext !== 'xls')
-      return NextResponse.json({ error: 'Only .xlsx or .xls files accepted' }, { status: 400 })
+    if (ext !== 'xlsx' && ext !== 'xls' && ext !== 'csv')
+      return NextResponse.json({ error: 'Only .xlsx, .xls, or .csv files accepted' }, { status: 400 })
 
     const buffer = Buffer.from(await file.arrayBuffer())
-    const ExcelJS = (await import('exceljs')).default
-    const wb = new ExcelJS.Workbook()
-    await wb.xlsx.load(buffer)
+    const wb = XLSX.read(buffer, { type: 'buffer', sheetRows: 0 })
 
-    const ws = wb.getWorksheet('DATA')
-    if (!ws || ws.rowCount < 2) {
-      return NextResponse.json({ error: 'Sheet "DATA" not found or empty.' }, { status: 400 })
+    if (!wb.SheetNames.includes('DATA')) {
+      return NextResponse.json({ error: `Sheet "DATA" not found. Available: ${wb.SheetNames.join(', ')}` }, { status: 400 })
     }
 
+    const sheet = wb.Sheets['DATA']
+    const raw = XLSX.utils.sheet_to_json<any>(sheet, { header: 1, defval: null })
+    if (raw.length < 2) {
+      return NextResponse.json({ error: 'DATA sheet has no data rows.' }, { status: 400 })
+    }
+
+    const headerRow = raw[0] as any[]
     const colMapping: Record<number, string> = {}
     const rawHeaders: string[] = []
-    const headerRow = ws.getRow(1)
-    headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-      const raw = String(cell.value || '').trim().toLowerCase()
-      rawHeaders.push(`[${colNumber}] "${raw}"`)
-      const mapped = COLUMN_MAP[raw]
-      if (mapped) colMapping[colNumber] = mapped
-    })
+    for (let col = 0; col < headerRow.length; col++) {
+      const h = String(headerRow[col] || '').trim().toLowerCase()
+      rawHeaders.push(`[${col}] "${h}"`)
+      const mapped = COLUMN_MAP[h]
+      if (mapped) colMapping[col] = mapped
+    }
 
     const mappedCols = Object.keys(colMapping).map(Number)
     if (mappedCols.length === 0) {
@@ -90,31 +94,29 @@ export async function POST(req: NextRequest) {
     let inserted = 0, errors = 0, skipped = 0
     const errorMessages: string[] = []
 
-    // Collect all rows from DATA sheet only (~15k rows is fine)
-    const allRows: Record<string, any>[] = []
-    ws.eachRow((row, rowNumber) => {
-      if (rowNumber <= 1) return
-      let hasData = false
-      const record: Record<string, any> = {}
-      for (const col of mappedCols) {
-        const dbCol = colMapping[col]
-        const cellVal = row.getCell(col).value
-        if (cellVal !== null && cellVal !== undefined && cellVal !== '') hasData = true
-        record[dbCol] = NUMERIC_COLS.has(dbCol) ? parseNumeric(cellVal) : parseString(cellVal)
+    for (let i = 1; i < raw.length; i += BATCH_SIZE) {
+      const chunk = raw.slice(i, i + BATCH_SIZE)
+      const batch: Record<string, any>[] = []
+      for (const row of chunk) {
+        let hasData = false
+        const record: Record<string, any> = {}
+        for (const col of mappedCols) {
+          const dbCol = colMapping[col]
+          const cellVal = (row as any[])[col] ?? null
+          if (cellVal !== null && cellVal !== undefined && cellVal !== '') hasData = true
+          record[dbCol] = NUMERIC_COLS.has(dbCol) ? parseNumeric(cellVal) : parseString(cellVal)
+        }
+        if (!hasData) { skipped++; continue }
+        batch.push(record)
       }
-      if (!hasData) { skipped++; return }
-      allRows.push(record)
-    })
-
-    // Batch insert
-    for (let i = 0; i < allRows.length; i += BATCH_SIZE) {
-      const batch = allRows.slice(i, i + BATCH_SIZE)
-      const { error, count } = await supabase.from('loadschedule').insert(batch, { count: 'exact' })
-      if (error) {
-        errors += batch.length
-        errorMessages.push(error.message)
-      } else {
-        inserted += count || batch.length
+      if (batch.length > 0) {
+        const { error, count } = await supabase.from('loadschedule').insert(batch, { count: 'exact' })
+        if (error) {
+          errors += batch.length
+          errorMessages.push(error.message)
+        } else {
+          inserted += count || batch.length
+        }
       }
     }
 
