@@ -252,7 +252,7 @@ function DataTab() {
 }
 
 /* ─── EXECUTIVE TAB ─── */
-const EXEC_COLUMNS = 'month,month_yr,dr_name,cr_name,dr_value,cr_value,profit,subbie2,commodity'
+const EXEC_COLUMNS = 'month,month_yr,year,dr_name,cr_name,dr_value,cr_value,profit,subbie2,commodity,load_descrip,own_reg,from_loc,to_loc,debtor'
 
 function ExecTab() {
   const supabase = createClient()
@@ -260,6 +260,7 @@ function ExecTab() {
   const [loading, setLoading] = useState(true)
   const [commodityFilter, setCommodityFilter] = useState<string[]>([])
   const [monthFilter, setMonthFilter] = useState('all')
+  const [yearFilter, setYearFilter] = useState('all')
   const [drillDown, setDrillDown] = useState<{ title: string; headers: string[]; rows: any[][]; totals?: any[] } | null>(null)
   const [drillLoading, setDrillLoading] = useState(false)
   const allRawRowsRef = useRef<any[] | null>(null)
@@ -303,6 +304,12 @@ function ExecTab() {
     return [...s].sort((a, b) => MONTH_ORDER.indexOf(a) - MONTH_ORDER.indexOf(b))
   }, [allRows])
 
+  const allYears = useMemo(() => {
+    const s = new Set<string>()
+    allRows.forEach(r => { if (r.year) s.add(String(r.year)) })
+    return [...s].sort().reverse()
+  }, [allRows])
+
   const filterByCommodity = (rows: any[], selected: string[]) => {
     if (selected.length === 0) return rows
     return rows.filter(r => selected.includes(r.commodity))
@@ -313,11 +320,11 @@ function ExecTab() {
     return allRows.filter(r => r.month === monthFilter)
   }, [allRows, monthFilter])
 
-  const allFiltered = useMemo(() => filterByCommodity(allRows, commodityFilter), [allRows, commodityFilter])
-  const monthFiltered = useMemo(() => filterByCommodity(monthRows, commodityFilter), [monthRows, commodityFilter])
-
-
-  const allFiltered = useMemo(() => filterByCommodity(allRows, commodityFilter), [allRows, commodityFilter])
+  const allFiltered = useMemo(() => {
+    let d = allRows
+    if (yearFilter !== 'all') d = d.filter(r => String(r.year) === yearFilter)
+    return filterByCommodity(d, commodityFilter)
+  }, [allRows, yearFilter, commodityFilter])
   const monthFiltered = useMemo(() => filterByCommodity(monthRows, commodityFilter), [monthRows, commodityFilter])
 
   // ── Chart 1: Broker Revenue YTD ──
@@ -398,12 +405,135 @@ function ExecTab() {
     })
   }, [allFiltered])
 
+  // ── Chart 7: Total Loads per Month (year-filtered) ──
+  const totalLoadsByMonth = useMemo(() => {
+    const map = new Map<string, number>()
+    allFiltered.forEach(r => {
+      const m = r.month || 'Unknown'
+      map.set(m, (map.get(m) || 0) + 1)
+    })
+    return MONTH_ORDER.filter(m => map.has(m)).map(m => ({ month: m, count: map.get(m) || 0 }))
+  }, [allFiltered])
+
+  // ── Chart 8: Open Network Load Count (year-filtered) ──
+  const openNetLoadCount = useMemo(() => {
+    const map = new Map<string, number>()
+    allFiltered.filter(r => r.subbie2 === 'BROKER').forEach(r => {
+      const m = r.month || 'Unknown'
+      map.set(m, (map.get(m) || 0) + 1)
+    })
+    return MONTH_ORDER.filter(m => map.has(m)).map(m => ({ month: m, count: map.get(m) || 0 }))
+  }, [allFiltered])
+
+  // ── Chart 9: Closed Network (EPS) Load Count ──
+  const closedNetLoadCount = useMemo(() => {
+    const map = new Map<string, number>()
+    allFiltered.filter(r => r.subbie2 === 'EPS').forEach(r => {
+      const m = r.month || 'Unknown'
+      map.set(m, (map.get(m) || 0) + 1)
+    })
+    return MONTH_ORDER.filter(m => map.has(m)).map(m => ({ month: m, count: map.get(m) || 0 }))
+  }, [allFiltered])
+
+  // ── Chart 10: Revenue by Commodity Matrix ──
+  const commodityMatrix = useMemo(() => {
+    const rowMap = new Map<string, Map<string, number>>()
+    const colSet = new Set<string>()
+    allFiltered.forEach(r => {
+      const commodity = r.commodity || 'Unknown'
+      const m = r.month || 'Unknown'
+      colSet.add(m)
+      if (!rowMap.has(commodity)) rowMap.set(commodity, new Map())
+      const inner = rowMap.get(commodity)!
+      inner.set(m, (inner.get(m) || 0) + (r.dr_value || 0))
+    })
+    const cols = MONTH_ORDER.filter(m => colSet.has(m))
+    const rows = [...rowMap.entries()]
+      .map(([commodity, inner]) => {
+        const total = cols.reduce((s, m) => s + (inner.get(m) || 0), 0)
+        return { commodity, values: cols.map(m => inner.get(m) || 0), total }
+      })
+      .sort((a, b) => b.total - a.total)
+    const colTotals = cols.map(m => rows.reduce((s, r) => s + r.values[cols.indexOf(m)], 0))
+    return { cols, rows, colTotals, grandTotal: colTotals.reduce((s, v) => s + v, 0) }
+  }, [allFiltered])
+
+  // ── Chart 11: Massmart DC Load Count ──
+  const massmartDCData = useMemo(() => {
+    const map = new Map<string, number>()
+    allFiltered.filter(r => {
+      const dn = (r.dr_name || '').toUpperCase()
+      return dn.includes('MASSMART') || dn.includes('MASSTORES')
+    }).forEach(r => {
+      const dc = r.load_descrip || r.dr_name || 'Unknown'
+      map.set(dc, (map.get(dc) || 0) + 1)
+    })
+    return [...map.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+  }, [allFiltered])
+
+  // ── Chart 12: Citrus Revenue by Client ──
+  const citrusClientData = useMemo(() => {
+    const map = new Map<string, { revenue: number; count: number }>()
+    allFiltered.filter(r => (r.commodity || '').toUpperCase() === 'CITRUS').forEach(r => {
+      const key = r.dr_name || 'Unknown'
+      const existing = map.get(key) || { revenue: 0, count: 0 }
+      existing.revenue += r.dr_value || 0
+      existing.count += 1
+      map.set(key, existing)
+    })
+    return [...map.entries()]
+      .map(([name, v]) => ({ name, ...v }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 15)
+  }, [allFiltered])
+
+  // ── Chart 13: Polokwane Lid Monthly ──
+  const polokwaneData = useMemo(() => {
+    const map = new Map<string, { count: number; revenue: number }>()
+    allFiltered.filter(r => (r.dr_name || '').toUpperCase().includes('POLOKWANE')).forEach(r => {
+      const m = r.month || 'Unknown'
+      const existing = map.get(m) || { count: 0, revenue: 0 }
+      existing.count += 1
+      existing.revenue += r.dr_value || 0
+      map.set(m, existing)
+    })
+    return MONTH_ORDER.filter(m => map.has(m)).map(m => {
+      const v = map.get(m)!
+      return { month: m, count: v.count, revenue: Math.round(v.revenue) }
+    })
+  }, [allFiltered])
+
+  // ── Chart 14: Top Brokers by Revenue ──
+  const topBrokerData = useMemo(() => {
+    const map = new Map<string, { revenue: number; count: number }>()
+    allFiltered.filter(r => r.subbie2 === 'BROKER').forEach(r => {
+      const key = r.dr_name || 'Unknown'
+      const existing = map.get(key) || { revenue: 0, count: 0 }
+      existing.revenue += r.dr_value || 0
+      existing.count += 1
+      map.set(key, existing)
+    })
+    return [...map.entries()]
+      .map(([name, v]) => ({ name, ...v }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 15)
+  }, [allFiltered])
+
   if (loading) return <div className="text-center py-12 text-slate-500">Loading executive data...</div>
 
   return (
     <div className="space-y-6 mt-4">
       {/* Filters */}
       <div className="flex items-center gap-3 flex-wrap">
+        <Select value={yearFilter} onValueChange={setYearFilter}>
+          <SelectTrigger className="w-32"><SelectValue placeholder="Year" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Years</SelectItem>
+            {allYears.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}
+          </SelectContent>
+        </Select>
         <Select value={monthFilter} onValueChange={setMonthFilter}>
           <SelectTrigger className="w-36"><SelectValue placeholder="Month" /></SelectTrigger>
           <SelectContent>
@@ -597,6 +727,280 @@ function ExecTab() {
                 </Bar>
                 <Line yAxisId="right" type="monotone" dataKey="fleetCount" name="Fleet Count" stroke={BLUE} strokeWidth={2} dot={{ fill: BLUE, r: 3 }} />
               </ComposedChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ═══ ROW 4: Total Loads + Open Network Load Count ═══ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => {
+            const cf = commodityFilter
+            const yf = yearFilter
+            openDrillDown(
+              `Total Loads per Month ${yf === 'all' ? '' : yf}`,
+              r => (yf === 'all' || String(r.year) === yf) && (cf.length === 0 || cf.includes(r.commodity)),
+              ['Load Nr', 'Client', 'Month', 'Commodity', 'Revenue'],
+              r => [r.load_nr, r.dr_name, r.month, r.commodity, fmtR(r.dr_value)],
+              rows => ['Grand Total', '', `${rows.length} loads`, '', '']
+            )
+          }}
+        >
+          <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Total Loads per Month {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={totalLoadsByMonth} margin={{ top: 20, right: 10, left: 10, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} />
+                <Tooltip />
+                <Bar dataKey="count" fill="#5B9BD5" barSize={40}>
+                  <LabelList dataKey="count" position="top" style={{ fontSize: 9 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => {
+            const cf = commodityFilter
+            const yf = yearFilter
+            openDrillDown(
+              `Open Network Load Count ${yf === 'all' ? '' : yf}`,
+              r => r.subbie2 === 'BROKER' && (yf === 'all' || String(r.year) === yf) && (cf.length === 0 || cf.includes(r.commodity)),
+              ['Load Nr', 'Client', 'Month', 'Transporter'],
+              r => [r.load_nr, r.dr_name, r.month, r.cr_name],
+              rows => ['Grand Total', '', `${rows.length} loads`, '']
+            )
+          }}
+        >
+          <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Open Network Load Count {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={openNetLoadCount} margin={{ top: 20, right: 10, left: 10, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} />
+                <Tooltip />
+                <Bar dataKey="count" fill="#5B9BD5" barSize={40}>
+                  <LabelList dataKey="count" position="top" style={{ fontSize: 9 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ═══ ROW 5: Closed Network + Commodity Matrix ═══ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => {
+            const cf = commodityFilter
+            const yf = yearFilter
+            openDrillDown(
+              `Closed Network (EPS) Load Count ${yf === 'all' ? '' : yf}`,
+              r => r.subbie2 === 'EPS' && (yf === 'all' || String(r.year) === yf) && (cf.length === 0 || cf.includes(r.commodity)),
+              ['Load Nr', 'Client', 'Month', 'Vehicle Reg'],
+              r => [r.load_nr, r.dr_name, r.month, r.own_reg],
+              rows => ['Grand Total', '', `${rows.length} loads`, '']
+            )
+          }}
+        >
+          <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Closed Network (EPS) Load Count {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={closedNetLoadCount} margin={{ top: 20, right: 10, left: 10, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} />
+                <Tooltip />
+                <Bar dataKey="count" fill="#ED7D31" barSize={40}>
+                  <LabelList dataKey="count" position="top" style={{ fontSize: 9 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => {
+            const yf = yearFilter
+            openDrillDown(
+              `Revenue by Commodity ${yf === 'all' ? '' : yf}`,
+              r => (yf === 'all' || String(r.year) === yf),
+              ['Load Nr', 'Commodity', 'Month', 'Revenue'],
+              r => [r.load_nr, r.commodity, r.month, fmtR(r.dr_value)],
+              rows => ['Grand Total', '', '', fmtR(rows.reduce((s, r) => s + (Number(String(r[3]).replace(/[R,]/g, '')) || 0), 0))]
+            )
+          }}
+        >
+          <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Revenue by Commodity {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
+          <CardContent>
+            <div className="overflow-auto max-h-[320px]">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-slate-200">
+                    <TableHead className="text-xs text-slate-700 sticky left-0 bg-slate-200">Commodity</TableHead>
+                    {commodityMatrix.cols.map(m => (
+                      <TableHead key={m} className="text-xs text-slate-700 text-right">{m.substring(0, 3)}</TableHead>
+                    ))}
+                    <TableHead className="text-xs text-slate-700 text-right font-bold">Total</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {commodityMatrix.rows.map((r, i) => (
+                    <TableRow key={i} className="hover:bg-slate-50">
+                      <TableCell className="text-xs font-medium sticky left-0 bg-white max-w-[180px] truncate" title={r.commodity}>{r.commodity}</TableCell>
+                      {r.values.map((v, j) => (
+                        <TableCell key={j} className="text-xs text-right">{v > 0 ? fmtR(v) : ''}</TableCell>
+                      ))}
+                      <TableCell className="text-xs text-right font-semibold">{fmtR(r.total)}</TableCell>
+                    </TableRow>
+                  ))}
+                  <TableRow className="font-bold bg-slate-100">
+                    <TableCell className="text-xs sticky left-0 bg-slate-100">Grand Total</TableCell>
+                    {commodityMatrix.colTotals.map((v, j) => (
+                      <TableCell key={j} className="text-xs text-right">{fmtR(v)}</TableCell>
+                    ))}
+                    <TableCell className="text-xs text-right">{fmtR(commodityMatrix.grandTotal)}</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ═══ ROW 6: Massmart DC + Citrus Client ═══ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => {
+            const yf = yearFilter
+            openDrillDown(
+              `Massmart DC Load Count ${yf === 'all' ? '' : yf}`,
+              r => {
+                const dn = (r.dr_name || '').toUpperCase()
+                return (dn.includes('MASSMART') || dn.includes('MASSTORES')) && (yf === 'all' || String(r.year) === yf)
+              },
+              ['Load Nr', 'DC', 'Client', 'Month', 'Vehicle Reg'],
+              r => [r.load_nr, r.load_descrip || r.dr_name, r.dr_name, r.month, r.own_reg],
+              rows => ['Grand Total', '', `${rows.length} loads`, '', '']
+            )
+          }}
+        >
+          <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Massmart DC Load Count {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={Math.max(200, massmartDCData.length * 30 + 40)}>
+              <BarChart data={massmartDCData} layout="vertical" margin={{ left: 120, right: 30, top: 5, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 10 }} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={120} />
+                <Tooltip />
+                <Bar dataKey="count" fill="#70AD47" barSize={16}>
+                  <LabelList dataKey="count" position="right" style={{ fontSize: 9 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => {
+            const yf = yearFilter
+            openDrillDown(
+              `Citrus Revenue by Client ${yf === 'all' ? '' : yf}`,
+              r => (r.commodity || '').toUpperCase() === 'CITRUS' && (yf === 'all' || String(r.year) === yf),
+              ['Load Nr', 'Client', 'Month', 'Revenue'],
+              r => [r.load_nr, r.dr_name, r.month, fmtR(r.dr_value)],
+              rows => ['Grand Total', '', '', fmtR(rows.reduce((s, r) => s + (Number(String(r[3]).replace(/[R,]/g, '')) || 0), 0))]
+            )
+          }}
+        >
+          <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Citrus Revenue by Client {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={Math.max(200, citrusClientData.length * 28 + 40)}>
+              <BarChart data={citrusClientData} layout="vertical" margin={{ left: 200, right: 30, top: 5, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000).toFixed(0)}K`} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 8 }} width={200} />
+                <Tooltip formatter={(v: number) => fmtR(v)} />
+                <Bar dataKey="revenue" fill="#70AD47" barSize={14}>
+                  <LabelList dataKey="revenue" position="right" formatter={(v: number) => fmtR(v)} style={{ fontSize: 9 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ═══ ROW 7: Polokwane Lid + Top Brokers ═══ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => {
+            const yf = yearFilter
+            openDrillDown(
+              `Polokwane Lid Monthly ${yf === 'all' ? '' : yf}`,
+              r => (r.dr_name || '').toUpperCase().includes('POLOKWANE') && (yf === 'all' || String(r.year) === yf),
+              ['Load Nr', 'Vehicle Reg', 'Month', 'Revenue'],
+              r => [r.load_nr, r.own_reg, r.month, fmtR(r.dr_value)],
+              rows => ['Grand Total', '', `${rows.length} loads`, fmtR(rows.reduce((s, r) => s + (Number(String(r[3]).replace(/[R,]/g, '')) || 0), 0))]
+            )
+          }}
+        >
+          <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Polokwane Lid Monthly {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={280}>
+              <ComposedChart data={polokwaneData} margin={{ top: 20, right: 50, left: 10, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                <YAxis yAxisId="left" tick={{ fontSize: 10 }} />
+                <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000).toFixed(0)}K`} />
+                <Tooltip formatter={(v: number, name: string) => name === 'revenue' ? fmtR(v) : v} />
+                <Bar yAxisId="left" dataKey="count" name="Loads" fill="#5B9BD5" barSize={35}>
+                  <LabelList dataKey="count" position="top" style={{ fontSize: 9 }} />
+                </Bar>
+                <Line yAxisId="right" type="monotone" dataKey="revenue" name="Revenue" stroke="#ED7D31" strokeWidth={2} dot={{ fill: '#ED7D31', r: 3 }} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => {
+            const yf = yearFilter
+            const cf = commodityFilter
+            openDrillDown(
+              `Top Brokers by Revenue ${yf === 'all' ? '' : yf}`,
+              r => r.subbie2 === 'BROKER' && (yf === 'all' || String(r.year) === yf) && (cf.length === 0 || cf.includes(r.commodity)),
+              ['Load Nr', 'Broker', 'Month', 'Revenue'],
+              r => [r.load_nr, r.dr_name, r.month, fmtR(r.dr_value)],
+              rows => ['Grand Total', '', '', fmtR(rows.reduce((s, r) => s + (Number(String(r[3]).replace(/[R,]/g, '')) || 0), 0))]
+            )
+          }}
+        >
+          <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Top Brokers by Revenue {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={Math.max(200, topBrokerData.length * 28 + 40)}>
+              <BarChart data={topBrokerData} layout="vertical" margin={{ left: 200, right: 60, top: 5, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000).toFixed(0)}K`} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 8 }} width={200} />
+                <Tooltip formatter={(v: number, name: string) => name === 'revenue' ? fmtR(v) : v} />
+                <Bar dataKey="revenue" name="Revenue" fill={BLUE} barSize={12}>
+                  <LabelList dataKey="revenue" position="right" formatter={(v: number) => fmt(v)} style={{ fontSize: 9 }} />
+                </Bar>
+                <Bar dataKey="count" name="Loads" fill="#ED7D31" barSize={12} />
+              </BarChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
