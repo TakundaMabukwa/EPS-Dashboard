@@ -19,26 +19,17 @@ const COLUMN_MAP: Record<string, string> = {
   'dnote': 'd_note', 'vehicle no': 'vehicle_no',
   'own veh #': 'own_veh',
   'own reg #': 'own_reg',
-  'qty': 'qty',
-  'rate': 'rate',
-  'drvalue': 'dr_value',
+  'qty': 'qty', 'rate': 'rate', 'drvalue': 'dr_value',
   'from': 'from_loc', 'to': 'to_loc',
-  'adhoc veh #': 'adhoc_veh',
-  'adhoc veh reg #': 'adhoc_veh_reg',
+  'adhoc veh #': 'adhoc_veh', 'adhoc veh reg #': 'adhoc_veh_reg',
   's': 's', 'invoice no': 'invoice_no', 'inv date': 'inv_date',
   'creditor': 'creditor', 'subbie2': 'subbie2',
-  'crname': 'cr_name',
-  'drivername': 'driver_name',
-  'crvalue': 'cr_value',
+  'crname': 'cr_name', 'drivername': 'driver_name', 'crvalue': 'cr_value',
   'profit': 'profit', '% profit': 'pct_profit',
-  'route km': 'route_km',
-  'openingkm': 'opening_km',
-  'closingkm': 'closing_km',
-  'mapkm': 'map_km',
-  'emptykm': 'empty_km',
-  'cpkinc': 'cpk_inc', 'pod no': 'pod_no', 'tax inv no': 'tax_inv_no',
-  'loadregion': 'load_region',
-  'offloadregion': 'offload_region',
+  'route km': 'route_km', 'openingkm': 'opening_km', 'closingkm': 'closing_km',
+  'mapkm': 'map_km', 'emptykm': 'empty_km', 'cpkinc': 'cpk_inc',
+  'pod no': 'pod_no', 'tax inv no': 'tax_inv_no',
+  'loadregion': 'load_region', 'offloadregion': 'offload_region',
   'leader reg': 'leader_reg', 'follower reg': 'follower_reg',
   'route description': 'route_description',
 }
@@ -56,6 +47,12 @@ function parseString(val: any): string | null {
   if (val === null || val === undefined) return null
   const s = String(val).trim()
   return s === '' ? null : s
+}
+
+function extractCellValue(cell: any): any {
+  if (cell === null || cell === undefined) return null
+  if (typeof cell === 'object') return cell.value ?? cell.result ?? null
+  return cell
 }
 
 export const config = { api: { bodyParser: false } }
@@ -80,12 +77,11 @@ export async function POST(req: NextRequest) {
 
     let colMapping: Record<number, string> = {}
     let mappedCols: number[] = []
+    let mappedColumnNames: string[] = []
     let batch: Record<string, any>[] = []
     let inserted = 0, errors = 0, skipped = 0, batchNum = 0
     const errorMessages: string[] = []
-    let mappedColumnNames: string[] = []
-    let rawHeaders: string[] = []
-    let foundDataSheet = false
+    const rawHeaders: string[] = []
     const BATCH_SIZE = 500
 
     const flushBatch = async () => {
@@ -101,51 +97,44 @@ export async function POST(req: NextRequest) {
       batch = []
     }
 
+    let dataSheetFound = false
+
     for await (const worksheetReader of workbookReader) {
-      console.log('Found sheet:', worksheetReader.name)
+      console.log('Sheet:', worksheetReader.name)
       if (worksheetReader.name !== 'DATA') continue
-      foundDataSheet = true
+      dataSheetFound = true
 
       let rowNumber = 0
       for await (const row of worksheetReader) {
         rowNumber++
+
         if (rowNumber === 1) {
-          // Parse headers using row.values array (1-indexed)
           const values = row.values as any[]
-          console.log('Row 1 values length:', values.length)
           for (let col = 1; col < values.length; col++) {
-            const cell = values[col]
-            const raw = cell && typeof cell === 'object' ? (cell.value ?? cell.result ?? '') : (cell ?? '')
+            const raw = extractCellValue(values[col])
             const rawHeader = String(raw).trim().toLowerCase()
-            rawHeaders.push(`[${col}] "${String(raw)}" -> normalized "${rawHeader}"`)
-            console.log(`Col ${col}: raw="${String(raw)}" normalized="${rawHeader}"`)
+            rawHeaders.push(`[${col}] "${String(raw)}" -> "${rawHeader}"`)
+            console.log(`Col ${col}: "${rawHeader}"`)
             const mapped = COLUMN_MAP[rawHeader]
             if (mapped) {
               colMapping[col] = mapped
-              console.log(`  -> MAPPED to ${mapped}`)
+              console.log(`  -> ${mapped}`)
             }
           }
           mappedCols = Object.keys(colMapping).map(Number)
           mappedColumnNames = mappedCols.map(c => colMapping[c])
-          console.log('Mapped columns:', mappedColumnNames)
-          console.log('Total mapped:', mappedCols.length)
+          console.log(`Matched ${mappedCols.length} columns:`, mappedColumnNames)
           continue
         }
-          mappedCols = Object.keys(colMapping).map(Number)
-          if (mappedCols.length === 0) {
-            return NextResponse.json({ error: 'No matching columns found in DATA sheet.', rawHeaders, sheetNames: [] }, { status: 400 })
-          }
-          mappedColumnNames = mappedCols.map(c => colMapping[c])
-          continue
-        }
+
+        if (mappedCols.length === 0) continue
 
         let hasData = false
         const record: Record<string, any> = {}
         const values = row.values as any[]
         for (const col of mappedCols) {
           const dbCol = colMapping[col]
-          const cell = values[col]
-          const cellVal = cell && typeof cell === 'object' ? (cell.value ?? cell.result ?? null) : (cell ?? null)
+          const cellVal = extractCellValue(values[col])
           if (cellVal !== null && cellVal !== undefined && cellVal !== '') hasData = true
           record[dbCol] = NUMERIC_COLS.has(dbCol) ? parseNumeric(cellVal) : parseString(cellVal)
         }
@@ -153,7 +142,14 @@ export async function POST(req: NextRequest) {
         batch.push(record)
         if (batch.length >= BATCH_SIZE) await flushBatch()
       }
-      break // only DATA sheet
+    }
+
+    if (!dataSheetFound) {
+      return NextResponse.json({ error: 'Sheet "DATA" not found in workbook.' }, { status: 400 })
+    }
+
+    if (mappedCols.length === 0) {
+      return NextResponse.json({ error: 'No matching columns found in DATA sheet.', rawHeaders }, { status: 400 })
     }
 
     await flushBatch()
