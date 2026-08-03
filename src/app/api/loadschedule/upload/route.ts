@@ -10,35 +10,35 @@ const supabase = createClient(
 const COLUMN_MAP: Record<string, string> = {
   'load nr': 'load_nr', 'load date': 'load_date', 'month': 'month', 'year': 'year',
   'month+yr': 'month_yr', 'country': 'country', 'debtor': 'debtor',
-  'drname': 'dr_name', 'dr name': 'dr_name',
-  'load/del': 'load_del', 'load del': 'load_del',
+  'drname': 'dr_name',
+  'load/del': 'load_del',
   'pink cv/po': 'pink_cv_po', 'order no 3': 'order_no_3', 'load size': 'load_size',
   'commodity': 'commodity',
-  'loaddescrip': 'load_descrip', 'load descrip': 'load_descrip',
-  'offloaddescrip': 'offload_descrip', 'offload descrip': 'offload_descrip',
-  'dnote': 'dnote', 'vehicle no': 'vehicle_no',
-  'own veh #': 'own_veh', 'own veh#': 'own_veh',
-  'own reg #': 'own_reg', 'own reg#': 'own_reg',
-  ' qty ': 'qty', 'qty': 'qty',
-  ' rate ': 'rate', 'rate': 'rate',
-  ' drvalue ': 'dr_value', 'drvalue': 'dr_value',
+  'loaddescrip': 'load_descrip',
+  'offloaddescrip': 'offload_descrip',
+  'dnote': 'd_note', 'vehicle no': 'vehicle_no',
+  'own veh #': 'own_veh',
+  'own reg #': 'own_reg',
+  'qty': 'qty',
+  'rate': 'rate',
+  'drvalue': 'dr_value',
   'from': 'from_loc', 'to': 'to_loc',
-  'adhoc veh #': 'adhoc_veh', 'adhoc veh#': 'adhoc_veh',
-  'adhoc veh reg #': 'adhoc_veh_reg', 'adhoc veh reg#': 'adhoc_veh_reg',
+  'adhoc veh #': 'adhoc_veh',
+  'adhoc veh reg #': 'adhoc_veh_reg',
   's': 's', 'invoice no': 'invoice_no', 'inv date': 'inv_date',
   'creditor': 'creditor', 'subbie2': 'subbie2',
-  'crname': 'cr_name', 'cr name': 'cr_name',
-  'drivername': 'driver_name', 'driver name': 'driver_name',
-  ' crvalue ': 'cr_value', 'crvalue': 'cr_value',
-  'profit': 'profit', '% profit': 'pct_profit', '%profit': 'pct_profit',
+  'crname': 'cr_name',
+  'drivername': 'driver_name',
+  'crvalue': 'cr_value',
+  'profit': 'profit', '% profit': 'pct_profit',
   'route km': 'route_km',
-  'openingkm': 'opening_km', 'opening km': 'opening_km',
-  'closingkm': 'closing_km', 'closing km': 'closing_km',
-  'mapkm': 'map_km', 'map km': 'map_km',
-  'emptykm': 'empty_km', 'empty km': 'empty_km',
+  'openingkm': 'opening_km',
+  'closingkm': 'closing_km',
+  'mapkm': 'map_km',
+  'emptykm': 'empty_km',
   'cpkinc': 'cpk_inc', 'pod no': 'pod_no', 'tax inv no': 'tax_inv_no',
-  'loadregion': 'load_region', 'load region': 'load_region',
-  'offloadregion': 'offload_region', 'offload region': 'offload_region',
+  'loadregion': 'load_region',
+  'offloadregion': 'offload_region',
   'leader reg': 'leader_reg', 'follower reg': 'follower_reg',
   'route description': 'route_description',
 }
@@ -109,7 +109,9 @@ export async function POST(req: NextRequest) {
           // Parse headers using row.values array (1-indexed)
           const values = row.values as any[]
           for (let col = 1; col < values.length; col++) {
-            const rawHeader = String(values[col] || '').trim().toLowerCase()
+            const cell = values[col]
+            const raw = cell && typeof cell === 'object' ? (cell.value ?? cell.result ?? '') : (cell ?? '')
+            const rawHeader = String(raw).trim().toLowerCase()
             const mapped = COLUMN_MAP[rawHeader]
             if (mapped) colMapping[col] = mapped
           }
@@ -126,7 +128,8 @@ export async function POST(req: NextRequest) {
         const values = row.values as any[]
         for (const col of mappedCols) {
           const dbCol = colMapping[col]
-          const cellVal = values[col] ?? null
+          const cell = values[col]
+          const cellVal = cell && typeof cell === 'object' ? (cell.value ?? cell.result ?? null) : (cell ?? null)
           if (cellVal !== null && cellVal !== undefined && cellVal !== '') hasData = true
           record[dbCol] = NUMERIC_COLS.has(dbCol) ? parseNumeric(cellVal) : parseString(cellVal)
         }
