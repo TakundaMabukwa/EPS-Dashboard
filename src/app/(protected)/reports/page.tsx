@@ -155,84 +155,46 @@ async function exportDrillDownToExcel(title: string, headers: string[], rows: an
   ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: rows.length + 1, column: headers.length } }
 
   // ── Sheet 2: Charts (aggregated from data) ──
-  if (rows.length > 0 && categoryCol >= 0 && numericCols.length > 0) {
-    const catIdx = categoryCol
-    const valIdx = numericCols[0] // primary value column
+  try {
+    if (rows.length > 0 && categoryCol >= 0 && numericCols.length > 0) {
+      const catIdx = categoryCol
+      const valIdx = numericCols[0]
 
-    // Aggregate: sum by category
-    const aggMap = new Map<string, number>()
-    rows.forEach(r => {
-      const cat = String(r[catIdx] || 'Unknown')
-      const raw = r[valIdx]
-      const val = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw.replace(/[R,\s]/g, '')) : 0
-      if (!isNaN(val)) aggMap.set(cat, (aggMap.get(cat) || 0) + val)
-    })
-
-    const sorted = [...aggMap.entries()].sort((a, b) => b[1] - a[1])
-    const chartData = sorted.slice(0, 20) // top 20 for readability
-    if (chartData.length === 0) return
-
-    const chartWs = wb.addWorksheet('Charts')
-    chartWs.columns = [
-      { header: headers[catIdx], key: 'cat', width: 30 },
-      { header: headers[valIdx], key: 'val', width: 18 },
-    ]
-    chartData.forEach(([cat, val]) => chartWs.addRow({ cat, val: Math.round(val) }))
-
-    const totalAgg = chartData.reduce((s, [, v]) => s + v, 0)
-    chartWs.addRow({ cat: 'Grand Total', val: totalAgg })
-    const lastRow = chartData.length + 2
-    chartWs.getCell(`B${lastRow}`).font = { bold: true }
-    chartWs.getCell(`B${lastRow}`).numFmt = 'R #,##0'
-    chartWs.getColumn(2).numFmt = 'R #,##0'
-
-    // Bar chart
-    const barChart: any = {
-      type: 'bar',
-      title: { text: `${headers[valIdx]} by ${headers[catIdx]}` },
-      legend: { position: 'none' },
-      plotArea: { border: { none: true } },
-      series: [{
-        labels: { position: 'out' },
-        val: { numRef: `Charts!$B$2:$B${lastRow - 1}` },
-        cat: { numRef: `Charts!$A$2:$A${lastRow - 1}` },
-      }],
-    }
-    chartWs.addChart(barChart, 'D2')
-
-    // If there's a second numeric column, add a second chart
-    if (numericCols.length > 1) {
-      const valIdx2 = numericCols[1]
-      const aggMap2 = new Map<string, number>()
+      const aggMap = new Map<string, number>()
       rows.forEach(r => {
         const cat = String(r[catIdx] || 'Unknown')
-        const raw = r[valIdx2]
+        const raw = r[valIdx]
         const val = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw.replace(/[R,\s]/g, '')) : 0
-        if (!isNaN(val)) aggMap2.set(cat, (aggMap2.get(cat) || 0) + val)
+        if (!isNaN(val)) aggMap.set(cat, (aggMap.get(cat) || 0) + val)
       })
-      const sorted2 = [...aggMap2.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20)
-      chartWs.getColumn(3).key = 'val2'
-      chartWs.getColumn(4).key = 'cat2'
-      chartWs.getColumn(3).width = 18
-      chartWs.getColumn(4).width = 30
 
-      chartWs.getColumn(3).header = headers[valIdx2]
-      chartWs.getColumn(4).header = headers[catIdx]
-      sorted2.forEach(([cat, val]) => chartWs.addRow({ cat2: cat, val2: Math.round(val) }))
+      const sorted = [...aggMap.entries()].sort((a, b) => b[1] - a[1])
+      const chartData = sorted.slice(0, 20)
+      if (chartData.length > 0) {
+        const chartWs = wb.addWorksheet('Charts')
+        chartWs.columns = [
+          { header: headers[catIdx], key: 'cat', width: 30 },
+          { header: headers[valIdx], key: 'val', width: 18 },
+        ]
+        chartData.forEach(([cat, val]) => chartWs.addRow({ cat, val: Math.round(val) }))
+        const lastDataRow = chartData.length + 1
+        chartWs.getColumn(2).numFmt = 'R #,##0'
 
-      const barChart2: any = {
-        type: 'bar',
-        title: { text: `${headers[valIdx2]} by ${headers[catIdx]}` },
-        legend: { position: 'none' },
-        plotArea: { border: { none: true } },
-        series: [{
-          labels: { position: 'out' },
-          val: { numRef: `Charts!$C$2:$C${sorted2.length + 1}` },
-          cat: { numRef: `Charts!$D$2:$D${sorted2.length + 1}` },
-        }],
+        const barChart: any = {
+          type: 'bar',
+          title: { text: `${headers[valIdx]} by ${headers[catIdx]}` },
+          legend: { position: 'none' },
+          series: [{
+            labels: { position: 'out' },
+            val: { numRef: `Charts!$B$2:$B${lastDataRow}` },
+            cat: { strRef: { f: `Charts!$A$2:$A${lastDataRow}` } },
+          }],
+        }
+        chartWs.addChart(barChart, 'D2')
       }
-      chartWs.addChart(barChart2, 'D22')
     }
+  } catch (e) {
+    console.warn('Chart generation failed, exporting data only:', e)
   }
 
   const buffer = await wb.xlsx.writeBuffer()
