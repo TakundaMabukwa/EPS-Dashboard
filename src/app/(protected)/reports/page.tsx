@@ -696,7 +696,37 @@ function ExecTab() {
         </Card>
       </div>
 
-      {/* ROW 2: Load Count + Transporter Distribution */}
+      {/* ROW 2: Transporter Distribution (full width) */}
+      <div className="grid grid-cols-1 gap-6">
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => {
+            openDrillDown(
+              'Transporter Revenue Distribution',
+              ['Load Nr', 'Transporter', 'Client', 'Month', 'Revenue'],
+              r => true,
+              r => [r.load_nr, r.cr_name, r.dr_name, r.month, fmtR(r.cr_value)]
+            )
+          }}
+        >
+          <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Transporter Revenue Distribution</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={350}>
+              <BarChart data={transporterData} layout="vertical" margin={{ left: 180, right: 60, top: 5, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000).toFixed(0)}K`} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={180} />
+                <Tooltip formatter={(v: number) => fmtR(v)} />
+                <Bar dataKey="crValue" fill={BLUE} barSize={14}>
+                  <LabelList dataKey="crValue" position="right" formatter={(v: number) => fmtR(v)} style={{ fontSize: 9 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ROW 3: Load Count + Top Clients */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
@@ -725,36 +755,6 @@ function ExecTab() {
           </CardContent>
         </Card>
 
-        <Card
-          className="cursor-pointer hover:shadow-md transition-shadow"
-          onClick={() => {
-            openDrillDown(
-              'Transporter Revenue Distribution',
-              ['Load Nr', 'Transporter', 'Client', 'Month', 'Revenue'],
-              r => true,
-              r => [r.load_nr, r.cr_name, r.dr_name, r.month, fmtR(r.cr_value)]
-            )
-          }}
-        >
-          <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Transporter Revenue Distribution</CardTitle></CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={transporterData} layout="vertical" margin={{ left: 150, right: 20, top: 5, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000).toFixed(0)}K`} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={150} />
-                <Tooltip formatter={(v: number) => fmtR(v)} />
-                <Bar dataKey="crValue" fill={BLUE} barSize={12}>
-                  <LabelList dataKey="crValue" position="right" formatter={(v: number) => fmtR(v)} style={{ fontSize: 9 }} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* ROW 3: Top Clients EPS + Open Network Revenue */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {

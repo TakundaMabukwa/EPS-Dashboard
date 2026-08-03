@@ -5,7 +5,6 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { Search, ChevronUp, ChevronDown, ChevronsUpDown, Filter, X } from 'lucide-react'
-import { TableVirtuoso } from 'react-virtuoso'
 
 interface ExcelFilterTableProps {
   headers: string[]
@@ -161,12 +160,9 @@ export function ExcelFilterTable({ headers, rows, totals, maxHeight = '70vh', cl
         )}
       </div>
 
-      <div className="flex-1 min-h-0" style={{ height: 'calc(100% - 44px)' }}>
-        <TableVirtuoso
-          style={{ height: '100%' }}
-          data={processedRows}
-          overscan={20}
-          fixedHeaderContent={() => (
+      <div className="flex-1 min-h-0 overflow-auto">
+        <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
+          <thead className="sticky top-0 z-20">
             <tr>
               {headers.map((h, i) => (
                 <HeaderCell key={i} h={h} i={i} sortCol={sortCol} sortDir={sortDir} onSort={handleSort}>
@@ -180,33 +176,17 @@ export function ExcelFilterTable({ headers, rows, totals, maxHeight = '70vh', cl
                 </HeaderCell>
               ))}
             </tr>
-          )}
-          itemContent={(index, row) => (
-            <>
-              {row.map((cell, j) => (
-                <Cell key={j} align={j > 0 && j < 4 ? undefined : undefined}>
-                  {cell}
-                </Cell>
-              ))}
-            </>
-          )}
-          components={{
-            Table: (props) => (
-              <table {...props} className="w-full text-sm" style={{ ...props.style, borderCollapse: 'collapse' }} />
-            ),
-            TableHead: React.forwardRef<HTMLTableSectionElement>((props, ref) => (
-              <thead {...props} ref={ref} />
-            )),
-            TableBody: React.forwardRef<HTMLTableSectionElement>((props, ref) => (
-              <tbody {...props} ref={ref} />
-            )),
-            TableRow: (props) => {
-              const { ...rest } = props
-              return <tr {...rest} className={props.context?.index % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} />
-            },
-          }}
-          context={{ index: 0 }}
-        />
+          </thead>
+          <tbody>
+            {processedRows.map((row, idx) => (
+              <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                {row.map((cell, j) => (
+                  <Cell key={j}>{cell}</Cell>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       {totals && (
