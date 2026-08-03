@@ -30,6 +30,7 @@ import {
   Sun,
   Moon,
   BarChart3,
+  Upload,
 } from "lucide-react";
 import GlobalProvider from "@/context/global-context/provider";
 import { PAGES, Permission, hasPermission } from "@/lib/permissions/permissions";
@@ -99,6 +100,7 @@ const roleNavigation = {
     { name: "Cost Centers", href: "/ccenter", Icon: <DollarSign /> },
     { name: "Financials", href: "/audit", Icon: <Settings2Icon /> },
     { name: "Reports", href: "/reports", Icon: <ChartBar /> },
+    { name: "Upload Data", href: "/loadschedule/upload", Icon: <Upload /> },
     {
       name: "Inspections",
       href: "/fleetManager/inspections",
