@@ -13,6 +13,8 @@ import { Search, Check, ChevronDown, X, PanelLeftClose } from 'lucide-react'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { ExcelFilterTable } from '@/components/ui/excel-filter-table'
+import ExcelJS from 'exceljs'
+import { Download } from 'lucide-react'
 
 /* ─── Multi-Select Commodity Filter ─── */
 function CommodityFilter({ commodities, selected, onChange, label }: { commodities: string[], selected: string[], onChange: (v: string[]) => void, label?: string }) {
@@ -84,6 +86,109 @@ function CommodityFilter({ commodities, selected, onChange, label }: { commoditi
 const BLUE = '#4472C4'
 const fmt = (n: number) => n?.toLocaleString('en-ZA', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) || '0'
 const fmtR = (n: number) => `R${fmt(n)}`
+
+async function exportDrillDownToExcel(title: string, headers: string[], rows: any[][], totals?: any[]) {
+  const wb = new ExcelJS.Workbook()
+  const ws = wb.addWorksheet(title.substring(0, 31))
+
+  const headerRow = ws.addRow(headers)
+  headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } }
+  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1A245E' } }
+  headerRow.alignment = { horizontal: 'center' }
+  headerRow.eachCell((cell) => {
+    cell.border = {
+      bottom: { style: 'thin', color: { argb: 'FF000000' } },
+    }
+  })
+
+  rows.forEach((row, i) => {
+    const dataRow = ws.addRow(row)
+    dataRow.eachCell((cell, colNumber) => {
+      const val = cell.value
+      if (typeof val === 'string' && val.startsWith('R')) {
+        const num = Number(val.replace(/[R,\s]/g, ''))
+        if (!isNaN(num)) {
+          cell.value = num
+          cell.numFmt = 'R #,##0'
+        }
+      }
+      if (i % 2 === 1) {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8F9FA' } }
+      }
+      cell.border = {
+        bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+      }
+    })
+  })
+
+  if (totals) {
+    const totalRow = ws.addRow(totals)
+    totalRow.font = { bold: true }
+    totalRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } }
+    totalRow.eachCell((cell) => {
+      const val = cell.value
+      if (typeof val === 'string' && val.startsWith('R')) {
+        const num = Number(val.replace(/[R,\s]/g, ''))
+        if (!isNaN(num)) {
+          cell.value = num
+          cell.numFmt = 'R #,##0'
+        }
+      }
+    })
+  }
+
+  const lastDataRow = rows.length + 1
+  headers.forEach((h, i) => {
+    const col = i + 1
+    const colLetter = String.fromCharCode(64 + col)
+    ws.getColumn(col).width = Math.max(h.length + 2, 14)
+  })
+
+  if (rows.length > 0) {
+    const firstDataNumRow = 2
+    const lastDataNumRow = rows.length + 1
+    const totalNumRow = totals ? rows.length + 2 : undefined
+
+    headers.forEach((h, i) => {
+      const colLetter = String.fromCharCode(64 + i + 1)
+      const isNumeric = rows.some(r => {
+        const v = r[i]
+        if (typeof v === 'number') return true
+        if (typeof v === 'string' && v.startsWith('R')) {
+          return !isNaN(Number(v.replace(/[R,\s]/g, '')))
+        }
+        return false
+      })
+
+      if (isNumeric) {
+        const dataCells = rows.map((_, ri) => `${colLetter}${ri + 2}`).filter((_, ri) => {
+          const v = rows[ri][i]
+          return typeof v === 'number' || (typeof v === 'string' && v.startsWith('R'))
+        })
+        if (dataCells.length > 0) {
+          const sumFormula = `SUM(${colLetter}${firstDataNumRow}:${colLetter}${lastDataNumRow})`
+          if (totalNumRow) {
+            ws.getCell(`${colLetter}${totalNumRow}`).value = { formula: sumFormula } as any
+            ws.getCell(`${colLetter}${totalNumRow}`).numFmt = 'R #,##0'
+          }
+        }
+      }
+    })
+  }
+
+  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: rows.length + 1, column: headers.length } }
+
+  const buffer = await wb.xlsx.writeBuffer()
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${title.replace(/[^a-zA-Z0-9 ]/g, '').substring(0, 50)}.xlsx`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
 
 async function fetchAll(supabase: any, table: string, filter?: (q: any) => any, columns = '*', onProgress?: (loaded: number) => void) {
   const PAGE = 1000
@@ -1379,6 +1484,17 @@ function ExecTab() {
                   {drillDown ? `${drillDown.rows.length} rows` : ''} — Click any column header to sort
                 </DialogDescription>
               </div>
+              {drillDown && drillDown.rows.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => drillDown && exportDrillDownToExcel(drillDown.title, drillDown.headers, drillDown.rows, drillDown.totals)}
+                >
+                  <Download className="w-4 h-4" />
+                  Download Excel
+                </Button>
+              )}
             </div>
           </div>
           {drillDown && (
