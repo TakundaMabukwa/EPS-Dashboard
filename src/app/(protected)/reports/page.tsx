@@ -711,13 +711,13 @@ function ExecTab() {
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Transporter Revenue Distribution</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={350}>
-              <BarChart data={transporterData} layout="vertical" margin={{ left: 180, right: 60, top: 5, bottom: 5 }}>
+            <ResponsiveContainer width="100%" height={Math.max(300, transporterData.length * 30 + 40)}>
+              <BarChart data={transporterData} layout="vertical" margin={{ left: 180, right: 80, top: 5, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000).toFixed(0)}K`} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={180} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={180} interval={0} />
                 <Tooltip formatter={(v: number) => fmtR(v)} />
-                <Bar dataKey="crValue" fill={BLUE} barSize={14}>
+                <Bar dataKey="crValue" fill={BLUE} barSize={16}>
                   <LabelList dataKey="crValue" position="right" formatter={(v: number) => fmtR(v)} style={{ fontSize: 9 }} />
                 </Bar>
               </BarChart>
@@ -726,35 +726,8 @@ function ExecTab() {
         </Card>
       </div>
 
-      {/* ROW 3: Load Count + Top Clients */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card
-          className="cursor-pointer hover:shadow-md transition-shadow"
-          onClick={() => {
-            openDrillDown(
-              'Brokerage Load Count (EPS Fleet)',
-              ['Load Nr', 'Client', 'Transporter', 'Commodity', 'Month'],
-              r => r.subbie2 === 'BROKER',
-              r => [r.load_nr, r.dr_name, r.cr_name, r.commodity, r.month]
-            )
-          }}
-        >
-          <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Brokerage Load Count per Month 2026</CardTitle></CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={loadCountByMonth} margin={{ top: 20, right: 10, left: 10, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="month" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 10 }} />
-                <Tooltip />
-                <Bar dataKey="count" fill={BLUE} barSize={40}>
-                  <LabelList dataKey="count" position="top" style={{ fontSize: 9 }} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
+      {/* ROW 4: Top Clients EPS (full width) */}
+      <div className="grid grid-cols-1 gap-6">
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
@@ -768,21 +741,24 @@ function ExecTab() {
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Top Clients - Own EPS Trucks (YTD 2026)</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={topClientData} layout="vertical" margin={{ top: 5, right: 60, left: 5, bottom: 5 }}>
+            <ResponsiveContainer width="100%" height={Math.max(300, topClientData.length * 30 + 40)}>
+              <BarChart data={topClientData} layout="vertical" margin={{ left: 200, right: 80, top: 5, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000).toFixed(0)}K`} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 8 }} width={200} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={200} interval={0} />
                 <Tooltip formatter={(v: number, name: string) => name === 'drValue' ? fmtR(v) : v} />
-                <Bar dataKey="drValue" name="Revenue" fill={BLUE} barSize={12}>
+                <Bar dataKey="drValue" name="Revenue" fill={BLUE} barSize={16}>
                   <LabelList dataKey="drValue" position="right" formatter={(v: number) => fmt(v)} style={{ fontSize: 9 }} />
                 </Bar>
-                <Bar dataKey="count" name="Loads" fill="#ED7D31" barSize={12} />
+                <Bar dataKey="count" name="Loads" fill="#ED7D31" barSize={16} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
+      </div>
 
+      {/* ROW 5: Open Network Revenue (full width) */}
+      <div className="grid grid-cols-1 gap-6">
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
@@ -945,8 +921,8 @@ function ExecTab() {
         </Card>
       </div>
 
-      {/* ═══ ROW 6: Massmart DC + Citrus Client ═══ */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* ═══ ROW 6: Massmart DC (full width) ═══ */}
+      <div className="grid grid-cols-1 gap-6">
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
@@ -964,19 +940,22 @@ function ExecTab() {
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Massmart DC Load Count {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={Math.max(200, massmartDCData.length * 30 + 40)}>
-              <BarChart data={massmartDCData} layout="vertical" margin={{ left: 120, right: 30, top: 5, bottom: 5 }}>
+              <BarChart data={massmartDCData} layout="vertical" margin={{ left: 120, right: 50, top: 5, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 10 }} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={120} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={120} interval={0} />
                 <Tooltip />
-                <Bar dataKey="count" fill="#70AD47" barSize={16}>
+                <Bar dataKey="count" fill="#70AD47" barSize={18}>
                   <LabelList dataKey="count" position="right" style={{ fontSize: 9 }} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
+      </div>
 
+      {/* ═══ ROW 7: Citrus Revenue (full width) ═══ */}
+      <div className="grid grid-cols-1 gap-6">
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
@@ -990,13 +969,13 @@ function ExecTab() {
         >
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Citrus Revenue by Client {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={Math.max(200, citrusClientData.length * 28 + 40)}>
-              <BarChart data={citrusClientData} layout="vertical" margin={{ left: 200, right: 30, top: 5, bottom: 5 }}>
+            <ResponsiveContainer width="100%" height={Math.max(200, citrusClientData.length * 30 + 40)}>
+              <BarChart data={citrusClientData} layout="vertical" margin={{ left: 200, right: 60, top: 5, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000).toFixed(0)}K`} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 8 }} width={200} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={200} interval={0} />
                 <Tooltip formatter={(v: number) => fmtR(v)} />
-                <Bar dataKey="revenue" fill="#70AD47" barSize={14}>
+                <Bar dataKey="revenue" fill="#70AD47" barSize={16}>
                   <LabelList dataKey="revenue" position="right" formatter={(v: number) => fmtR(v)} style={{ fontSize: 9 }} />
                 </Bar>
               </BarChart>
@@ -1005,7 +984,7 @@ function ExecTab() {
         </Card>
       </div>
 
-      {/* ═══ ROW 7: Polokwane Lid + Top Brokers ═══ */}
+      {/* ═══ ROW 8: Polokwane Lid + Commodity Matrix ═══ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
@@ -1039,6 +1018,54 @@ function ExecTab() {
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
+            const headers = ['Commodity', ...commodityMatrix.cols.map(m => m.substring(0, 3)), 'Total']
+            const pivotRows = commodityMatrix.rows.map(r => [r.commodity, ...r.values.map(v => v > 0 ? fmtR(v) : ''), fmtR(r.total)])
+            const totals: any[] = ['Grand Total', ...commodityMatrix.colTotals.map(v => fmtR(v)), fmtR(commodityMatrix.grandTotal)]
+            openPivot(`Revenue by Commodity ${yearFilter === 'all' ? '' : yearFilter}`, headers, pivotRows, totals)
+          }}
+        >
+          <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Revenue by Commodity {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
+          <CardContent>
+            <div className="overflow-auto max-h-[320px]">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-slate-200">
+                    <TableHead className="text-xs text-slate-700 sticky left-0 bg-slate-200">Commodity</TableHead>
+                    {commodityMatrix.cols.map(m => (
+                      <TableHead key={m} className="text-xs text-slate-700 text-right">{m.substring(0, 3)}</TableHead>
+                    ))}
+                    <TableHead className="text-xs text-slate-700 text-right font-bold">Total</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {commodityMatrix.rows.map((r, i) => (
+                    <TableRow key={i} className="hover:bg-slate-50">
+                      <TableCell className="text-xs font-medium sticky left-0 bg-white max-w-[180px] truncate" title={r.commodity}>{r.commodity}</TableCell>
+                      {r.values.map((v, j) => (
+                        <TableCell key={j} className="text-xs text-right">{v > 0 ? fmtR(v) : ''}</TableCell>
+                      ))}
+                      <TableCell className="text-xs text-right font-semibold">{fmtR(r.total)}</TableCell>
+                    </TableRow>
+                  ))}
+                  <TableRow className="font-bold bg-slate-100">
+                    <TableCell className="text-xs sticky left-0 bg-slate-100">Grand Total</TableCell>
+                    {commodityMatrix.colTotals.map((v, j) => (
+                      <TableCell key={j} className="text-xs text-right">{fmtR(v)}</TableCell>
+                    ))}
+                    <TableCell className="text-xs text-right">{fmtR(commodityMatrix.grandTotal)}</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ═══ ROW 9: Top Brokers (full width) ═══ */}
+      <div className="grid grid-cols-1 gap-6">
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => {
             openDrillDown(
               `Top Brokers by Revenue ${yearFilter === 'all' ? '' : yearFilter}`,
               ['Load Nr', 'Broker', 'Transporter', 'Month', 'Revenue'],
@@ -1050,7 +1077,7 @@ function ExecTab() {
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Top Brokers by Revenue {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={Math.max(280, topBrokerData.length * 30 + 40)}>
-              <BarChart data={topBrokerData} layout="vertical" margin={{ left: 20, right: 60, top: 5, bottom: 5 }}>
+              <BarChart data={topBrokerData} layout="vertical" margin={{ left: 200, right: 80, top: 5, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000000).toFixed(1)}M`} />
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={200} interval={0} />
@@ -1064,8 +1091,8 @@ function ExecTab() {
         </Card>
       </div>
 
-      {/* ═══ ROW 8: Top Routes + Revenue by Region ═══ */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* ═══ ROW 10: Top Routes (full width) ═══ */}
+      <div className="grid grid-cols-1 gap-6">
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
@@ -1080,19 +1107,22 @@ function ExecTab() {
           <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">Top Routes by Load Count {yearFilter === 'all' ? '(All Years)' : yearFilter}</CardTitle></CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={Math.max(280, topRoutesData.length * 26 + 40)}>
-              <BarChart data={topRoutesData} layout="vertical" margin={{ left: 20, right: 40, top: 5, bottom: 5 }}>
+              <BarChart data={topRoutesData} layout="vertical" margin={{ left: 180, right: 50, top: 5, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 10 }} />
                 <YAxis type="category" dataKey="route" tick={{ fontSize: 9 }} width={180} interval={0} />
                 <Tooltip />
-                <Bar dataKey="count" fill="#5B9BD5" barSize={14}>
+                <Bar dataKey="count" fill="#5B9BD5" barSize={16}>
                   <LabelList dataKey="count" position="right" style={{ fontSize: 9 }} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
+      </div>
 
+      {/* ═══ ROW 11: Revenue by Origin + Dest Region ═══ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
@@ -1113,44 +1143,6 @@ function ExecTab() {
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={60} interval={0} />
                 <Tooltip formatter={(v: number) => fmtR(v)} />
                 <Bar dataKey="revenue" fill="#70AD47" barSize={16}>
-                  <LabelList dataKey="revenue" position="right" formatter={(v: number) => fmtR(v)} style={{ fontSize: 9 }} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* ═══ ROW 9: New Clients + Offload Region ═══ */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card
-          className="cursor-pointer hover:shadow-md transition-shadow"
-          onClick={() => {
-            openDrillDown(
-              `New Clients Onboarded ${yearFilter === 'all' ? '' : yearFilter}`,
-              ['Load Nr', 'Client', 'Month', 'Commodity', 'Revenue'],
-              r => {
-                const name = r.dr_name || 'Unknown'
-                const firstYear = allRows.filter(x => x.dr_name === name).reduce((min, x) => {
-                  const yr = String(x.year || '9999')
-                  return yr < min ? yr : min
-                }, '9999')
-                const currentYear = yearFilter === 'all' ? String(new Date().getFullYear()) : yearFilter
-                return firstYear === currentYear && (yearFilter === 'all' || String(r.year) === yearFilter)
-              },
-              r => [r.load_nr, r.dr_name, r.month, r.commodity, fmtR(r.dr_value)]
-            )
-          }}
-        >
-          <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">New Clients Onboarded {yearFilter === 'all' ? 'This Year' : yearFilter}</CardTitle></CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={Math.max(280, newClientData.length * 30 + 40)}>
-              <BarChart data={newClientData} layout="vertical" margin={{ left: 20, right: 60, top: 5, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000000).toFixed(1)}M`} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 8 }} width={200} interval={0} />
-                <Tooltip formatter={(v: number, name: string) => name === 'revenue' ? fmtR(v) : v} />
-                <Bar dataKey="revenue" name="Revenue" fill="#70AD47" barSize={18}>
                   <LabelList dataKey="revenue" position="right" formatter={(v: number) => fmtR(v)} style={{ fontSize: 9 }} />
                 </Bar>
               </BarChart>
@@ -1186,7 +1178,45 @@ function ExecTab() {
         </Card>
       </div>
 
-      {/* ═══ ROW 10: Chinas Clients + Special Projects ═══ */}
+      {/* ═══ ROW 12: New Clients (full width) ═══ */}
+      <div className="grid grid-cols-1 gap-6">
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => {
+            openDrillDown(
+              `New Clients Onboarded ${yearFilter === 'all' ? '' : yearFilter}`,
+              ['Load Nr', 'Client', 'Month', 'Commodity', 'Revenue'],
+              r => {
+                const name = r.dr_name || 'Unknown'
+                const firstYear = allRows.filter(x => x.dr_name === name).reduce((min, x) => {
+                  const yr = String(x.year || '9999')
+                  return yr < min ? yr : min
+                }, '9999')
+                const currentYear = yearFilter === 'all' ? String(new Date().getFullYear()) : yearFilter
+                return firstYear === currentYear && (yearFilter === 'all' || String(r.year) === yearFilter)
+              },
+              r => [r.load_nr, r.dr_name, r.month, r.commodity, fmtR(r.dr_value)]
+            )
+          }}
+        >
+          <CardHeader className="pb-1"><CardTitle className="text-sm font-semibold">New Clients Onboarded {yearFilter === 'all' ? 'This Year' : yearFilter}</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={Math.max(280, newClientData.length * 30 + 40)}>
+              <BarChart data={newClientData} layout="vertical" margin={{ left: 200, right: 80, top: 5, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000000).toFixed(1)}M`} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={200} interval={0} />
+                <Tooltip formatter={(v: number, name: string) => name === 'revenue' ? fmtR(v) : v} />
+                <Bar dataKey="revenue" name="Revenue" fill="#70AD47" barSize={18}>
+                  <LabelList dataKey="revenue" position="right" formatter={(v: number) => fmtR(v)} style={{ fontSize: 9 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ═══ ROW 13: Chinas + Special Projects ═══ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
@@ -1260,8 +1290,8 @@ function ExecTab() {
         </Card>
       </div>
 
-      {/* ═══ ROW 11: Loading by Dest + Durban↔JHB Route ═══ */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* ═══ ROW 14: Loading by Dest (full width) ═══ */}
+      <div className="grid grid-cols-1 gap-6">
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
@@ -1282,10 +1312,10 @@ function ExecTab() {
               <div className="flex items-center justify-center h-[280px] text-sm text-slate-400">No Bloemfontein loading data</div>
             ) : (
               <ResponsiveContainer width="100%" height={Math.max(280, loadingDestData.length * 30 + 40)}>
-                <BarChart data={loadingDestData} layout="vertical" margin={{ left: 20, right: 40, top: 5, bottom: 5 }}>
+                <BarChart data={loadingDestData} layout="vertical" margin={{ left: 200, right: 50, top: 5, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                   <XAxis type="number" tick={{ fontSize: 10 }} />
-                  <YAxis type="category" dataKey="name" tick={{ fontSize: 8 }} width={200} interval={0} />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={200} interval={0} />
                   <Tooltip />
                   <Bar dataKey="count" name="Loads" fill="#5B9BD5" barSize={16}>
                     <LabelList dataKey="count" position="right" style={{ fontSize: 9 }} />
@@ -1295,7 +1325,10 @@ function ExecTab() {
             )}
           </CardContent>
         </Card>
+      </div>
 
+      {/* ═══ ROW 15: Durban↔JHB Route (full width) ═══ */}
+      <div className="grid grid-cols-1 gap-6">
         <Card
           className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => {
