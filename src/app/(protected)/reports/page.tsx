@@ -1423,7 +1423,7 @@ function ExecTab() {
 
       {/* Drill-down Modal */}
       <Dialog open={!!drillDown} onOpenChange={() => setDrillDown(null)}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+        <DialogContent className="w-[90vw] max-h-[90vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle>{drillDown?.title}</DialogTitle>
             <DialogDescription>Underlying data for this chart</DialogDescription>
